@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState, makeStock, makeStockDef } from '../testkit'
 import { buy, sell, canSell, maxBuyQty } from './trade'
-import { totalAssets, cashRatio, portfolioLossPct } from './accounting'
+import { totalAssets, cashRatio, portfolioLossPct, positionLossPct, priceOf } from './accounting'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
 
@@ -29,6 +29,20 @@ describe('accounting', () => {
     const s = makeState()
     s.player.holdings = [{ stockId: 's1', qty: 10, avgCost: 5000, heldTurns: 0 }]
     expect(portfolioLossPct(s)).toBe(0)
+  })
+  it('priceOf: 알 수 없는 종목이면 GameError(NO_STOCK)', () => {
+    const s = makeState()
+    expect(() => priceOf(s, 'no-such-stock')).toThrow(GameError)
+    let caught: unknown
+    try {
+      priceOf(s, 'no-such-stock')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(GameError)
+    if (caught instanceof GameError) {
+      expect(caught.code).toBe('NO_STOCK')
+    }
   })
 })
 
@@ -66,6 +80,17 @@ describe('buy', () => {
     expect(() => buy(s, 's1', q)).not.toThrow()
     expect(() => buy(s, 's1', q + 1)).toThrow()
   })
+  it('maxBuyQty는 buy가 실제로 받아주는 정확한 경계다 (여러 현금 액수)', () => {
+    const price = 10000
+    for (const cash of [10000, 10001, 10002, 20002, 20003, BALANCE.seedMoney]) {
+      const s = makeState()
+      s.stocks[0]!.price = price
+      s.player.cash = cash
+      const q = maxBuyQty(s, 's1')
+      if (q > 0) expect(() => buy(s, 's1', q)).not.toThrow()
+      expect(() => buy(s, 's1', q + 1)).toThrow()
+    }
+  })
   it('원본 상태를 변경하지 않는다', () => {
     const s = makeState()
     buy(s, 's1', 10)
@@ -87,6 +112,15 @@ describe('sell', () => {
   it('왕복 거래는 반드시 손해다', () => {
     const before = totalAssets(makeState())
     const s = sell(buy(makeState(), 's1', 10), 's1', 10)
+    expect(totalAssets(s)).toBeLessThan(before)
+  })
+  it('최소 단위(최저가 1주) 왕복 거래도 반드시 손해다', () => {
+    const s0 = makeState({
+      stockDefs: [makeStockDef({ id: 's1' })],
+      stocks: [makeStock({ id: 's1', price: BALANCE.minPrice })],
+    })
+    const before = totalAssets(s0)
+    const s = sell(buy(s0, 's1', 1), 's1', 1)
     expect(totalAssets(s)).toBeLessThan(before)
   })
   it('보유량 초과는 NO_QTY', () => {
@@ -126,5 +160,36 @@ describe('sell', () => {
     const p = s.stocks[0]!.price
     s = sell(s, 's1', 5_000_000)
     expect(s.stocks[0]!.price).toBeLessThan(p)
+  })
+  it('게임 종료 상태에서는 보유량 부족보다 NOT_PLAYING이 우선한다', () => {
+    let s = buy(makeState(), 's1', 5)
+    s = { ...s, status: 'ended' }
+    expect(() => sell(s, 's1', 6)).toThrow(/NOT_PLAYING/)
+  })
+  it('멘탈이 정확히 shakenMax(29)이고 손실 30%면 차단된다', () => {
+    let s = buy(makeState(), 's1', 10)
+    s.stocks[0]!.price = 7000 // (10000-7000)/10000*100 = 30%
+    s.player.mental = BALANCE.mental.shakenMax
+    expect(canSell(s, 's1').ok).toBe(false)
+  })
+  it('멘탈이 shakenMax+1(30)이고 손실 30%면 허용된다', () => {
+    let s = buy(makeState(), 's1', 10)
+    s.stocks[0]!.price = 7000
+    s.player.mental = BALANCE.mental.shakenMax + 1
+    expect(canSell(s, 's1').ok).toBe(true)
+  })
+  it('손실이 정확히 sellBlockLossPct(20%)이고 멘탈 흔들림이면 차단된다', () => {
+    let s = buy(makeState(), 's1', 10)
+    s.stocks[0]!.price = 8000 // (10000-8000)/10000*100 = 20%
+    s.player.mental = 10
+    expect(positionLossPct(s, 's1')).toBe(BALANCE.mental.sellBlockLossPct)
+    expect(canSell(s, 's1').ok).toBe(false)
+  })
+  it('손실이 sellBlockLossPct(20%) 미만이고 멘탈 흔들림이면 허용된다', () => {
+    let s = buy(makeState(), 's1', 10)
+    s.stocks[0]!.price = 8001 // (10000-8001)/10000*100 = 19.99%
+    s.player.mental = 10
+    expect(positionLossPct(s, 's1')).toBeLessThan(BALANCE.mental.sellBlockLossPct)
+    expect(canSell(s, 's1').ok).toBe(true)
   })
 })

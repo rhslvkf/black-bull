@@ -1,8 +1,9 @@
 import type { GameState } from '../types'
+import { GameError } from '../error'
 
 export function priceOf(state: GameState, stockId: string): number {
   const s = state.stocks.find(x => x.id === stockId)
-  if (!s) throw new Error(`NO_STOCK:${stockId}`)
+  if (!s) throw new GameError('NO_STOCK')
   return s.price
 }
 export function holdingValue(state: GameState): number {

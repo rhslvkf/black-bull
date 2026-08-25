@@ -4,8 +4,8 @@ import { GameError } from '../error'
 import { priceOf, positionLossPct } from './accounting'
 import { applyWhaleImpact } from '../market/price'
 
-const fee = (gross: number) => Math.floor(gross * BALANCE.feeRate)
-const tax = (gross: number) => Math.floor(gross * BALANCE.taxRate)
+const fee = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.feeRate)) : 0)
+const tax = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.taxRate)) : 0)
 
 export function canBuy(state: GameState, stockId: string): { ok: boolean; reason?: string } {
   if (state.status !== 'playing') return { ok: false, reason: 'NOT_PLAYING' }
@@ -27,7 +27,12 @@ export function canSell(state: GameState, stockId: string): { ok: boolean; reaso
 
 export function maxBuyQty(state: GameState, stockId: string): number {
   const p = priceOf(state, stockId)
-  return Math.max(0, Math.floor(state.player.cash / (p * (1 + BALANCE.feeRate))))
+  const cash = state.player.cash
+  const cost = (q: number) => p * q + fee(p * q)
+  let q = Math.max(0, Math.floor(cash / (p * (1 + BALANCE.feeRate))))
+  while (cost(q + 1) <= cash) q++
+  while (q > 0 && cost(q) > cash) q--
+  return q
 }
 
 export function buy(state: GameState, stockId: string, qty: number): GameState {
@@ -58,10 +63,10 @@ export function buy(state: GameState, stockId: string, qty: number): GameState {
 
 export function sell(state: GameState, stockId: string, qty: number): GameState {
   if (!Number.isInteger(qty) || qty <= 0) throw new GameError('BAD_QTY')
-  const held = state.player.holdings.find(h => h.stockId === stockId)
-  if (!held || held.qty < qty) throw new GameError('NO_QTY')
   const chk = canSell(state, stockId)
   if (!chk.ok) throw new GameError(chk.reason!)
+  const held = state.player.holdings.find(h => h.stockId === stockId)
+  if (!held || held.qty < qty) throw new GameError('NO_QTY')
 
   const price = priceOf(state, stockId)
   const gross = price * qty
