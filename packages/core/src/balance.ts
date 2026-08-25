@@ -31,8 +31,11 @@ export const BALANCE = {
   tierMins: [0, 10_000_000, 50_000_000, 100_000_000, 500_000_000, 3_000_000_000],
   rival: { start: 35_000_000, driftMul: 1.8 },
   endings: {
-    savingsBelow: 2_700_000, breakevenHigh: 3_300_000,
-    bankHigh: 6_000_000, wiseHigh: 500_000_000, fireMin: 1_000_000_000,
+    savingsBelow: 2_700_000,     // 미만 -> savings
+    breakevenHigh: 3_300_000,    // savingsBelow 이상 이 값 이하 -> breakeven
+    wiseMin: 100_000_000,        // 이상 -> wise
+    superMin: 500_000_000,       // 이상 -> super
+    fireMin: 1_000_000_000,      // 이상 + 퇴사 -> fire
   },
   maxEventsPerTurn: 2,
 } as const

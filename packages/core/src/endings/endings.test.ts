@@ -63,6 +63,36 @@ describe('judgeEnding 우선순위', () => {
   })
 })
 
+// 브리프가 설계의 핵심으로 지목한 순서쌍들을 각각 고정한다. 각 테스트의 state는 두 엔딩의
+// 조건을 '동시에' 만족하도록 만든다 — 그래야 우선순위가 실제로 검사되고, 어느 한쪽 조건이
+// 애초에 성립하지 않아서 우연히 통과하는 일이 없다.
+describe('judgeEnding 우선순위 쌍 고정', () => {
+  it('파산이 김실장 루트보다 앞선다 (두 조건이 동시에 성립하는 상태)', () => {
+    // network>=8 && kimRoom=true (kimheir 조건 충족) 이면서 동시에 bankrupt=true
+    const s = at(50_000_000_000)
+    s.player.stats.network = 8
+    s.flags['kimRoom'] = true
+    expect(judgeEnding(s, true).endingId).toBe('legend')
+  })
+  it('김실장 루트가 파이어족보다 앞선다 (fire 조건까지 동시에 충족하는 상태)', () => {
+    // network>=8 && kimRoom=true (kimheir 조건) 이면서 동시에
+    // assets>=fireMin && !employed (fire 조건)도 충족 — 브리프가 "가장 좋은 숫자"라고
+    // 지목한 바로 그 케이스. employed 기본값(true)에 기대지 않고 명시적으로 false로 둔다.
+    const s = at(2_000_000_000)
+    s.player.stats.network = 8
+    s.player.employed = false
+    s.flags['kimRoom'] = true
+    expect(judgeEnding(s, false).endingId).toBe('kimheir')
+  })
+  it('파이어족이 슈퍼개미보다 앞선다 (super 조건까지 동시에 충족하는 상태)', () => {
+    // fireMin(10억) 이상이면 superMin(5억) 이상도 항상 참이므로, 이 state는 fire와 super
+    // 조건을 동시에 만족한다. 퇴사 상태에서 정확히 fireMin 경계값으로 확인한다.
+    const s = at(1_000_000_000)
+    s.player.employed = false
+    expect(judgeEnding(s, false).endingId).toBe('fire')
+  })
+})
+
 describe('칭호', () => {
   it('라이벌을 이기면 beatRival', () => {
     const s = at(100_000_000, { rivalAssets: 50_000_000 })

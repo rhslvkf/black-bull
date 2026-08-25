@@ -1,4 +1,5 @@
 import type { RngState } from './rng/rng'
+import type { EndingId } from './endings/endings'
 
 export type Regime = 'boom' | 'overheat' | 'crash' | 'stagnation' | 'recovery'
 export type Sector = '반도체' | '2차전지' | '바이오' | '조선' | '게임' | '금융' | '엔터' | '방산'
@@ -85,7 +86,7 @@ export interface Trackers {
   maxHeldTurns: number; cashRatioSum: number; turnsCounted: number
 }
 
-export interface EndingResult { endingId: string; endingName: string; titles: string[]; finalAssets: number }
+export interface EndingResult { endingId: EndingId; endingName: string; titles: string[]; finalAssets: number }
 
 export interface GameState {
   turn: number                 // 이번에 플레이할 턴, 1..156
