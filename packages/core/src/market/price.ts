@@ -13,7 +13,7 @@ export function stepPrices(
 
   const out = stocks.map(s => {
     const d = byId.get(s.id)
-    if (!d) return s
+    if (!d) throw new Error(`stepPrices: no StockDef for ${s.id}`)
     const shock = market + (impacts.get(`stock:${s.id}`) ?? 0) + (impacts.get(`sector:${d.sector}`) ?? 0)
     let r = drift * d.beta
       + rand.normal(0, d.volatility * vol)
@@ -28,7 +28,7 @@ export function stepPrices(
 }
 
 export function applyWhaleImpact(price: number, notional: number, side: 'buy' | 'sell'): number {
-  const mag = Math.min(BALANCE.whale.maxImpact, notional / BALANCE.whale.notionalDiv)
+  const mag = Math.min(BALANCE.whale.maxImpact, Math.max(0, notional / BALANCE.whale.notionalDiv))
   const p = Math.round(price * (1 + (side === 'buy' ? mag : -mag)))
   return Math.max(BALANCE.minPrice, p)
 }
