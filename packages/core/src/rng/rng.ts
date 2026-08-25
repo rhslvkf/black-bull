@@ -23,9 +23,11 @@ export class Rand {
   }
   chance(p: number): boolean { return this.next() < p }
   pickWeighted<T>(items: T[], weight: (t: T) => number): T {
+    if (items.length === 0) throw new Error('pickWeighted: empty items')
     const total = items.reduce((a, t) => a + weight(t), 0)
     let roll = this.next() * total
     for (const t of items) { roll -= weight(t); if (roll < 0) return t }
+    // Fallback for all-weights-zero case: return last item deterministically
     return items[items.length - 1]!
   }
 }

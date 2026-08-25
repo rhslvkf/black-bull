@@ -31,4 +31,32 @@ describe('rng', () => {
     rngNext(s0)
     expect(s0).toEqual(createRng(5))
   })
+  it('pickWeighted는 빈 배열에서 throw', () => {
+    const r = new Rand(createRng(10))
+    expect(() => r.pickWeighted([], () => 1)).toThrow('pickWeighted: empty items')
+  })
+  it('normal 평균과 표준편차 비기본값', () => {
+    const r = new Rand(createRng(11))
+    const mean = 50, sd = 10
+    const samples: number[] = []
+    for (let i = 0; i < 4000; i++) samples.push(r.normal(mean, sd))
+    const sampleMean = samples.reduce((a, b) => a + b, 0) / samples.length
+    const variance = samples.reduce((a, x) => a + (x - sampleMean) ** 2, 0) / samples.length
+    const sampleSd = Math.sqrt(variance)
+    expect(Math.abs(sampleMean - mean)).toBeLessThan(0.5)
+    expect(Math.abs(sampleSd - sd)).toBeLessThan(0.5)
+  })
+  it('chance는 확률을 정확히 반영한다', () => {
+    const r = new Rand(createRng(12))
+    const never = r.chance(0)
+    expect(never).toBe(false)
+    const r2 = new Rand(createRng(13))
+    const always = r2.chance(1)
+    expect(always).toBe(true)
+    const r3 = new Rand(createRng(14))
+    let trueCount = 0
+    for (let i = 0; i < 4000; i++) if (r3.chance(0.5)) trueCount++
+    const ratio = trueCount / 4000
+    expect(Math.abs(ratio - 0.5)).toBeLessThan(0.05)
+  })
 })
