@@ -96,4 +96,48 @@ describe('store', () => {
     expect(codex.bestAssets).toBe(999_999_999)
     expect(JSON.parse(localStorage.getItem(CODEX_KEY)!).bestAssets).toBe(999_999_999)
   })
+
+  it('버전은 맞지만 구조가 깨진(필드 오염) 세이브는 무시된다', () => {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: { turn: 'NOT_A_NUMBER' } }))
+    useGame.getState().reset()
+    expect(useGame.getState().state).toBeNull()
+  })
+
+  it('타입이 깨진 도감은 무시되고 빈 도감으로 대체된다', () => {
+    localStorage.setItem(
+      CODEX_KEY,
+      JSON.stringify({ endings: 'oops', titles: null, bestAssets: 'x', runs: 'y' }),
+    )
+    useGame.getState().reset()
+    const codex = useGame.getState().codex
+    expect(codex.endings).toEqual([])
+    expect(codex.titles).toEqual([])
+    expect(codex.bestAssets).toBe(0)
+    expect(codex.runs).toBe(0)
+  })
+
+  it('clearCutscene 후 새로고침(reset)해도 컷신이 되살아나지 않는다', () => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    // 컷신이 떠 있는 상태를 저장해 둔 뒤 로드
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: { ...s, cutscene: 'cutscene.promote.1' } }))
+    useGame.getState().reset()
+    expect(useGame.getState().state!.cutscene).toBe('cutscene.promote.1')
+    useGame.getState().clearCutscene()
+    expect(useGame.getState().state!.cutscene).toBeNull()
+    useGame.getState().reset() // 새로고침 시뮬레이션: localStorage에서 다시 읽는다
+    expect(useGame.getState().state!.cutscene).toBeNull()
+  })
+
+  it('구조적으로 깨진 state에서 core가 던지는 일반 Error는 삼키지 않고 다시 던진다', () => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    // stockDefs에 없는 종목이 stocks에 섞여 들어간, 최소 형태 검사는 통과하지만
+    // 내부적으로는 깨진 state — stepPrices가 GameError가 아닌 일반 Error를 던진다.
+    const broken = { ...s, stocks: [...s.stocks, { id: '__missing__', price: 1, fundamental: 1, history: [1] }] }
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: broken }))
+    useGame.getState().reset()
+    expect(useGame.getState().state!.stocks.length).toBe(broken.stocks.length) // 로드 자체는 통과했다(sanity)
+    expect(() => useGame.getState().next(['hodl'])).toThrow()
+  })
 })
