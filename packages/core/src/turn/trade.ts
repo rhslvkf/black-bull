@@ -1,11 +1,8 @@
 import type { GameState, Holding } from '../types'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
-import { priceOf, positionLossPct } from './accounting'
+import { priceOf, positionLossPct, fee, tax } from './accounting'
 import { applyWhaleImpact } from '../market/price'
-
-const fee = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.feeRate)) : 0)
-const tax = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.taxRate)) : 0)
 
 export function canBuy(state: GameState, stockId: string): { ok: boolean; reason?: string } {
   if (state.status !== 'playing') return { ok: false, reason: 'NOT_PLAYING' }

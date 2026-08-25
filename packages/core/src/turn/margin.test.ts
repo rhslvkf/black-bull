@@ -8,6 +8,10 @@ import { GameError } from '../error'
 const tiered = () => { const s = makeState(); s.player.tier = 3; return s }
 
 describe('margin', () => {
+  it('정수가 아닌 금액은 거부된다', () => {
+    expect(() => takeLoan(tiered(), 1_000_000.5)).toThrow(/BAD_AMOUNT/)
+    expect(() => repayLoan(takeLoan(tiered(), 1_000_000), 500_000.5)).toThrow(/BAD_AMOUNT/)
+  })
   it('티어 미달이면 대출 불가', () => {
     expect(maxLoan(makeState())).toBe(0)
     expect(() => takeLoan(makeState(), 1_000_000)).toThrow(GameError)
@@ -45,9 +49,28 @@ describe('margin', () => {
     const after = checkMarginCall(s)
     expect(after.player.holdings).toHaveLength(0)
     expect(after.flags['marginCalled']).toBe(true)
+    // liquidation: gross=200k, fee=30, tax=360, proceeds=199,610, cash=1,199,010
+    // repaid=min(1,199,010, 2M)=1,199,010
+    expect(after.player.cash).toBe(0)
+    expect(after.player.loan).toBe(800_989)
   })
   it('건전하면 청산하지 않는다', () => {
     const s = buy(takeLoan(tiered(), 500_000), 's1', 10)
     expect(checkMarginCall(s).player.holdings).toHaveLength(1)
+  })
+  it('담보 붕괴 시 손실 매도를 lossCuts에 반영한다', () => {
+    let s = tiered()
+    s = takeLoan(s, 2_000_000)
+    s = buy(s, 's1', 400)
+    s.stocks[0]!.price = 500
+    const before = s.trackers.lossCuts
+    const after = checkMarginCall(s)
+    expect(after.trackers.lossCuts).toBe(before + 1)
+  })
+  it('현금 부족 상환은 거부된다', () => {
+    let s = takeLoan(tiered(), 1_000_000)
+    s = buy(s, 's1', 100)
+    // cash는 약 2M 미만, loan은 1M, repay 500k 요청은 loan보다 작지만 cash를 초과할 수 있음
+    expect(() => repayLoan(s, s.player.cash + 1)).toThrow(/BAD_AMOUNT/)
   })
 })

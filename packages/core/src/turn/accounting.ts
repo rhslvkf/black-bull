@@ -1,5 +1,9 @@
 import type { GameState } from '../types'
+import { BALANCE } from '../balance'
 import { GameError } from '../error'
+
+export const fee = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.feeRate)) : 0)
+export const tax = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.taxRate)) : 0)
 
 export function priceOf(state: GameState, stockId: string): number {
   const s = state.stocks.find(x => x.id === stockId)
