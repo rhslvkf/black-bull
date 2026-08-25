@@ -162,3 +162,90 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 .next-turn:active:not(:disabled) { transform: translateY(1px); }
 .next-turn:disabled { background: var(--border); color: var(--muted); box-shadow: none; }
+
+/* ---------- Market ---------- */
+.filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; margin-bottom: 10px; -ms-overflow-style: none; scrollbar-width: none; }
+.filters::-webkit-scrollbar { display: none; }
+.filters button {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted); font-size: 12.5px; font-weight: 600;
+  min-height: 32px; white-space: nowrap;
+}
+.filters button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+
+.stock-list { display: flex; flex-direction: column; gap: 6px; }
+.stock-row {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; min-height: 56px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  text-align: left; transition: transform .1s, opacity .15s;
+}
+.stock-row:active:not(:disabled) { transform: scale(.98); }
+.stock-row:disabled { opacity: .45; }
+.stock-row.locked { background: var(--panel); }
+.s-icon { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; background: var(--panel-2); }
+.s-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.s-name { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-sector { font-size: 11px; color: var(--muted); }
+.s-quote { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.s-price { font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.s-quote .up, .s-quote .down, .s-quote .neutral { font-size: 11.5px; font-weight: 700; }
+
+/* ---------- Stock detail ---------- */
+.screen.detail .back {
+  background: none; border: 0; color: var(--muted); font-size: 13px; padding: 6px 0; margin-bottom: 4px; min-height: 32px;
+}
+.detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.detail-head h2 { margin: 0; font-size: 18px; }
+.detail-head small { color: var(--muted); font-size: 12px; }
+.price-now { font-size: 26px; font-weight: 800; margin: 2px 0 10px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+
+.analysis {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 0;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+}
+.analysis dt { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+.analysis dd { margin: 0; font-size: 13px; font-weight: 700; }
+
+.warn {
+  color: var(--gold); font-size: 12px; margin: 10px 0 0; line-height: 1.4;
+  background: rgba(230, 180, 90, .1); border: 1px solid rgba(230, 180, 90, .3);
+  border-radius: 8px; padding: 8px 10px;
+}
+
+.held { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+.held .up, .held .down, .held .neutral { font-weight: 700; }
+
+.trade { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.trade-row { display: flex; align-items: center; gap: 10px; }
+.trade-row label { font-size: 13px; color: var(--muted); }
+.trade-row input {
+  flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); font-size: 16px; padding: 10px 12px; min-height: 44px; font-variant-numeric: tabular-nums;
+}
+.trade-amount { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+.trade-amount strong { color: var(--text); font-size: 14px; }
+.trade-hint { color: var(--muted); }
+.trade-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.trade-buttons button { min-height: 48px; border: 0; border-radius: 12px; font-size: 15px; font-weight: 800; }
+.trade-buttons .buy { background: linear-gradient(180deg, #ef5a67, #e0404e); color: #fff; }
+.trade-buttons .sell { background: linear-gradient(180deg, #5a92f0, #3f78e0); color: #fff; }
+.trade-buttons button:disabled { background: var(--border); color: var(--muted); }
+
+/* ---------- Account ---------- */
+.screen.account .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
+.donut-wrap { display: flex; align-items: center; gap: 16px; padding: 12px 4px; }
+.donut-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
+.donut-legend span { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.donut-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+.sum { font-size: 13px; color: var(--muted); margin: 4px 0 12px; text-align: center; }
+.holdings { display: flex; flex-direction: column; gap: 6px; }
+.holdings li {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 52px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+}
+.h-name { flex: 1; font-weight: 700; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-qty { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+.h-avg { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+.holdings .up, .holdings .down, .holdings .neutral { font-size: 12.5px; font-weight: 700; flex: 0 0 auto; min-width: 48px; text-align: right; }

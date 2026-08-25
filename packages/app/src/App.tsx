@@ -2,6 +2,8 @@ import { useGame } from './store/store'
 import { Hud } from './components/Hud'
 import { TabBar } from './components/TabBar'
 import { HomeScreen } from './screens/HomeScreen'
+import { MarketScreen } from './screens/MarketScreen'
+import { AccountScreen } from './screens/AccountScreen'
 
 export default function App() {
   const state = useGame(s => s.state)
@@ -20,7 +22,11 @@ export default function App() {
   return (
     <main className="app">
       <Hud />
-      <div className="body">{tab === 'home' && <HomeScreen />}</div>
+      <div className="body">
+        {tab === 'home' && <HomeScreen />}
+        {tab === 'market' && <MarketScreen />}
+        {tab === 'account' && <AccountScreen />}
+      </div>
       <TabBar />
     </main>
   )
