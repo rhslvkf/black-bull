@@ -8,10 +8,10 @@ export interface StockAnalysis {
   confidence: number
 }
 
-function hashSeed(seed0: number, stockId: string, bucket: number): number {
+function hashSeed(seed0: number, stockId: string): number {
   let h = (seed0 ^ 0x9e3779b9) >>> 0
   for (let i = 0; i < stockId.length; i++) h = (Math.imul(h ^ stockId.charCodeAt(i), 0x01000193)) >>> 0
-  return (Math.imul(h ^ (bucket + 1), 0x85ebca6b)) >>> 0
+  return (Math.imul(h, 0x85ebca6b)) >>> 0
 }
 
 export function analyzeStock(state: GameState, stockId: string): StockAnalysis {
@@ -21,9 +21,9 @@ export function analyzeStock(state: GameState, stockId: string): StockAnalysis {
 
   const a = state.player.stats.analysis
   const sigma = 0.45 * (1 - a / 10) + 0.05
-  const rand = new Rand(createRng(hashSeed(state.seed0, stockId, Math.floor(a))))
-  const bias = rand.normal(0, sigma)
-  const est = Math.max(1, stock.fundamental * Math.exp(bias))
+  const rand = new Rand(createRng(hashSeed(state.seed0, stockId)))
+  const z = rand.normal(0, 1)
+  const est = Math.max(1, stock.fundamental * Math.exp(z * sigma))
 
   const half = Math.max(0.03, sigma * 0.8)
   const fairLow = Math.max(1, Math.round(est * (1 - half)))

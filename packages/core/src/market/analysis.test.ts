@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState, makeStock, makeStockDef } from '../testkit'
+import { loadStockDefs, initStockStates } from './stocks'
+import { GameError } from '../error'
 import { analyzeStock } from './analysis'
 
 const withAnalysis = (a: number) => {
@@ -54,6 +56,53 @@ describe('analyzeStock', () => {
     }
   })
   it('없는 종목은 예외', () => {
-    expect(() => analyzeStock(withAnalysis(5), 'zz')).toThrow()
+    expect(() => analyzeStock(withAnalysis(5), 'zz')).toThrow(GameError)
+    let thrown: unknown
+    try {
+      analyzeStock(withAnalysis(5), 'zz')
+    } catch (e) {
+      thrown = e
+    }
+    expect(thrown).toBeInstanceOf(GameError)
+    expect((thrown as GameError).code).toBe('NO_STOCK')
+  })
+  it('종목별 편향은 분석력이 오를수록 줄어들 뿐 방향이 바뀌지 않는다 (재추첨 아님)', () => {
+    const defs = loadStockDefs()
+    const stocks = initStockStates(defs)
+    const s = makeState({ stockDefs: defs, stocks })
+    const ids = ['sjc', 'ecp', 'bio', 'shp', 'gam']
+    for (const id of ids) {
+      const def = defs.find(d => d.id === id)
+      if (!def) throw new Error(`fixture missing ${id}`)
+      const fundamental = def.fundamental
+      const mid = (a: number) => {
+        s.player.stats.analysis = a
+        const r = analyzeStock(s, id)
+        return (r.fairLow + r.fairHigh) / 2
+      }
+      const err0 = Math.abs(mid(0) - fundamental)
+      const err5 = Math.abs(mid(5) - fundamental)
+      const err10 = Math.abs(mid(10) - fundamental)
+      expect(err10).toBeLessThan(err5)
+      expect(err5).toBeLessThan(err0)
+      const sign0 = Math.sign(mid(0) - fundamental)
+      const sign5 = Math.sign(mid(5) - fundamental)
+      const sign10 = Math.sign(mid(10) - fundamental)
+      expect(sign5).toBe(sign0)
+      expect(sign10).toBe(sign0)
+    }
+  })
+  it('seed0과 state.rng.s가 다를 때, rng.s만 바꿔도 결과는 그대로다 (게임 RNG 스트림 미사용 증명)', () => {
+    const s = makeState({
+      seed0: 1,
+      rng: { s: 999 },
+      stockDefs: [makeStockDef({ id: 'a', volatility: 0.05 })],
+      stocks: [makeStock({ id: 'a', price: 10000, fundamental: 10000 })],
+    })
+    s.player.stats.analysis = 3
+    const before = analyzeStock(s, 'a')
+    s.rng = { s: 424242 }
+    const after = analyzeStock(s, 'a')
+    expect(after).toEqual(before)
   })
 })
