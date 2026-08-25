@@ -1,7 +1,6 @@
 // packages/core/src/events/engine.ts
 import type { EventDef, GameState } from '../types'
 import { BALANCE } from '../balance'
-import { GameError } from '../error'
 import { Rand } from '../rng/rng'
 import { evalAll } from '../turn/conditions'
 import { applyEffects } from '../turn/effects'
@@ -47,7 +46,7 @@ export function revealRumors(state: GameState): GameState {
 
 export function drawEvents(state: GameState, pool: EventDef[]): GameState {
   const rand = new Rand(state.rng)
-  let s: GameState = { ...state, rng: rand.state }
+  let s: GameState = state
 
   const eligible = pool.filter(e =>
     !(e.oneShot && s.firedOneShots.includes(e.id)) && evalAll(s, e.conditions))
@@ -75,9 +74,16 @@ export function drawEvents(state: GameState, pool: EventDef[]): GameState {
 }
 
 export function resolveChoice(state: GameState, eventId: string, choiceIndex: number, pool: EventDef[]): GameState {
-  const def = pool.find(e => e.id === eventId)
-  const choice = def?.choices?.[choiceIndex]
-  if (!def || !choice) throw new GameError('BAD_CHOICE')
-  const s = applyEffects(state, choice.effects)
-  return { ...s, pendingChoices: s.pendingChoices.filter(c => c.eventId !== eventId) }
+  // 대기열에 없으면 무동작 — 더블클릭·스테일 호출로 효과가 중복 적용되지 않게 한다
+  if (!state.pendingChoices.some(c => c.eventId === eventId)) return state
+
+  const dequeued: GameState = {
+    ...state,
+    pendingChoices: state.pendingChoices.filter(c => c.eventId !== eventId),
+  }
+
+  const choices = pool.find(e => e.id === eventId)?.choices
+  const choice = choices?.[choiceIndex]
+  // 선택지가 없거나 인덱스가 범위를 벗어나면 효과 없이 대기열만 비운다 (모달 데드락 방지)
+  return choice ? applyEffects(dequeued, choice.effects) : dequeued
 }

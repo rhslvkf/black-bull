@@ -1,7 +1,7 @@
 // packages/core/src/events/engine.test.ts
 import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
-import { resolveImpacts, revealRumors, drawEvents, resolveChoice, rumorLead } from './engine'
+import { resolveImpacts, revealRumors, drawEvents, resolveChoice, rumorLead, rumorChance } from './engine'
 import type { EventDef } from '../types'
 import { BALANCE } from '../balance'
 
@@ -26,6 +26,27 @@ describe('resolveImpacts', () => {
       { target: 'market', magnitude: 0.2, dueTurn: 2, revealTurn: 1, revealed: true, title: 'b' },
     ] })
     expect(resolveImpacts(s)[0].get('market')).toBeCloseTo(0.3, 6)
+  })
+})
+
+describe('rumorLead / rumorChance', () => {
+  // 표 기반 고정값 — 구현을 호출해서 기대값을 만들지 않고, 의도한 구간을 직접 적어둔다.
+  const table: Array<[info: number, lead: number, chance: number]> = [
+    [0, 0, 0],
+    [1, 0, 0],
+    [2, 0, 0],
+    [3, 1, 0.5],
+    [4, 1, 0.5],
+    [5, 1, 0.5],
+    [6, 2, 0.7],
+    [7, 2, 0.7],
+    [8, 2, 0.7],
+    [9, 3, 0.9],
+    [10, 3, 0.9],
+  ]
+  it.each(table)('info=%i -> lead=%i, chance=%f', (info, lead, chance) => {
+    expect(rumorLead(info)).toBe(lead)
+    expect(rumorChance(info)).toBeCloseTo(chance, 6)
   })
 })
 
@@ -55,10 +76,10 @@ describe('drawEvents', () => {
     const pool = [ev({ id: 'locked', conditions: [{ type: 'tierMin', value: 5 }] })]
     expect(drawEvents(makeState(), pool).news.some(n => n.title === 'locked')).toBe(false)
   })
-  it('턴당 최대 개수를 넘지 않는다', () => {
+  it('풀이 충분히 크면 턴당 정확히 최대 개수만큼 뽑는다', () => {
     const pool = Array.from({ length: 20 }, (_, i) => ev({ id: `e${i}` }))
     const s = drawEvents(makeState(), pool)
-    expect(s.news.filter(n => n.turn === 1).length).toBeLessThanOrEqual(BALANCE.maxEventsPerTurn)
+    expect(s.news.filter(n => n.turn === 1).length).toBe(BALANCE.maxEventsPerTurn)
   })
   it('oneShot은 재발화하지 않는다', () => {
     const pool = [ev({ id: 'once', oneShot: true })]
@@ -95,7 +116,25 @@ describe('resolveChoice', () => {
     expect(s.flags['kim']).toBe(1)
     expect(s.pendingChoices).toHaveLength(0)
   })
-  it('잘못된 인덱스는 BAD_CHOICE', () => {
-    expect(() => resolveChoice(makeState({ pendingChoices: [{ eventId: 'pick' }] }), 'pick', 9, pool)).toThrow(/BAD_CHOICE/)
+  it('잘못된 인덱스는 던지지 않고 효과 없이 대기열만 비운다', () => {
+    const before = makeState({ pendingChoices: [{ eventId: 'pick' }] })
+    const s = resolveChoice(before, 'pick', 9, pool)
+    expect(s.player.cash).toBe(before.player.cash)
+    expect(s.flags).toEqual(before.flags)
+    expect(s.pendingChoices).toHaveLength(0)
+  })
+  it('대기열에 없는 이벤트는 무동작이다', () => {
+    const before = makeState({ pendingChoices: [] })
+    const s = resolveChoice(before, 'pick', 0, pool)
+    expect(s).toEqual(before)
+  })
+  it('같은 선택을 두 번 호출해도 효과는 한 번만 적용된다', () => {
+    let s = resolveChoice(makeState({ pendingChoices: [{ eventId: 'pick' }] }), 'pick', 0, pool)
+    expect(s.player.cash).toBe(2_500_000)
+    expect(s.flags['kim']).toBe(1)
+    s = resolveChoice(s, 'pick', 0, pool)
+    expect(s.player.cash).toBe(2_500_000)
+    expect(s.flags['kim']).toBe(1)
+    expect(s.pendingChoices).toHaveLength(0)
   })
 })
