@@ -137,4 +137,12 @@ describe('resolveChoice', () => {
     expect(s.flags['kim']).toBe(1)
     expect(s.pendingChoices).toHaveLength(0)
   })
+  // Ruling 50 — 종료된 게임에는 무동작(던지지 않는다). advanceTurn 9단계가 정상적으로
+  // pendingChoices를 비우므로 실제 경로에서는 도달하지 않지만, UI가 낙오된 선택지에
+  // 실수로 호출해도 굳어진 ending과 모순되는 state 변화가 반영되지 않아야 한다.
+  it('종료된 상태에서는 무동작이다 (status 가드, Ruling 50)', () => {
+    const before = makeState({ status: 'ended', pendingChoices: [{ eventId: 'pick' }] })
+    const s = resolveChoice(before, 'pick', 0, pool)
+    expect(s).toEqual(before)
+  })
 })

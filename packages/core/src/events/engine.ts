@@ -74,6 +74,12 @@ export function drawEvents(state: GameState, pool: EventDef[]): GameState {
 }
 
 export function resolveChoice(state: GameState, eventId: string, choiceIndex: number, pool: EventDef[]): GameState {
+  // 종료된 게임에는 무동작 (Ruling 50) — 던지지 않는다. resolveChoice는 절대 던지지
+  // 않는다는 Task 12의 불변식(스토어가 GameError를 삼켜 모달이 얼어붙는 문제) 유지.
+  // ended 이후에는 advanceTurn 9단계가 pendingChoices를 비우므로 정상 경로에서는
+  // 도달하지 않지만, UI가 낙오된 선택지에 실수로 호출해도 굳어진 ending과 모순되는
+  // state 변화가 사후에 반영되지 않도록 여기서도 막는다.
+  if (state.status !== 'playing') return state
   // 대기열에 없으면 무동작 — 더블클릭·스테일 호출로 효과가 중복 적용되지 않게 한다
   if (!state.pendingChoices.some(c => c.eventId === eventId)) return state
 

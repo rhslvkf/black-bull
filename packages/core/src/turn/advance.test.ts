@@ -4,6 +4,10 @@ import { buy } from './trade'
 import { totalAssets } from './accounting'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
+import { resolveChoice } from '../events/engine'
+import { loadEvents } from '../events/content'
+import { stepPrices } from '../market/price'
+import type { Regime } from '../types'
 
 const run = (s = initGame(1), cards: string[] = ['hodl']) => advanceTurn(s, cards)
 
@@ -115,5 +119,88 @@ describe('advanceTurn', () => {
     let s = initGame(4)
     for (let i = 0; i < 20; i++) s = advanceTurn({ ...s, pendingChoices: [] }, ['hodl'])
     expect(totalAssets(s)).toBeGreaterThan(BALANCE.seedMoney * 0.9)
+  })
+})
+
+// Fix Round 1 of 5 — 리뷰가 지목한 공백(B: 6/8단계·강제스킵·국면 인덱싱이 무탐지,
+// C: 156턴 루프 전부가 pendingChoices를 버리는 인공 경로만 탐)을 메우는 테스트.
+// 각 테스트는 대응 뮤테이션을 실제로 넣고 실패를 확인한 뒤 원복했다 — 보고서 참고.
+describe('advanceTurn — 조립 단계별 실제 반영 확인 (fix round 1)', () => {
+  it('T-B1: 게이지 정산이 실제 값으로 반영된다', () => {
+    const s = initGame(1)
+    // news: condition -4(pending) + drainEmployed -4(resist=1, stamina=0) = 100 -> 92
+    const r = advanceTurn(s, ['news'])
+    expect(r.player.condition).toBe(92)
+  })
+
+  it('T-B2: 트래커가 실제로 누적된다', () => {
+    const pool = loadEvents()
+    let s = initGame(2)
+    for (let i = 0; i < 5; i++) {
+      while (s.pendingChoices.length > 0) s = resolveChoice(s, s.pendingChoices[0]!.eventId, 0, pool)
+      s = advanceTurn(s, ['hodl'])
+    }
+    expect(s.trackers.turnsCounted).toBe(5)
+    expect(s.trackers.cashRatioSum).toBeGreaterThan(0)
+  })
+
+  it('T-B3: 번아웃 강제 스킵이면 카드가 무시된다', () => {
+    const base = initGame(1)
+    const s = { ...base, player: { ...base.player, burnoutTurns: 2 } }
+    const r = advanceTurn(s, ['news']) // news: info +0.45 — 스킵되면 반영 안 돼야 함
+    expect(r.player.stats.info).toBe(0)
+    expect(r.player.burnoutTurns).toBe(1)
+  })
+
+  it('T-B4: 가격 계산이 turn-1 국면을 쓴다', () => {
+    const base = initGame(1)
+    const regimes: Regime[] = ['crash', 'boom', ...base.regimes.slice(2)]
+    const forced = { ...base, regimes }
+    const r = advanceTurn(forced, [])
+    const [expectedStocks] = stepPrices(forced.stocks, forced.stockDefs, 'crash', new Map(), forced.rng)
+    expect(r.stocks.map(x => x.price)).toEqual(expectedStocks.map(x => x.price))
+  })
+
+  it('T-M1: 정산 후 pending 플래그 키가 남지 않는다', () => {
+    const s = initGame(1)
+    const r = advanceTurn(s, ['hodl'])
+    expect(Object.prototype.hasOwnProperty.call(r.flags, '__mentalPending')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(r.flags, '__conditionPending')).toBe(false)
+  })
+
+  it('T-C2: 실제 선택지 해결을 포함한 156턴 결정론', () => {
+    const play = (seed: number) => {
+      const pool = loadEvents()
+      let s = initGame(seed)
+      for (let i = 0; i < 156; i++) {
+        while (s.pendingChoices.length > 0) s = resolveChoice(s, s.pendingChoices[0]!.eventId, 0, pool)
+        s = advanceTurn(s, ['hodl'])
+      }
+      return s
+    }
+    expect(play(11)).toEqual(play(11))
+  })
+})
+
+// Ruling 49 — regimes[turn-1] 폴백 제거, 범위를 벗어나면 명시적으로 던진다.
+describe('advanceTurn — 국면 인덱스 폴백 제거 (Ruling 49)', () => {
+  it('정상 범위를 벗어난 turn에서는 조용히 넘어가지 않고 BAD_TURN을 던진다', () => {
+    const s = { ...initGame(1), turn: 200 } // regimes 길이(156)를 넘는 turn을 직접 주입
+    expect(() => advanceTurn(s, ['hodl'])).toThrow(/BAD_TURN/)
+  })
+})
+
+// Ruling 50 — 종료 시 남은 선택지를 비워, judgeEnding 확정 후 사후 변경을 막는다.
+describe('advanceTurn — 종료 시 선택지 정리 (Ruling 50)', () => {
+  it('156턴째에 새로 뽑힌 선택지가 있어도 종료 시 pendingChoices가 비워진다', () => {
+    // 브리프 자신의 시드(seed=1) — 실제로 156턴째에 p_salary_day 선택지가 새로 뽑힌다.
+    const pool = loadEvents()
+    let s = initGame(1)
+    for (let i = 0; i < 156; i++) {
+      while (s.pendingChoices.length > 0) s = resolveChoice(s, s.pendingChoices[0]!.eventId, 0, pool)
+      s = advanceTurn(s, ['hodl'])
+    }
+    expect(s.status).toBe('ended')
+    expect(s.pendingChoices).toEqual([])
   })
 })

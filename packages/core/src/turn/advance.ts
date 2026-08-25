@@ -59,7 +59,12 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   // 3. 가격
   const [impacts, afterImpacts] = resolveImpacts(s)
   s = afterImpacts
-  const [stocks, rng] = stepPrices(s.stocks, s.stockDefs, s.regimes[s.turn - 1] ?? 'stagnation', impacts, s.rng)
+  // 정상 경로에서 turn은 항상 1..BALANCE.totalTurns이므로 regimes[turn-1]은 항상 정의된다.
+  // 폴백을 두면 인덱스 계산이 어긋나도(off-by-one 등) 조용히 통과해버린다 — priceOf가
+  // 없는 종목에 GameError('NO_STOCK')을 던지는 이 코드베이스의 관례대로 명시적으로 던진다.
+  const regime = s.regimes[s.turn - 1]
+  if (regime === undefined) throw new GameError('BAD_TURN')
+  const [stocks, rng] = stepPrices(s.stocks, s.stockDefs, regime, impacts, s.rng)
   s = { ...s, stocks, rng }
 
   // 4. 신용
@@ -90,7 +95,10 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   // 9. 종료 판정
   const bankrupt = totalAssets(s) <= 0
   if (bankrupt || s.turn >= BALANCE.totalTurns) {
-    return { ...s, status: 'ended', ending: judgeEnding(s, bankrupt) }
+    // 마지막 턴에 새로 뽑힌 선택지는 미해결로 소멸한다 (의도된 동작, Ruling 50).
+    // judgeEnding은 이 시점의 state로 이미 확정되므로, 남겨두면 이후 resolveChoice가
+    // 굳어진 ending과 모순되는 cash/mental 변화를 사후에 반영할 수 있다.
+    return { ...s, status: 'ended', ending: judgeEnding(s, bankrupt), pendingChoices: [] }
   }
   return { ...s, turn: s.turn + 1 }
 }
