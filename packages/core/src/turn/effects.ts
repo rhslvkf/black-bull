@@ -1,16 +1,24 @@
 import type { Effect, GameState } from '../types'
 import { buy, maxBuyQty } from './trade'
 import { priceOf } from './accounting'
+import { GameError } from '../error'
 
 const clampStat = (v: number) => Math.max(0, Math.min(10, Math.round(v * 10) / 10))
 const bump = (s: GameState, key: string, delta: number): GameState =>
   ({ ...s, flags: { ...s.flags, [key]: Number(s.flags[key] ?? 0) + delta } })
 
+// 티어락·자금부족·존재하지 않는 종목 등 게임 규칙상 실패는 조용히 무시한다(no-op).
+// 그 외 예외(코드 버그 등)는 삼키지 않고 다시 던진다.
 function buyWithBudget(state: GameState, stockId: string, budget: number): GameState {
-  const price = priceOf(state, stockId)
-  const qty = Math.min(maxBuyQty(state, stockId), Math.floor(budget / price))
-  if (qty <= 0) return state
-  try { return buy(state, stockId, qty) } catch { return state }
+  try {
+    const price = priceOf(state, stockId)
+    const qty = Math.min(maxBuyQty(state, stockId), Math.floor(budget / price))
+    if (qty <= 0) return state
+    return buy(state, stockId, qty)
+  } catch (err) {
+    if (err instanceof GameError) return state
+    throw err
+  }
 }
 
 export function applyEffects(state: GameState, effects: Effect[]): GameState {
@@ -48,6 +56,10 @@ export function applyEffects(state: GameState, effects: Effect[]): GameState {
           .sort((a, b) => priceOf(s, a.stockId) / a.avgCost - priceOf(s, b.stockId) / b.avgCost)[0]
         if (losing) s = buyWithBudget(s, losing.stockId, s.player.cash * 0.2)
         break
+      }
+      default: {
+        const _exhaustive: never = e
+        return _exhaustive
       }
     }
   }

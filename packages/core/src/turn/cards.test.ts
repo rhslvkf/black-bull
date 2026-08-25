@@ -2,9 +2,25 @@ import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
 import { loadCards, isCardAvailable, playCard } from './cards'
 import { GameError } from '../error'
+import type { ActionCardDef, Effect, Condition, StatKey } from '../types'
 
 const cards = loadCards()
 const byId = (id: string) => cards.find(c => c.id === id)!
+
+// raw as ActionCardDef[]는 JSON import 타입이 리터럴을 넓혀버리기 때문에 아무것도 검증하지 않는다.
+// 아래 목록은 satisfies로 오탈자를 컴파일 타임에 잡고, cards.json 데이터는 런타임 테스트로 직접 검증한다.
+const EFFECT_TYPES = [
+  'stat', 'mental', 'condition', 'cash', 'flag', 'impact',
+  'buyStockPct', 'averageDown', 'retire', 'rivalMul', 'fundamentalMul',
+] as const satisfies readonly Effect['type'][]
+
+const CONDITION_TYPES = [
+  'tierMin', 'tierMax', 'turnMin', 'turnMax', 'regime', 'statMin',
+  'assetsMin', 'assetsMax', 'employed', 'mentalMax',
+  'flagEq', 'flagMin', 'flagAbsent', 'holdsStock',
+] as const satisfies readonly Condition['type'][]
+
+const STAT_KEYS = ['grit', 'stamina', 'info', 'analysis', 'network'] as const satisfies readonly StatKey[]
 
 describe('cards 데이터', () => {
   it('12장이고 id가 유일하다', () => {
@@ -42,6 +58,78 @@ describe('isCardAvailable', () => {
     const s = makeState(); s.player.cash = 0
     const paid = cards.find(c => (c.cost?.money ?? 0) > 0)!
     expect(isCardAvailable(s, paid)).toBe(false)
+  })
+  it('isRecovery는 lockedWhenShaken보다 항상 먼저 검사된다 (합성 카드로 체크 순서 자체를 고정)', () => {
+    // cards.json에는 isRecovery && lockedWhenShaken을 동시에 만족하는 카드가 없어서
+    // 실제 데이터만으로는 isCardAvailable 내부 검사 순서가 안 바뀌어도 테스트가 통과해버린다.
+    // 그래서 그 조합을 직접 만들어 순서 자체를 고정한다 — isRecovery 검사가 lockedWhenShaken보다
+    // 먼저라면 true, 뒤바뀌면(흔들림 잠금이 먼저 걸리면) false가 나와야 실패한다.
+    const s = makeState(); s.player.mental = 0
+    const synthetic: ActionCardDef = {
+      id: '__synthetic_recovery_locked__', name: '합성 카드', desc: '체크 순서 고정용',
+      effects: [], isRecovery: true, lockedWhenShaken: true,
+    }
+    expect(isCardAvailable(s, synthetic)).toBe(true)
+  })
+})
+
+describe('cards.json 데이터 유효성 (raw as ActionCardDef[] 캐스팅은 아무것도 검증하지 않으므로 직접 검증한다)', () => {
+  it('id가 유일하고 비어있지 않으며 name/desc가 비어있지 않다', () => {
+    const seen = new Set<string>()
+    const bad: string[] = []
+    for (const c of cards) {
+      if (c.id.length === 0) bad.push('(빈 id)')
+      if (seen.has(c.id)) bad.push(`중복 id: ${c.id}`)
+      seen.add(c.id)
+      if (c.name.length === 0) bad.push(`${c.id}: 빈 name`)
+      if (c.desc.length === 0) bad.push(`${c.id}: 빈 desc`)
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('모든 effects[].type이 알려진 Effect 타입이다', () => {
+    const bad: string[] = []
+    for (const c of cards) {
+      for (const e of c.effects) {
+        if (!EFFECT_TYPES.includes(e.type)) bad.push(`${c.id}: 알 수 없는 effect.type "${e.type}"`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('모든 stat 필드가 알려진 StatKey다', () => {
+    const bad: string[] = []
+    for (const c of cards) {
+      for (const e of c.effects) {
+        if (e.type === 'stat' && !STAT_KEYS.includes(e.stat)) bad.push(`${c.id}: 알 수 없는 stat "${e.stat}"`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('모든 requires[].type이 알려진 Condition 타입이다', () => {
+    const bad: string[] = []
+    for (const c of cards) {
+      for (const r of c.requires ?? []) {
+        if (!CONDITION_TYPES.includes(r.type)) bad.push(`${c.id}: 알 수 없는 requires.type "${r.type}"`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('모든 숫자 필드가 유한하다', () => {
+    const bad: string[] = []
+    const walk = (value: unknown, path: string): void => {
+      if (typeof value === 'number') {
+        if (!Number.isFinite(value)) bad.push(`${path} = ${value}`)
+      } else if (Array.isArray(value)) {
+        value.forEach((v, i) => walk(v, `${path}[${i}]`))
+      } else if (value !== null && typeof value === 'object') {
+        for (const [k, v] of Object.entries(value)) walk(v, `${path}.${k}`)
+      }
+    }
+    cards.forEach(c => walk(c, c.id))
+    expect(bad).toEqual([])
   })
 })
 

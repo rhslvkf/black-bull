@@ -100,4 +100,22 @@ describe('applyEffects', () => {
     const s = makeState(); s.player.cash = 0
     expect(() => applyEffects(s, [{ type: 'buyStockPct', stockId: 's1', pct: 0.5 }])).not.toThrow()
   })
+  it('buyStockPct는 티어락처럼 GameError로 실패하면(수량은 확보되지만) 상태를 바꾸지 않는다', () => {
+    const s = makeState()
+    // 자금은 충분해 qty > 0으로 buy()까지 도달하지만, tierGate가 player.tier(0)보다 높아 TIER_LOCKED로 실패한다.
+    s.stockDefs = s.stockDefs.map(d => d.id === 's1' ? { ...d, tierGate: 5 } : d)
+    let result: ReturnType<typeof applyEffects> | undefined
+    expect(() => {
+      result = applyEffects(s, [{ type: 'buyStockPct', stockId: 's1', pct: 0.5 }])
+    }).not.toThrow()
+    expect(result).toBe(s)
+  })
+  it('buyStockPct는 존재하지 않는 종목이면(자금이 충분해도) 조용히 넘어간다', () => {
+    const s = makeState() // cash는 기본값(넉넉함) — qty 계산 이전에 priceOf가 NO_STOCK을 던지는 경로를 검증한다
+    let result: ReturnType<typeof applyEffects> | undefined
+    expect(() => {
+      result = applyEffects(s, [{ type: 'buyStockPct', stockId: 'nope', pct: 0.5 }])
+    }).not.toThrow()
+    expect(result).toBe(s)
+  })
 })
