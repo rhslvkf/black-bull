@@ -1,0 +1,72 @@
+[
+  { "id": "st_retire", "category": "story", "weight": 40, "oneShot": true,
+    "conditions": [{ "type": "assetsMin", "value": 300000000 }, { "type": "turnMin", "value": 60 }],
+    "text": { "title": "사표를 쓸까", "body": "계좌가 3억을 넘었다. 이 회사에 더 있을 이유를 찾기 어렵다." },
+    "choices": [
+      { "label": "퇴사한다", "effects": [{ "type": "retire" }, { "type": "flag", "key": "retired", "value": true }, { "type": "mental", "delta": 15 }] },
+      { "label": "일단 다닌다", "effects": [{ "type": "stat", "stat": "grit", "delta": 0.5 }] }
+    ] },
+  { "id": "st_cho_advice", "category": "story", "weight": 20, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 30 }, { "type": "mentalMax", "value": 40 }],
+    "text": { "title": "최존버가 말을 걸었다", "body": "\"버티는 건 버틸 만한 걸 들고 있을 때만 하는 거야.\"", "speaker": "cho" },
+    "choices": [
+      { "label": "새겨듣는다", "effects": [{ "type": "flag", "key": "choSaid", "value": "inc" }, { "type": "stat", "stat": "grit", "delta": 1 }, { "type": "mental", "delta": 12 }] },
+      { "label": "형이 뭘 알아", "effects": [{ "type": "mental", "delta": -5 }] }
+    ] },
+  { "id": "st_kim_room", "category": "story", "weight": 30, "oneShot": true,
+    "conditions": [{ "type": "flagMin", "key": "kim", "value": 3 }, { "type": "statMin", "stat": "network", "value": 7 }],
+    "text": { "title": "김실장이 제안했다", "body": "\"이제 받는 쪽 말고 주는 쪽을 해보시죠. 방 하나 파드릴게요.\"", "speaker": "kim" },
+    "choices": [
+      { "label": "방을 연다", "effects": [{ "type": "flag", "key": "kimRoom", "value": true }, { "type": "stat", "stat": "network", "delta": 2 }, { "type": "cash", "delta": 5000000 }] },
+      { "label": "거기까진 아니다", "effects": [{ "type": "mental", "delta": 10 }] }
+    ] },
+  { "id": "st_first_month", "category": "story", "weight": 15, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 4 }],
+    "text": { "title": "첫 월급날, 계좌를 다시 열어봤다", "body": "숫자가 늘지도 줄지도 않았다. 그런데 이상하게 두근거린다." },
+    "choices": [
+      { "label": "포트폴리오를 다시 짠다", "effects": [{ "type": "stat", "stat": "analysis", "delta": 0.3 }, { "type": "condition", "delta": -6 }] },
+      { "label": "일단 그대로 둔다", "effects": [{ "type": "mental", "delta": 3 }] }
+    ] },
+  { "id": "st_first_red", "category": "story", "weight": 15, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 8 }, { "type": "assetsMax", "value": 2800000 }],
+    "text": { "title": "처음으로 계좌가 파랗게 물들었다", "body": "손실이라는 단어를 검색해본 건 이번이 처음이다." },
+    "choices": [
+      { "label": "손절한다", "effects": [{ "type": "mental", "delta": -6 }, { "type": "stat", "stat": "grit", "delta": 0.4 }] },
+      { "label": "일단 버틴다", "effects": [{ "type": "mental", "delta": -10 }] }
+    ] },
+  { "id": "st_cho_late", "category": "story", "weight": 15, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 90 }, { "type": "mentalMax", "value": 50 }],
+    "text": { "title": "최존버가 또 말을 걸었다", "body": "\"몇 년 지나 보니까, 종목보다 사람이 먼저 무너지더라.\"", "speaker": "cho" },
+    "choices": [
+      { "label": "이번엔 듣는다", "effects": [{ "type": "flag", "key": "choSaid", "value": "inc" }, { "type": "mental", "delta": 14 }, { "type": "stat", "stat": "grit", "delta": 0.5 }] },
+      { "label": "또 흘려듣는다", "effects": [{ "type": "mental", "delta": -6 }] }
+    ] },
+  { "id": "st_scam_promise", "category": "story", "weight": 18, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 20 }, { "type": "statMin", "stat": "network", "value": 2 }],
+    "text": { "title": "\"원금 보장\" 리딩방 결제 안내가 왔다", "body": "선입금하면 손실분을 보전해준다고 한다. 계약서는 없다.", "speaker": "kim" },
+    "choices": [
+      { "label": "결제한다", "effects": [{ "type": "flag", "key": "kim", "value": "inc" }, { "type": "cash", "delta": -2000000 }, { "type": "mental", "delta": -15 }] },
+      { "label": "신고한다", "effects": [{ "type": "mental", "delta": 5 }, { "type": "stat", "stat": "grit", "delta": 0.3 }] }
+    ] },
+  { "id": "st_promotion_miss", "category": "story", "weight": 15, "oneShot": true,
+    "conditions": [{ "type": "turnMin", "value": 50 }, { "type": "employed", "value": true }],
+    "text": { "title": "승진자 명단에 내 이름이 없다", "body": "\"내년엔 될 거야.\" 작년에도 들은 말이다." },
+    "choices": [
+      { "label": "더 열심히 해본다", "effects": [{ "type": "condition", "delta": -10 }, { "type": "stat", "stat": "grit", "delta": 0.4 }] },
+      { "label": "그러려니 한다", "effects": [{ "type": "mental", "delta": -8 }] }
+    ] },
+  { "id": "st_margin_after", "category": "story", "weight": 20, "oneShot": true,
+    "conditions": [{ "type": "flagEq", "key": "marginCalled", "value": true }],
+    "text": { "title": "반대매매가 끝난 계좌를 본다", "body": "보유 종목 칸이 비어 있다. 대출은 갚았는데 남은 게 없다." },
+    "choices": [
+      { "label": "처음부터 다시 배운다", "effects": [{ "type": "mental", "delta": 8 }, { "type": "stat", "stat": "grit", "delta": 0.6 }] },
+      { "label": "당분간 손을 뗀다", "effects": [{ "type": "condition", "delta": 15 }, { "type": "stat", "stat": "network", "delta": -0.3 }] }
+    ] },
+  { "id": "st_fire_moment", "category": "story", "weight": 15, "oneShot": true,
+    "conditions": [{ "type": "assetsMin", "value": 1000000000 }, { "type": "turnMin", "value": 100 }],
+    "text": { "title": "자산이 10억을 넘었다", "body": "은행 앱 잔액 자릿수를 두 번 세어봤다. 아직 그만두진 않았다." },
+    "choices": [
+      { "label": "계속 굴린다", "effects": [{ "type": "stat", "stat": "grit", "delta": 0.5 }, { "type": "mental", "delta": 10 }] },
+      { "label": "속도를 줄인다", "effects": [{ "type": "condition", "delta": 10 }, { "type": "mental", "delta": 5 }] }
+    ] }
+]
