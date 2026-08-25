@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MarketScreen } from './MarketScreen'
@@ -16,6 +19,17 @@ describe('PriceChart', () => {
   })
   it('데이터가 1개여도 깨지지 않는다', () => {
     expect(() => render(<PriceChart history={[100]} />)).not.toThrow()
+  })
+  it('데이터가 1개일 때 빈 상자가 아니라 시각적으로 보이는 선이 그려진다', () => {
+    // 좌표쌍 1개짜리 <polyline points="0,60">은 선분을 그리지 않아 element는 존재해도
+    // 화면엔 빈 상자로 보인다 — "element 존재"만 확인하면 이 결함을 못 잡는다(리뷰 M1/D6).
+    // 그래서 <line> 플레이스홀더 존재 또는 polyline이 실제 좌표쌍 2개 이상(공백 포함)을
+    // 갖는지까지 확인한다.
+    const { container } = render(<PriceChart history={[100]} />)
+    const line = container.querySelector('line')
+    const poly = container.querySelector('polyline')
+    const polyHasSegment = poly ? (poly.getAttribute('points') ?? '').trim().includes(' ') : false
+    expect(!!line || polyHasSegment).toBe(true)
   })
   it('빈 배열이어도 깨지지 않는다', () => {
     expect(() => render(<PriceChart history={[]} />)).not.toThrow()
@@ -137,5 +151,31 @@ describe('AccountScreen', () => {
     useGame.getState().doBuy('sjc', 2)
     render(<AccountScreen />)
     expect(screen.getByTestId('holding-sjc')).toBeDefined()
+  })
+})
+
+describe('터치 타깃', () => {
+  // jsdom은 실제 레이아웃/CSS를 계산하지 않아(vitest 기본 설정에 css:true도 없음)
+  // getBoundingClientRect로는 항상 0이 나온다. 그래서 index.css 소스에서 해당 규칙의
+  // min-height 값을 직접 파싱해 44px 이상인지 고정한다(리뷰 M2/완료조건 요구사항).
+  // 실측(Playwright, 실제 브라우저)은 이 라운드 보고서의 "브라우저 확인" 섹션에 별도 기록.
+  const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const css = readFileSync(cssPath, 'utf-8')
+
+  function minHeightOf(selector: string): number {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const block = css.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`))?.[0] ?? ''
+    const m = block.match(/min-height:\s*(\d+)px/)
+    if (!m) throw new Error(`min-height not found for ${selector}`)
+    return Number(m[1])
+  }
+
+  it('섹터 필터 칩의 min-height가 44px 이상이다', () => {
+    expect(minHeightOf('.filters button')).toBeGreaterThanOrEqual(44)
+  })
+  it('종목 행·매수/매도 버튼·수량 입력도 44px 기준을 지킨다', () => {
+    expect(minHeightOf('.stock-row')).toBeGreaterThanOrEqual(44)
+    expect(minHeightOf('.trade-buttons button')).toBeGreaterThanOrEqual(44)
+    expect(minHeightOf('.trade-row input')).toBeGreaterThanOrEqual(44)
   })
 })
