@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
-import { settleMental, isShaken, mentalResist } from './mental'
+import { cashRatio as cashRatioOf } from '../turn/accounting'
+import { settleMental, isShaken, mentalResist, lossExposure } from './mental'
 import { BALANCE } from '../balance'
 
 /**
@@ -32,6 +33,90 @@ describe('mental', () => {
     const s = settleMental(makeState({ player: { ...makeState().player, mental: 50 } }), 0)
     expect(s.player.mental).toBe(50 + BALANCE.mental.cashCalm)
   })
+  // ── 노출도 가중 (재리뷰 N1) ───────────────────────────────────────────────
+  // portfolioLossPct는 '보유 원가 대비' 손실률이라 노출 규모가 전혀 반영되지 않는다.
+  // 가중이 없으면 7만원짜리 1주와 몰빵이 같은 피해를 입는다 — 실측으로도 1주(56%)가
+  // 시드 90%(50%)보다 오히려 더 자주 흔들렸다. 아래 테스트들이 그 규칙을 못박는다.
+  describe('손실 멘탈 피해의 노출도 가중', () => {
+    /** 손실률은 pct%로 고정하고 노출도(보유평가액/총자산)만 바꾼다. */
+    function atExposure(pct: number, holdValue: number, cash: number) {
+      const s = makeState()
+      s.player.mental = 80
+      s.player.cash = cash
+      const price = (10000 * (100 - pct)) / 100
+      s.stocks = s.stocks.map(st => (st.id === 's1' ? { ...st, price } : st))
+      s.player.holdings = [{ stockId: 's1', qty: Math.round(holdValue / price), avgCost: 10000, heldTurns: 0 }]
+      s.prevLossPct = pct       // 악화 항 제거 — 고정감소만 본다
+      return s
+    }
+
+    it('lossExposure는 0에서 시작해 lossExposureFull에서 1로 포화한다', () => {
+      const full = BALANCE.mental.lossExposureFull
+      expect(lossExposure(atExposure(30, 0, 10_000_000))).toBe(0)
+      // 노출도 = full/2 → 가중 0.5
+      expect(lossExposure(atExposure(30, 1_000_000, Math.round(1_000_000 / (full / 2) - 1_000_000))))
+        .toBeCloseTo(0.5, 2)
+      // 노출도 = full 이상 → 1로 상한
+      expect(lossExposure(atExposure(30, 9_000_000, 1_000_000))).toBe(1)
+    })
+
+    it('지급불능(총자산 0 이하)이면 노출을 최대로 본다', () => {
+      const s = makeState()
+      s.player.cash = 0; s.player.loan = 1_000_000; s.player.holdings = []
+      expect(lossExposure(s)).toBe(1)
+    })
+
+    it('같은 손실률이라도 노출도가 낮으면 멘탈이 훨씬 덜 깎인다', () => {
+      // 손실 30% 고정. 총자산은 둘 다 3,000만원이고 그중 주식 비중만 다르다.
+      const tiny = atExposure(30, 60_000, 29_940_000)       // 노출 0.2% — 1주짜리
+      const heavy = atExposure(30, 27_000_000, 3_000_000)   // 노출 90% — 몰빵
+      const dTiny = 80 - settleMental(tiny, 0).player.mental
+      const dHeavy = 80 - settleMental(heavy, 0).player.mental
+      expect(dHeavy, `몰빵 ${dHeavy} vs 1주 ${dTiny}`).toBeGreaterThan(dTiny)
+      // 가중이 없으면 둘이 정확히 같아진다 — '더 크다'만으로는 1 차이도 통과하므로 비율을 본다.
+      expect(dHeavy).toBeGreaterThanOrEqual(dTiny * 4)
+      expect(dTiny).toBeLessThanOrEqual(1)
+    })
+
+    it('손실 악화 항도 노출도로 가중된다', () => {
+      const mk = (holdValue: number, cash: number) => {
+        const s = atExposure(40, holdValue, cash)
+        s.prevLossPct = 10                                   // 30%p 악화
+        return s
+      }
+      const tiny = 80 - settleMental(mk(60_000, 29_940_000), 0).player.mental
+      const heavy = 80 - settleMental(mk(27_000_000, 3_000_000), 0).player.mental
+      expect(heavy).toBeGreaterThan(tiny * 4)
+    })
+
+    it('신용(margin) 감소는 노출도와 무관하게 그대로 물린다', () => {
+      // 빚을 졌다는 사실 자체에 대한 페널티라 노출로 깎이면 안 된다.
+      const base = makeState({ player: { ...makeState().player, mental: 50 } })
+      const withLoan = makeState({ player: { ...makeState().player, mental: 50, loan: 1_000_000 } })
+      expect(settleMental(withLoan, 0).player.mental)
+        .toBe(settleMental(base, 0).player.mental + BALANCE.mental.margin)
+    })
+  })
+
+  // ── 현금 안정 보너스는 물려 있지 않을 때만 (Fix Round 1의 규칙, 재리뷰 N2) ──────
+  it('현금비중이 충분해도 물려 있으면 현금 안정 보너스가 붙지 않는다', () => {
+    // 이 규칙이 없으면 cashCalm이 lossHold를 이겨서 "물려 있는데 멘탈이 오른다".
+    // 손실 5%(작게) · 노출 100% · 현금비중 0 → 보너스 조건(현금비중)만 다른 두 상태를 비교한다.
+    const withLoss = makeState()
+    withLoss.player.mental = 50
+    withLoss.player.cash = 90_000_000                     // 현금비중 99.9% (문턱 0.7 초과)
+    withLoss.stocks = withLoss.stocks.map(st => (st.id === 's1' ? { ...st, price: 9500 } : st))
+    withLoss.player.holdings = [{ stockId: 's1', qty: 10, avgCost: 10000, heldTurns: 0 }]
+    withLoss.prevLossPct = 5
+    expect(cashRatioOf(withLoss)).toBeGreaterThan(BALANCE.mental.calmCashRatio)
+
+    const noLoss = makeState({ player: { ...makeState().player, mental: 50, cash: 90_000_000 } })
+    // 물려 있지 않은 쪽에는 보너스가 붙는다
+    expect(settleMental(noLoss, 0).player.mental).toBe(50 + BALANCE.mental.cashCalm)
+    // 물려 있는 쪽에는 붙지 않는다 → 50을 넘지 못한다
+    expect(settleMental(withLoss, 0).player.mental).toBeLessThanOrEqual(50)
+  })
+
   it('손실 보유는 매 턴 깎는다', () => {
     const s = losing(10)
     s.prevLossPct = 10

@@ -80,14 +80,19 @@ describe('stepPrices', () => {
     const [out] = stepPrices([makeStock({ id: 'l' })], defs, 'stagnation', imp, createRng(1))
     expect(out[0]!.price).toBe(10000)
   })
-  it('곱버스(inv) ETF는 시장 충격을 반대로 받는다', () => {
-    // beta만 뒤집으면 국면 드리프트만 반대가 되고 뉴스 충격에는 시장과 같은 방향으로 움직인다.
+  it('ETF는 시장 충격을 etfShockMul 배수로 받는다 (레버리지는 2배, 곱버스는 반대로)', () => {
+    // beta만 뒤집으면 국면 드리프트만 반대가 되고 뉴스 충격에는 시장과 같은 방향·1배로
+    // 움직인다 — '레버리지'도 '곱버스'도 이름값을 못 하게 된다.
     const lev = makeStockDef({ id: 'l', etf: 'lev', beta: 0 })
     const inv = makeStockDef({ id: 'i', etf: 'inv', beta: 0 })
     const imp = new Map([['market', 0.1]])
     const [out] = stepPrices([makeStock({ id: 'l' }), makeStock({ id: 'i' })], [lev, inv], 'stagnation', imp, createRng(1))
-    expect(out[0]!.price).toBeGreaterThan(10000)
-    expect(out[1]!.price).toBeLessThan(10000)
+    const k = 0.1 * BALANCE.impact.mul
+    expect(out[0]!.price).toBe(Math.round(10000 * Math.exp(k * BALANCE.etfShockMul.lev)))
+    expect(out[1]!.price).toBe(Math.round(10000 * Math.exp(k * BALANCE.etfShockMul.inv)))
+    // 방향과 배수를 둘 다 못박는다 — 배수가 ±1이면 아래 두 줄이 실패한다.
+    expect(out[0]!.price).toBeGreaterThan(Math.round(10000 * Math.exp(k)))
+    expect(out[1]!.price).toBeLessThan(Math.round(10000 * Math.exp(-k)))
   })
   it('섹터 충격이 같은 섹터에만 적용된다', () => {
     const defs = [makeStockDef({ id: 'a', sector: '바이오' }), makeStockDef({ id: 'b', sector: '조선' })]

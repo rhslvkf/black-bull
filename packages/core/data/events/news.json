@@ -70,7 +70,7 @@
   { "id": "n_def_export", "category": "news", "weight": 7,
     "impact": { "target": "sector:방산", "magnitude": 0.11, "delay": 2 },
     "text": { "title": "동유럽 대규모 방산 수출 계약", "body": "지정학이 실적이 되는 시대. 마음은 편치 않다." } },
-  { "id": "n_def_budget_cut", "category": "news", "weight": 7,
+  { "id": "n_def_deal_fail", "category": "news", "weight": 7,
     "impact": { "target": "sector:방산", "magnitude": -0.11, "delay": 2 },
     "text": { "title": "수출 계약 협상 결렬 보도", "body": "체결 직전이라던 그 계약이다. 직전은 체결이 아니었다." } },
   { "id": "n_short_selling", "category": "news", "weight": 5,

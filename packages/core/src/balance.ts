@@ -36,6 +36,10 @@ export const BALANCE = {
    *  빠져 있었다 — Fix Round 1. 채널의 '방향 편향'은 이벤트 데이터를 양방향으로
    *  짝지어 없앴고(content.test.ts가 고정한다), 여기서는 '세기'만 조절한다. */
   impact: { mul: 0.85 },
+  /** 지수 ETF가 **시장 충격**을 받는 배수. 개별 종목·섹터 뉴스는 받지 않는다.
+   *  이름과 코드를 맞추기 위한 값이다 — 레버리지는 2배로, 곱버스는 반대로 2배.
+   *  (이전에는 배수가 둘 다 ±1이라 '레버리지'가 뉴스에는 레버리지가 아니었다.) */
+  etfShockMul: { lev: 2, inv: -2 },
   mental: {
     lossHold: -3, lossHoldUnemployed: -6, worsenFactor: 0.8,
     margin: -8,
@@ -43,6 +47,12 @@ export const BALANCE = {
     // 올라 흔들림이 영영 발동하지 않는다 — 월급이 매달 들어와 현금비중이 늘 높기
     // 때문에 실제로 그렇게 돼 있었다(Fix Round 1). 문턱을 올리고 회복량을 낮췄다.
     cashCalm: 2, calmCashRatio: 0.7,
+    // 손실 멘탈 피해는 **노출도**(보유평가액 / 총자산)에 비례한다. portfolioLossPct가
+    // 보유 원가 대비라서, 이 가중이 없으면 7만원짜리 1주와 몰빵의 피해가 같아진다
+    // (재리뷰 N1 실측: 1주 33% vs 시드 90% 37%). 이 게임이 가르치려는 건
+    // "주식을 갖고 있느냐"가 아니라 "얼마나 위험하게 굴렸느냐"다.
+    // lossExposureFull: 이 노출도에서 피해가 100%가 된다(그 이상은 상한).
+    lossExposureFull: 0.30,
     shakenMax: 29, resistPer: 0.06,
     sellBlockLossPct: 20,
   },

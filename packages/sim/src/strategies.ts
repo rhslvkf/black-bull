@@ -3,7 +3,21 @@ import {
   loadCards, isCardAvailable, Rand, createRng, priceOf,
 } from '@bb/core'
 
-export type Strategy = 'buyhold' | 'panic' | 'momentum' | 'random' | 'cash'
+/**
+ * 전략 이름은 게이트 제목·CLI 출력·README 표에 그대로 드러난다. 이름이 실제 동작과
+ * 다르면 게이트의 의미도 같이 거짓이 된다(재리뷰 §6).
+ *
+ * - `cash`     매매를 전혀 하지 않는다. 월급만 받는 무매매 기준선 (Ruling 52)
+ * - `seedhold` 턴 1에 **시드머니의 90%만** 넣고 156턴 방치. 이후 들어오는 월급은
+ *              영원히 현금으로 둔다 → 총 투입 자본이 최종 자산의 8% 남짓이다.
+ *              "얇은 노출로도 파산하지 않는가"를 재는 자다. (이전 이름이 `buyhold`였다)
+ * - `buyhold`  **진짜 존버.** 매 턴 현금의 90%를 넣고 절대 팔지 않는다(정액분할매수).
+ *              월급이 그대로 시장에 들어가므로 노출이 `panic`·`momentum`과 비교 가능하다.
+ * - `momentum` 최근 3턴 상승률 1등으로 갈아탄다
+ * - `random`   무작위 매매
+ * - `panic`    오르면 사고 내리면 판다 — 전형적인 흑우
+ */
+export type Strategy = 'cash' | 'seedhold' | 'buyhold' | 'momentum' | 'random' | 'panic'
 
 const tradable = (s: GameState) => s.stockDefs.filter(d => canBuy(s, d.id).ok)
 
@@ -32,8 +46,13 @@ export function act(s: GameState, strategy: Strategy, rand: Rand): { state: Game
   const pool = tradable(s)
   if (pool.length > 0) {
     switch (strategy) {
-      case 'buyhold':
+      case 'seedhold':
+        // 턴 1에 한 번만 산다. 이후 월급은 현금으로 쌓인다.
         if (s.player.holdings.length === 0) s = investPct(s, pool[0]!.id, 0.9)
+        break
+      case 'buyhold':
+        // 매 턴 현금의 90%를 같은 종목에 넣고 팔지 않는다 — 노출을 계속 유지하는 존버.
+        s = investPct(s, pool[0]!.id, 0.9)
         break
       case 'panic': {
         // 오르면 사고 내리면 판다 — 전형적인 흑우

@@ -1,7 +1,7 @@
 import { runBatch } from './runner'
 import type { Strategy } from './strategies'
 
-const STRATEGIES = ['buyhold', 'panic', 'momentum', 'random', 'cash'] as const satisfies readonly Strategy[]
+const STRATEGIES = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`)
