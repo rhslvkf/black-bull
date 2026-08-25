@@ -27,7 +27,7 @@ const UI_GLYPH: Record<string, string> = {
 // 않도록, 사람이 읽을 수 있는 한국어 설명을 키 단위로 미리 만들어 둔다. Art.tsx가
 // image 소스일 때 이 맵을 alt로 쓴다.
 const MOOD_KO: Record<string, string> = { normal: '평상시', shaken: '흔들리는 모습', joy: '기쁜 모습' }
-const NPC_NAME_KO: Record<string, string> = { daebak: '박대박', cho: '최씨', kim: '김실장', mom: '엄마' }
+const NPC_NAME_KO: Record<string, string> = { daebak: '박대박', cho: '최존버', kim: '김실장', mom: '엄마' }
 const UI_NAME_KO: Record<string, string> = {
   'ui.mental': '멘탈', 'ui.condition': '컨디션', 'ui.cash': '현금', 'ui.assets': '자산',
   'ui.up': '상승', 'ui.down': '하락', 'ui.lock': '잠금', 'ui.rumor': '루머',

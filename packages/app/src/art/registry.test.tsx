@@ -128,3 +128,23 @@ describe('ART_ALT — 이미지 교체 시 노출되는 alt는 한국어 설명�
     ;(ART as Record<string, unknown>)['char.tier0.joy'] = original
   })
 })
+
+// docs/superpowers/specs/2026-08-25-black-bull-design.md §2.6 조연 4인의 정본 한국어 이름.
+// 이 맵은 registry.tsx의 NPC_NAME_KO와 "독립적으로" 설계 문서 값을 그대로 옮긴 것이다 —
+// registry.tsx를 그대로 베껴오면 자기 자신과는 항상 일치해 드리프트를 못 잡기 때문.
+// 특히 '최존버'는 게임 내 회복 카드("최존버와 소주")에도 쓰이는 이름이라, 아트 라벨만
+// 다른 이름을 쓰면 플레이어가 같은 인물을 두 이름으로 보게 된다.
+const CANONICAL_NPC_NAME_KO: Record<string, string> = {
+  daebak: '박대박',
+  cho: '최존버',
+  kim: '김실장',
+  mom: '엄마',
+}
+
+describe('조연 4인의 한국어 이름은 설계 문서 §2.6 정본과 일치한다', () => {
+  NPCS.forEach(n => {
+    it(`npc.${n}의 ART_ALT에 "${CANONICAL_NPC_NAME_KO[n]}"가 포함된다`, () => {
+      expect(ART_ALT[`npc.${n}`]).toContain(CANONICAL_NPC_NAME_KO[n]!)
+    })
+  })
+})
