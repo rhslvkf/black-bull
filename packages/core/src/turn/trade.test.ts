@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState, makeStock, makeStockDef } from '../testkit'
 import { buy, sell, canSell, maxBuyQty } from './trade'
-import { totalAssets, cashRatio, portfolioLossPct, positionLossPct, priceOf } from './accounting'
+import { totalAssets, cashRatio, portfolioLossPct, positionLossPct, priceOf, fee, tax } from './accounting'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
 
@@ -50,7 +50,7 @@ describe('buy', () => {
   it('현금이 줄고 수량이 늘고 수수료가 붙는다', () => {
     const s = buy(makeState(), 's1', 10)
     const cost = 10 * 10000
-    expect(s.player.cash).toBe(BALANCE.seedMoney - cost - Math.floor(cost * BALANCE.feeRate))
+    expect(s.player.cash).toBe(BALANCE.seedMoney - cost - fee(cost))
     expect(s.player.holdings[0]!.qty).toBe(10)
     expect(s.player.holdings[0]!.avgCost).toBe(10000)
   })
@@ -105,7 +105,7 @@ describe('sell', () => {
     const cashAfterBuy = s.player.cash
     s = sell(s, 's1', 10)
     const gross = 10 * 10000
-    const net = gross - Math.floor(gross * BALANCE.feeRate) - Math.floor(gross * BALANCE.taxRate)
+    const net = gross - fee(gross) - tax(gross)
     expect(s.player.cash).toBe(cashAfterBuy + net)
     expect(s.player.holdings).toHaveLength(0)
   })

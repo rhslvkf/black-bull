@@ -2,8 +2,11 @@ import type { GameState } from '../types'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
 
-export const fee = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.feeRate)) : 0)
-export const tax = (gross: number) => (gross > 0 ? Math.max(1, Math.floor(gross * BALANCE.taxRate)) : 0)
+const FEE_PPM = Math.round(BALANCE.feeRate * 1_000_000)
+const TAX_PPM = Math.round(BALANCE.taxRate * 1_000_000)
+
+export const fee = (gross: number) => (gross > 0 ? Math.max(1, Math.floor((gross * FEE_PPM) / 1_000_000)) : 0)
+export const tax = (gross: number) => (gross > 0 ? Math.max(1, Math.floor((gross * TAX_PPM) / 1_000_000)) : 0)
 
 export function priceOf(state: GameState, stockId: string): number {
   const s = state.stocks.find(x => x.id === stockId)
