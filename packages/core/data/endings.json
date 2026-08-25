@@ -1,0 +1,21 @@
+{
+  "endings": [
+    { "id": "legend",    "name": "흑우의 전설",       "desc": "계좌가 0이 됐다. 3년이 숫자 하나로 정리된다." },
+    { "id": "savings",   "name": "적금이나 들걸",     "desc": "그냥 모으기만 했어도 이것보단 나았다." },
+    { "id": "breakeven", "name": "본전이 어디야",     "desc": "잃지도 벌지도 않았다. 3년이 사라졌을 뿐." },
+    { "id": "bank",      "name": "은행 이자보단 낫지","desc": "누구한테 자랑하긴 애매한 숫자." },
+    { "id": "wise",      "name": "슬기로운 투자생활", "desc": "이제 시장이 조금 보이는 것 같다. 착각일 수도 있고." },
+    { "id": "super",     "name": "슈퍼개미",          "desc": "회사는 계속 다닌다. 그게 제일 안전하다는 걸 배웠다." },
+    { "id": "fire",      "name": "파이어족",          "desc": "사표를 냈고, 아직까지는 버티고 있다." },
+    { "id": "kimheir",   "name": "김실장의 후예",     "desc": "이제 DM을 보내는 쪽이 됐다. 아무도 안 물어본 걸 알려준다." }
+  ],
+  "titles": [
+    { "id": "beatRival",   "name": "박대박을 이긴" },
+    { "id": "momSecret",   "name": "엄마 몰래" },
+    { "id": "steelMental", "name": "강철멘탈의" },
+    { "id": "noCut",       "name": "한 번도 손절 안 한" },
+    { "id": "noDebt",      "name": "빚 없이" },
+    { "id": "hodler",      "name": "존버한" },
+    { "id": "allIn",       "name": "풀매수" }
+  ]
+}

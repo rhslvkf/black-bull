@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="흑우키우기">
+  <rect width="32" height="32" rx="7" fill="#0b0e13"/>
+  <!-- 뿔 -->
+  <path d="M6 9c0-2.2 1.4-3.6 3.4-3.9.7-.1 1 .9.4 1.2C8.6 6.9 8 7.8 8 9z" fill="#e5c56b"/>
+  <path d="M26 9c0-2.2-1.4-3.6-3.4-3.9-.7-.1-1 .9-.4 1.2 1.2.6 1.8 1.5 1.8 2.7z" fill="#e5c56b"/>
+  <!-- 머리 -->
+  <path d="M8 9h16v7.5c0 5-3.6 8.5-8 8.5s-8-3.5-8-8.5z" fill="#2a3040"/>
+  <!-- 눈 -->
+  <circle cx="12.5" cy="14.5" r="1.6" fill="#e8ecf3"/>
+  <circle cx="19.5" cy="14.5" r="1.6" fill="#e8ecf3"/>
+  <!-- 코 -->
+  <rect x="12" y="19" width="8" height="4" rx="2" fill="#4f8ff7"/>
+</svg>

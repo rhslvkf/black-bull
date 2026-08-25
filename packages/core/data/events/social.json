@@ -1,0 +1,59 @@
+[
+  { "id": "s_kim_offer", "category": "social", "weight": 6,
+    "conditions": [{ "type": "statMin", "stat": "network", "value": 4 }],
+    "text": { "title": "김실장이 DM을 보냈다", "body": "\"이번 건은 확실합니다. 딱 이번만 알려드리는 거예요.\"", "speaker": "kim" },
+    "choices": [
+      { "label": "따라 들어간다", "effects": [{ "type": "flag", "key": "kim", "value": "inc" }, { "type": "buyStockPct", "stockId": "def", "pct": 0.3 }, { "type": "impact", "target": "stock:def", "magnitude": 0.14, "delay": 1, "title": "방산 수주 기대" }] },
+      { "label": "무시한다", "effects": [{ "type": "impact", "target": "stock:def", "magnitude": 0.1, "delay": 1, "title": "방산 테마 급등" }] }
+    ] },
+  { "id": "s_daebak_flex", "category": "social", "weight": 9,
+    "text": { "title": "박대박이 계좌를 인증했다", "body": "단톡방에 수익률 캡처가 올라왔다. 세 자리 수다.", "speaker": "daebak" },
+    "effects": [{ "type": "mental", "delta": -6 }, { "type": "rivalMul", "value": 1.15 }] },
+  { "id": "s_kim_paid_room", "category": "social", "weight": 5,
+    "conditions": [{ "type": "statMin", "stat": "network", "value": 5 }],
+    "text": { "title": "김실장이 유료방을 권한다", "body": "\"이번 달만 30만원입니다. 다음 달부턴 두 배예요.\"", "speaker": "kim" },
+    "choices": [
+      { "label": "결제한다", "effects": [{ "type": "flag", "key": "kim", "value": "inc" }, { "type": "cash", "delta": -300000 }, { "type": "mental", "delta": -5 }] },
+      { "label": "생각해본다", "effects": [{ "type": "mental", "delta": 2 }] }
+    ] },
+  { "id": "s_kim_tip", "category": "social", "weight": 5,
+    "conditions": [{ "type": "statMin", "stat": "network", "value": 6 }],
+    "text": { "title": "김실장이 종목 하나를 찍어줬다", "body": "\"이건 진짜 저만 압니다.\" 저번에도 그렇게 말했다.", "speaker": "kim" },
+    "choices": [
+      { "label": "따라 산다", "effects": [{ "type": "flag", "key": "kim", "value": "inc" }, { "type": "buyStockPct", "stockId": "ecp", "pct": 0.25 }, { "type": "impact", "target": "stock:ecp", "magnitude": 0.10, "delay": 1, "title": "2차전지 단기 급등" }] },
+      { "label": "이번엔 안 믿는다", "effects": [{ "type": "mental", "delta": 3 }] }
+    ] },
+  { "id": "s_daebak_loss", "category": "social", "weight": 7,
+    "text": { "title": "박대박 계좌가 반토막 났다는 소문이 돈다", "body": "단톡방이 조용하다. 캡처는 더 이상 안 올라온다.", "speaker": "daebak" },
+    "effects": [{ "type": "mental", "delta": 4 }, { "type": "rivalMul", "value": 0.88 }] },
+  { "id": "s_community_faith", "category": "social", "weight": 7,
+    "text": { "title": "\"존버는 승리한다\" 글이 도배됐다", "body": "추천 수만 3천이다. 손실 인증은 그 밑에 조용히 달린다." },
+    "effects": [{ "type": "mental", "delta": -3 }] },
+  { "id": "s_forum_pump", "category": "social", "weight": 6,
+    "conditions": [{ "type": "regime", "value": "overheat" }],
+    "text": { "title": "종토방에 \"이거 3배 간다\" 글이 올라왔다", "body": "근거는 없다. 댓글은 이미 200개다." },
+    "choices": [
+      { "label": "일단 산다", "effects": [{ "type": "buyStockPct", "stockId": "gam", "pct": 0.2 }, { "type": "impact", "target": "stock:gam", "magnitude": 0.08, "delay": 1, "title": "테마성 매수세 유입" }] },
+      { "label": "그냥 지나간다", "effects": [{ "type": "mental", "delta": 2 }] }
+    ] },
+  { "id": "s_group_buy", "category": "social", "weight": 5,
+    "conditions": [{ "type": "statMin", "stat": "network", "value": 3 }],
+    "text": { "title": "단톡방에서 공동매수 제안이 왔다", "body": "\"n분의 1로 모으면 물량 확보가 쉽습니다.\" 수익도 n분의 1이라는 말은 안 한다." },
+    "choices": [
+      { "label": "참여한다", "effects": [{ "type": "buyStockPct", "stockId": "def", "pct": 0.15 }, { "type": "impact", "target": "stock:def", "magnitude": 0.06, "delay": 1, "title": "매수세 결집" }] },
+      { "label": "빠진다", "effects": [{ "type": "mental", "delta": 2 }] }
+    ] },
+  { "id": "s_kakao_open", "category": "social", "weight": 6,
+    "text": { "title": "오픈채팅방에 초대됐다", "body": "인원 999+, 알림이 쉬지 않고 울린다." },
+    "choices": [
+      { "label": "들어간다", "effects": [{ "type": "stat", "stat": "network", "delta": 0.3 }, { "type": "mental", "delta": -2 }] },
+      { "label": "나간다", "effects": [{ "type": "mental", "delta": 2 }] }
+    ] },
+  { "id": "s_daebak_borrow", "category": "social", "weight": 5,
+    "conditions": [{ "type": "statMin", "stat": "network", "value": 5 }],
+    "text": { "title": "박대박이 돈을 빌려달라고 한다", "body": "\"반대매매 막을 돈만 있으면 돼.\" 저번에 빌린 돈도 아직이다.", "speaker": "daebak" },
+    "choices": [
+      { "label": "빌려준다", "effects": [{ "type": "cash", "delta": -1000000 }, { "type": "mental", "delta": -8 }] },
+      { "label": "거절한다", "effects": [{ "type": "mental", "delta": -3 }, { "type": "stat", "stat": "network", "delta": -0.2 }] }
+    ] }
+]
