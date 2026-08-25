@@ -44,7 +44,7 @@ for (const t of TIERS) for (const m of MOODS) {
   altEntries.push([key, `${TIER_LABELS[t]} 캐릭터 (${MOOD_KO[m]})`])
 }
 for (const n of NPCS) {
-  entries.push([`npc.${n}`, { kind: 'svg', component: makePortrait(n) }])
+  entries.push([`npc.${n}`, { kind: 'svg', component: makePortrait(n, NPC_NAME_KO[n] ?? n) }])
   altEntries.push([`npc.${n}`, `등장인물 ${NPC_NAME_KO[n] ?? n}`])
 }
 // settleTier(economy.ts)는 next > cur일 때 promote.${next}(next=1..5), next < cur일 때
@@ -59,7 +59,7 @@ for (const t of DEMOTE_TIERS) {
 }
 for (const id of ENDING_IDS) {
   const [tone, glyph] = ENDING_META[id]!
-  entries.push([`ending.${id}`, { kind: 'svg', component: makeScene(tone, glyph, id) }])
+  entries.push([`ending.${id}`, { kind: 'svg', component: makeScene(tone, glyph, ENDING_NAME_KO[id] ?? id) }])
   altEntries.push([`ending.${id}`, `엔딩: ${ENDING_NAME_KO[id] ?? id}`])
 }
 for (const s of SECTORS) {
@@ -67,7 +67,7 @@ for (const s of SECTORS) {
   altEntries.push([`sector.${s}`, `${s} 섹터`])
 }
 for (const k of UI_KEYS) {
-  entries.push([k, { kind: 'svg', component: makeIcon(UI_GLYPH[k]!, k) }])
+  entries.push([k, { kind: 'svg', component: makeIcon(UI_GLYPH[k]!, UI_NAME_KO[k] ?? k) }])
   altEntries.push([k, `${UI_NAME_KO[k] ?? k} 아이콘`])
 }
 

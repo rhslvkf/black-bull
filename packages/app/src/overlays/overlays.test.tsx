@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { EventModal } from './EventModal'
@@ -10,6 +13,23 @@ import { useGame, SAVE_KEY } from '../store/store'
 import { loadEvents, ENDINGS, TITLES } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+
+describe('오버레이 max-width (리뷰 M-5)', () => {
+  // jsdom은 실제 CSS를 계산하지 않으므로(MarketScreen.test.tsx의 터치 타깃 검증과 동일한
+  // 이유), index.css 소스에서 .overlay 규칙 블록을 직접 파싱해 고정한다. 넓은 화면
+  // (데스크톱 등 480px보다 큰 뷰포트)에서 오버레이 반투명 배경이 앱 본체(.app,
+  // max-width:480px)보다 넓게 퍼지지 않는지를 보장한다.
+  const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const css = readFileSync(cssPath, 'utf-8')
+  const overlayBlock = css.match(/(?:^|\n)\.overlay\s*\{[^}]*\}/)?.[0] ?? ''
+
+  it('.overlay 규칙이 index.css에 존재한다', () => {
+    expect(overlayBlock).not.toBe('')
+  })
+  it('.overlay는 앱 본체와 같은 max-width: 480px로 제한된다', () => {
+    expect(overlayBlock).toMatch(/max-width:\s*480px/)
+  })
+})
 
 describe('EventModal', () => {
   it('대기 중인 선택지가 없으면 아무것도 안 그린다', () => {
@@ -49,6 +69,24 @@ describe('EventModal', () => {
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)
+  })
+  it('선택지가 없는 이벤트는 "확인" 버튼 하나만 뜨고, 누르면 대기열이 빈다 (리뷰 M-4)', () => {
+    // drawEvents(engine.ts)는 choices가 있는 이벤트만 pendingChoices에 넣으므로 정상
+    // 플레이에서는 선택지 없는 이벤트가 여기까지 오지 않는다. 그래도 EventModal의
+    // `(def.choices ?? [{ label: '확인', effects: [] }])` 폴백은 방어 코드로 존재하고,
+    // 실제 콘텐츠 데이터에 choices 필드가 없는 이벤트가 있으므로(p_alone_dinner 등)
+    // 그 데이터로 폴백 경로를 직접 고정한다.
+    const ev = loadEvents().find(e => !e.choices)!
+    expect(ev).toBeDefined()
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
+    render(<EventModal />)
+    expect(screen.getByText(ev.text.title)).toBeDefined()
+    const buttons = screen.getAllByTestId(/^choice-/)
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]!.textContent).toBe('확인')
+    fireEvent.click(buttons[0]!)
+    expect(useGame.getState().state!.pendingChoices).toHaveLength(0)
   })
 })
 
@@ -93,7 +131,10 @@ describe('EndingView', () => {
       endingId: 'super', endingName: '슈퍼개미', titles: ['박대박을 이긴'], finalAssets: 700_000_000,
     } } })
     render(<EndingView />)
-    expect(screen.getByText(/슈퍼개미/)).toBeDefined()
+    // 리뷰 Major B-1 수정으로 엔딩 아트(svg)에도 한국어 엔딩명이 그려지므로,
+    // 텍스트만으로 찾으면 svg의 <text>와 <h2>가 둘 다 걸려 모호해진다.
+    // h2로 좁혀 "엔딩명이 제목으로 보인다"는 원래 취지를 유지한다.
+    expect(screen.getByRole('heading', { name: '슈퍼개미' })).toBeDefined()
     expect(screen.getByText(/박대박을 이긴/)).toBeDefined()
     expect(screen.getByText('700,000,000원')).toBeDefined()
     fireEvent.click(screen.getByTestId('restart'))

@@ -2,7 +2,6 @@ import { ENDINGS } from '@bb/core'
 import { useGame } from '../store/store'
 import { won } from '../format'
 import { Art } from '../art/Art'
-import type { ArtKey } from '../art/keys'
 
 export function EndingView() {
   const s = useGame(st => st.state)
@@ -14,7 +13,7 @@ export function EndingView() {
 
   return (
     <div className="overlay ending" data-testid="ending">
-      <Art id={`ending.${endingId}` as ArtKey} size={280} />
+      <Art id={`ending.${endingId}`} size={280} />
       {titles.length > 0 && <p className="titles">{titles.join(' · ')}</p>}
       <h2>{endingName}</h2>
       <p className="ending-desc">{desc}</p>

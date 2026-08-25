@@ -148,3 +148,33 @@ describe('조연 4인의 한국어 이름은 설계 문서 §2.6 정본과 일�
     })
   })
 })
+
+// 리뷰 Major B-1 / Minor M-2: <img alt>(ART_ALT, Minor #2)는 이미 한국어였지만, svg
+// 컴포넌트 자신이 만드는 aria-label(과 엔딩의 경우 화면에 그려지는 <text>)은 별도
+// 경로라 검사되지 않았다 — 엔딩 화면에 "bank"/"legend" 같은 원시 id가, NPC 초상화·UI
+// 아이콘의 aria-label에 "kim"/"ui.calendar" 같은 원시 키가 그대로 노출됐다.
+// 전체 60개 키를 실제로 렌더해 role="img" 요소의 aria-label에 한글이 없으면 잡는다.
+describe('svg 아트의 aria-label에 내부 영문 키/id가 새지 않는다 (리뷰 Major B-1 / M-2)', () => {
+  ALL_ART_KEYS.forEach(k => {
+    if (ART[k]!.kind !== 'svg') return
+    it(`${k}의 aria-label은 한국어다`, () => {
+      const { container } = render(<Art id={k} />)
+      const label = container.querySelector('[role="img"]')?.getAttribute('aria-label')
+      expect(label, `aria-label 누락: ${k}`).toBeTruthy()
+      expect(HANGUL.test(label!), `원시 키/id가 새어나감: ${k} -> aria-label="${label}"`).toBe(true)
+    })
+  })
+})
+
+// 엔딩 화면(EndingView)은 aria-label뿐 아니라 이 <text>를 실제 화면에 그린다(makeScene).
+// 8개 엔딩 전부 화면에 그려지는 라벨이 한국어 엔딩명인지(원시 id가 아닌지) 고정한다.
+describe('엔딩 아트의 화면 라벨은 원시 id가 아니라 한국어 엔딩명이다 (리뷰 Major B-1)', () => {
+  ENDING_IDS.forEach(id => {
+    it(`ending.${id}의 svg에는 원시 id "${id}" 텍스트가 그려지지 않는다`, () => {
+      const key = `ending.${id}` as ArtKey
+      const { container } = render(<Art id={key} />)
+      const texts = Array.from(container.querySelectorAll('text')).map(t => t.textContent)
+      expect(texts, `엔딩 svg에 원시 id가 그대로 그려짐: ${key}`).not.toContain(id)
+    })
+  })
+})
