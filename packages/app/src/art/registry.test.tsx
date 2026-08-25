@@ -1,10 +1,24 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { ART, ALL_ART_KEYS } from './registry'
+import { SECTORS as CORE_SECTORS, ENDING_IDS as CORE_ENDING_IDS } from '@bb/core'
+import { ART, ALL_ART_KEYS, ART_ALT } from './registry'
 import { Art } from './Art'
 import {
   TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
 } from './keys'
+
+// Ruling 56: keys.ts의 SECTORS/ENDING_IDS는 로컬 복제가 아니라 @bb/core를 그대로
+// 재수출한 것이어야 한다. 값이 아니라 "같은 배열 참조"인지(toBe)를 검사한다 — 값만
+// 비교하면 누군가 로컬에 core와 똑같은 값을 다시 하드코딩해도(=재수출 규약을 깨도)
+// 통과해버리기 때문이다. 참조 동일성만이 "복제가 원천적으로 불가능하다"를 보장한다.
+describe('SECTORS/ENDING_IDS는 @bb/core 재수출이다 (Ruling 56)', () => {
+  it('keys.ts의 SECTORS는 @bb/core의 SECTORS와 동일한 배열 객체다', () => {
+    expect(SECTORS).toBe(CORE_SECTORS)
+  })
+  it('keys.ts의 ENDING_IDS는 @bb/core의 ENDING_IDS와 동일한 배열 객체다', () => {
+    expect(ENDING_IDS).toBe(CORE_ENDING_IDS)
+  })
+})
 
 describe('아트 레지스트리', () => {
   it('모든 키가 등록되어 있다', () => {
@@ -86,5 +100,31 @@ describe('settleTier 컷신 키 정합성 (economy.ts와 동일한 분기)', () 
   it('도달 불가능한 promote.0 / demote.5는 애초에 키 목록에 없다', () => {
     expect(ALL_ART_KEYS).not.toContain('cutscene.promote.0')
     expect(ALL_ART_KEYS).not.toContain('cutscene.demote.5')
+  })
+})
+
+// Minor #2: 이미지로 교체됐을 때 <img alt>에 내부 키 문자열이 그대로 노출되면 안 된다.
+const HANGUL = /[가-힣]/
+
+describe('ART_ALT — 이미지 교체 시 노출되는 alt는 한국어 설명이다 (Minor #2)', () => {
+  it('모든 키에 ART_ALT 항목이 있고, 원본 키 문자열 그대로가 아니다', () => {
+    ALL_ART_KEYS.forEach(k => {
+      expect(ART_ALT[k], `ART_ALT 누락: ${k}`).toBeDefined()
+      expect(ART_ALT[k]).not.toBe(k)
+    })
+  })
+  it('모든 alt 설명에 한글이 포함된다 (내부 영문 키가 그대로 노출되지 않는다)', () => {
+    ALL_ART_KEYS.forEach(k => {
+      expect(HANGUL.test(ART_ALT[k]!), `한글 설명이 아님: ${k} -> "${ART_ALT[k]}"`).toBe(true)
+    })
+  })
+  it('실제로 image로 교체된 <img>의 alt는 원본 키가 아니라 한국어 설명이다', () => {
+    const original = ART['char.tier0.joy']
+    ;(ART as Record<string, unknown>)['char.tier0.joy'] = { kind: 'image', src: '/art/x.webp' }
+    const { container } = render(<Art id="char.tier0.joy" />)
+    const alt = container.querySelector('img')?.getAttribute('alt')
+    expect(alt).not.toBe('char.tier0.joy')
+    expect(alt && HANGUL.test(alt)).toBe(true)
+    ;(ART as Record<string, unknown>)['char.tier0.joy'] = original
   })
 })

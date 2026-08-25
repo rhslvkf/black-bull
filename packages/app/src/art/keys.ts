@@ -1,8 +1,12 @@
+// Ruling 56: SECTORS/ENDING_IDS는 @bb/core의 배열을 그대로 재사용한다(로컬 복제 금지).
+// core가 재수출하는 배열 참조를 그대로 쓰므로, core 쪽 목록이 바뀌면 이 파일도 같은 값을
+// 참조해 자동으로 따라간다 — 드리프트가 '테스트로 잡히는' 게 아니라 애초에 불가능해진다.
+import { SECTORS, ENDING_IDS } from '@bb/core'
+export { SECTORS, ENDING_IDS }
+
 export const TIERS = [0, 1, 2, 3, 4, 5] as const
 export const MOODS = ['normal', 'shaken', 'joy'] as const
 export const NPCS = ['daebak', 'cho', 'kim', 'mom'] as const
-export const SECTORS = ['반도체', '2차전지', '바이오', '조선', '게임', '금융', '엔터', '방산'] as const
-export const ENDING_IDS = ['legend', 'savings', 'breakeven', 'bank', 'wise', 'super', 'fire', 'kimheir'] as const
 export const UI_KEYS = [
   'ui.mental', 'ui.condition', 'ui.cash', 'ui.assets', 'ui.up', 'ui.down',
   'ui.lock', 'ui.rumor', 'ui.news', 'ui.card', 'ui.tier', 'ui.calendar',

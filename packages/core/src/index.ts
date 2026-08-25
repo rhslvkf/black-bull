@@ -12,4 +12,8 @@ export { resolveChoice } from './events/engine'
 export { isShaken } from './mental/mental'
 export { tierOf } from './turn/economy'
 export { analyzeStock } from './market/analysis'
-export { judgeEnding, ENDINGS, TITLES } from './endings/endings'
+export { SECTORS } from './market/stocks'
+export {
+  judgeEnding, ENDINGS, TITLES,
+  ENDING_IDS, type EndingId, TITLE_IDS, type TitleId,
+} from './endings/endings'
