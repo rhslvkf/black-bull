@@ -1,6 +1,5 @@
 {
   "name": "black-bull",
   "private": true,
-  "scripts": { "test": "pnpm -r test", "build": "pnpm -r --if-present build" },
-  "pnpm": { "onlyBuiltDependencies": ["esbuild"] }
+  "scripts": { "test": "pnpm -r test", "build": "pnpm -r --if-present build" }
 }
