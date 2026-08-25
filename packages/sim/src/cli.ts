@@ -1,0 +1,31 @@
+import { runBatch } from './runner'
+import type { Strategy } from './strategies'
+
+const STRATEGIES = ['buyhold', 'panic', 'momentum', 'random', 'cash'] as const satisfies readonly Strategy[]
+
+function arg(name: string, fallback: string): string {
+  const i = process.argv.indexOf(`--${name}`)
+  return i >= 0 ? (process.argv[i + 1] ?? fallback) : fallback
+}
+
+function parseStrategy(raw: string): Strategy {
+  const found = STRATEGIES.find(s => s === raw)
+  if (!found) {
+    throw new Error(`알 수 없는 전략: ${raw} (가능한 값: ${STRATEGIES.join(', ')})`)
+  }
+  return found
+}
+
+const runs = Number(arg('runs', '1000'))
+const strategy = parseStrategy(arg('strategy', 'buyhold'))
+const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`
+
+const r = runBatch(runs, strategy)
+console.log(`\n전략 ${r.strategy} / ${r.runs}판`)
+console.log(`  파산율        ${(r.bankruptRate * 100).toFixed(1)}%`)
+console.log(`  자산 중앙값   ${won(r.assetsMedian)}`)
+console.log(`  P10 / P90     ${won(r.assetsP10)} / ${won(r.assetsP90)}`)
+console.log(`  평균 흔들림   ${r.avgShakenTurns.toFixed(1)}턴`)
+console.log('  엔딩 분포')
+Object.entries(r.endingCounts).sort((a, b) => b[1] - a[1])
+  .forEach(([id, n]) => console.log(`    ${id.padEnd(12)} ${n} (${((n / r.runs) * 100).toFixed(1)}%)`))
