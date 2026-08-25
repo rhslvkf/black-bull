@@ -249,3 +249,43 @@ ul { list-style: none; padding: 0; margin: 0; }
 .h-qty { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
 .h-avg { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
 .holdings .up, .holdings .down, .holdings .neutral { font-size: 12.5px; font-weight: 700; flex: 0 0 auto; min-width: 48px; text-align: right; }
+
+/* ---------- Overlays: 프롤로그·이벤트·컷신·엔딩 ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; padding: 24px;
+  background: rgba(11, 14, 19, .96); text-align: center;
+}
+.overlay .primary {
+  min-height: 44px; padding: 12px 28px; border: 0; border-radius: 10px;
+  background: var(--good); color: #fff; font-size: 15px; font-weight: 700;
+}
+.cut-text { white-space: pre-line; font-size: 15px; line-height: 1.7; max-width: 320px; color: var(--text); }
+.event-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 340px; }
+.event-body { white-space: pre-line; font-size: 14px; color: var(--muted); line-height: 1.6; }
+.choices { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.choices button {
+  min-height: 44px; padding: 11px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); font-size: 14px;
+}
+.titles { color: var(--gold); font-size: 13px; }
+.ending-desc { color: var(--muted); font-size: 13px; max-width: 320px; }
+.final-assets { font-size: 24px; font-weight: 700; color: var(--text); }
+.skip {
+  position: absolute; top: 16px; right: 16px; min-height: 44px; padding: 0 10px;
+  background: none; border: 0; color: var(--muted); font-size: 13px;
+}
+
+/* ---------- Codex ---------- */
+.codex-sum { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 16px; }
+.codex-list, .codex-titles { list-style: none; padding: 0; }
+.codex-list li { display: flex; flex-direction: column; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.codex-list li strong { font-size: 13.5px; }
+.codex-list li span { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.codex-titles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.codex-titles li {
+  padding: 8px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel);
+  font-size: 12.5px;
+}
+.codex-list li.got strong { color: var(--gold); }
+.codex-list li.locked, .codex-titles li.locked { color: var(--muted); }
