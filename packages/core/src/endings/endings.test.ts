@@ -46,10 +46,13 @@ describe('judgeEnding 우선순위', () => {
   it('10억이어도 재직이면 슈퍼개미', () => {
     expect(judgeEnding(at(1_500_000_000), false).endingId).toBe('super')
   })
-  it('5억~10억 퇴사자도 판정 공백 없이 슈퍼개미다', () => {
+  // 스펙 §5.1 표: `슈퍼개미 | 5억 이상, 재직 중`. 이 구간의 퇴사자는 판정 공백이 아니라
+  // 한 칸 아래인 wise(1억 이상)가 받는다 — 어느 엔딩도 못 받는 구간은 생기지 않는다.
+  // (Task 17 브리프는 '공백 없이 super'로 적었지만 구속력 있는 권위는 스펙이다. 최종 리뷰 Minor 11)
+  it('5억~10억 퇴사자는 슈퍼개미가 아니라 슬기로운 개미다', () => {
     const s = at(700_000_000)
     s.player.employed = false
-    expect(judgeEnding(s, false).endingId).toBe('super')
+    expect(judgeEnding(s, false).endingId).toBe('wise')
   })
   it('자산 구간이 순서대로 잡힌다', () => {
     // 경계는 BALANCE.endings에서 파생시킨다. 리터럴을 박아두면 밸런싱으로 경계를 옮길 때
@@ -193,5 +196,27 @@ describe('endings.json 데이터 유효성', () => {
     for (const t of TITLES) {
       if (t.name.length === 0) throw new Error(`칭호 ${t.id}의 name이 비어있다`)
     }
+  })
+})
+
+// 최종 리뷰 Minor 11 — 스펙 §5.1의 `슈퍼개미 | 5억 이상, 재직 중`에서 재직 조건이 빠져 있었다.
+describe('슈퍼개미 엔딩은 재직 중일 때만 (스펙 §5.1)', () => {
+  it('5억 이상 재직 중이면 super다', () => {
+    const s = makeState()
+    s.player.cash = BALANCE.endings.superMin
+    s.player.employed = true
+    expect(judgeEnding(s, false).endingId).toBe('super')
+  })
+  it('같은 자산이라도 퇴사했으면 super가 아니라 wise다', () => {
+    const s = makeState()
+    s.player.cash = BALANCE.endings.superMin
+    s.player.employed = false
+    expect(judgeEnding(s, false).endingId).toBe('wise')
+  })
+  it('퇴사자도 fireMin을 넘으면 fire다 (퇴사 경로가 막힌 게 아니다)', () => {
+    const s = makeState()
+    s.player.cash = BALANCE.endings.fireMin
+    s.player.employed = false
+    expect(judgeEnding(s, false).endingId).toBe('fire')
   })
 })

@@ -5,12 +5,15 @@ import {
 } from '@bb/core'
 
 /** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절). */
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 /** 키 이름도 버전에서 파생시킨다 — 리터럴로 'v1'을 박아두면 SAVE_VERSION을 올렸을 때
  *  키만 v1로 남아 이름이 거짓말이 된다(리뷰 Minor 2). 키가 바뀌면 구버전 저장은
  *  읽히지 않고 남아 있다가 브라우저가 정리한다 — version 필드 검사와 이중 방어다. */
 export const SAVE_KEY = `blackbull.save.v${SAVE_VERSION}`
 export const CODEX_KEY = 'blackbull.codex.v1'
+/** 프롤로그를 봤는지. React state로만 두면 1턴에 새로고침할 때마다 다시 뜬다
+ *  (최종 리뷰 Minor 9). GameState 스키마와 무관하므로 자체 키를 쓴다. */
+export const PROLOGUE_KEY = 'blackbull.prologue.v1'
 
 export type TabKey = 'home' | 'market' | 'account' | 'codex'
 export interface Codex { endings: string[]; titles: string[]; bestAssets: number; runs: number }
@@ -34,6 +37,11 @@ function isValidGameState(x: unknown): x is GameState {
   if (typeof player.cash !== 'number') return false
   if (!Array.isArray(player.holdings)) return false
   if (!Array.isArray(s.stockDefs)) return false
+  // HUD가 렌더 즉시 읽는다(noTradeBaseline → trackers.netPayroll). 빠져 있으면 수익률이
+  // NaN%로 표시되므로 다른 렌더 필드와 같은 급으로 검사한다. v1 저장에는 이 필드가
+  // 없어 여기서 걸러지고, SAVE_KEY도 v2로 바뀌어 이중으로 막힌다.
+  if (!s.trackers || typeof s.trackers !== 'object') return false
+  if (typeof (s.trackers as Record<string, unknown>).netPayroll !== 'number') return false
   return true
 }
 function readSave(): GameState | null {
@@ -63,13 +71,23 @@ function readCodex(): Codex {
 function writeCodex(c: Codex) {
   try { localStorage.setItem(CODEX_KEY, JSON.stringify(c)) } catch { /* 무시 */ }
 }
+function readPrologueDone(): boolean {
+  try { return localStorage.getItem(PROLOGUE_KEY) === '1' } catch { return false }
+}
 
 interface Store {
   state: GameState | null
   tab: TabKey
   selectedStock: string | null
   codex: Codex
+  /** 프롤로그를 이미 본 판인가 (새로고침해도 유지된다). */
+  prologueDone: boolean
+  /** 이번 턴에 고른 카드. 탭을 옮겨도 유지돼야 한다 — HomeScreen의 지역 상태로 두면
+   *  App이 화면을 언마운트할 때마다 조용히 사라진다(최종 리뷰 Minor 8). */
+  picked: string[]
   newGame(seed?: number): void
+  finishPrologue(): void
+  togglePick(id: string, limit: number): void
   next(cards: string[]): void
   doBuy(id: string, qty: number): void
   doSell(id: string, qty: number): void
@@ -112,12 +130,25 @@ export const useGame = create<Store>((set, get) => {
     tab: 'home',
     selectedStock: null,
     codex: readCodex(),
+    prologueDone: readPrologueDone(),
+    picked: [],
     newGame(seed = Math.floor(Math.random() * 2 ** 31)) {
       const s = initGame(seed)
       writeSave(s)
-      set({ state: s, tab: 'home', selectedStock: null })
+      set({ state: s, tab: 'home', selectedStock: null, picked: [] })
     },
-    next(cards) { guard(s => advanceTurn(s, cards)) },
+    finishPrologue() {
+      try { localStorage.setItem(PROLOGUE_KEY, '1') } catch { /* 무시 */ }
+      set({ prologueDone: true })
+    },
+    togglePick(id, limit) {
+      const p = get().picked
+      const next = p.includes(id)
+        ? p.filter(x => x !== id)
+        : p.length >= limit ? [...p.slice(1), id] : [...p, id]
+      set({ picked: next })
+    },
+    next(cards) { guard(s => advanceTurn(s, cards)); set({ picked: [] }) },
     doBuy(id, qty) { guard(s => buy(s, id, qty)) },
     doSell(id, qty) { guard(s => sell(s, id, qty)) },
     choose(eventId, idx) { guard(s => resolveChoice(s, eventId, idx, events)) },
@@ -130,6 +161,11 @@ export const useGame = create<Store>((set, get) => {
       writeSave(next)
       set({ state: next })
     },
-    reset() { set({ state: readSave(), codex: readCodex(), tab: 'home', selectedStock: null }) },
+    reset() {
+      set({
+        state: readSave(), codex: readCodex(), prologueDone: readPrologueDone(),
+        tab: 'home', selectedStock: null, picked: [],
+      })
+    },
   }
 })

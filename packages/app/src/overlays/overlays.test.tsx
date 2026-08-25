@@ -9,7 +9,7 @@ import { EndingView } from './EndingView'
 import { PrologueView } from './PrologueView'
 import { CodexScreen } from '../screens/CodexScreen'
 import { HomeScreen } from '../screens/HomeScreen'
-import { useGame, SAVE_KEY } from '../store/store'
+import { useGame, SAVE_KEY, SAVE_VERSION } from '../store/store'
 import { loadEvents, ENDINGS, TITLES } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
@@ -108,7 +108,7 @@ describe('CutsceneView', () => {
     // 실제 저장 파일 포맷 그대로 localStorage에 써서 store가 그것을 읽어들이게 한다.
     const s = useGame.getState().state!
     const withCutscene = { ...s, cutscene: 'cutscene.promote.1' }
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: withCutscene }))
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: withCutscene }))
     act(() => { useGame.getState().reset() })
     expect(useGame.getState().state!.cutscene).toBe('cutscene.promote.1')
 

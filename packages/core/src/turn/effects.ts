@@ -1,4 +1,5 @@
 import type { Effect, GameState } from '../types'
+import { BALANCE } from '../balance'
 import { buy, maxBuyQty } from './trade'
 import { priceOf } from './accounting'
 import { GameError } from '../error'
@@ -54,7 +55,7 @@ export function applyEffects(state: GameState, effects: Effect[]): GameState {
         const losing = s.player.holdings
           .filter(h => priceOf(s, h.stockId) < h.avgCost)
           .sort((a, b) => priceOf(s, a.stockId) / a.avgCost - priceOf(s, b.stockId) / b.avgCost)[0]
-        if (losing) s = buyWithBudget(s, losing.stockId, s.player.cash * 0.2)
+        if (losing) s = buyWithBudget(s, losing.stockId, s.player.cash * BALANCE.averageDownPct)
         break
       }
       default: {

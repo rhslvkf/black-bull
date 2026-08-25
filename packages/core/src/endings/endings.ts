@@ -30,7 +30,9 @@ function pickEnding(state: GameState, assets: number, bankrupt: boolean): Ending
   if (bankrupt || assets <= 0) return 'legend'
   if (state.player.stats.network >= 8 && state.flags['kimRoom'] === true) return 'kimheir'
   if (assets >= e.fireMin && !state.player.employed) return 'fire'
-  if (assets >= e.superMin) return 'super'
+  // 스펙 §5.1 표는 `슈퍼개미 | 5억 이상, 재직 중`이다. 재직 조건이 빠져 있어 퇴사자도
+  // super가 됐다(최종 리뷰 Minor 11). 퇴사한 5억~10억 구간은 wise로 내려간다.
+  if (assets >= e.superMin && state.player.employed) return 'super'
   if (assets >= e.wiseMin) return 'wise'
   if (assets > e.breakevenHigh) return 'bank'
   if (assets >= e.savingsBelow) return 'breakeven'

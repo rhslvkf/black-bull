@@ -156,6 +156,16 @@ ul { list-style: none; padding: 0; margin: 0; }
 .card-name { display: flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13.5px; }
 .card-desc { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); line-height: 1.4; }
 
+.hud-baseline { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.card-lock { display: block; margin-top: 4px; font-size: 10.5px; color: var(--danger); }
+
+.turn-skipped {
+  margin: 10px 0 0; font-size: 12px; color: var(--danger); text-align: center;
+  background: var(--danger-soft); border: 1px solid rgba(224, 82, 82, .4);
+  border-radius: 8px; padding: 8px; animation: fade-in .2s ease;
+}
+
 .turn-blocked {
   margin: 12px 0 0; font-size: 12px; color: var(--gold); text-align: center;
   background: rgba(230, 180, 90, .1); border: 1px solid rgba(230, 180, 90, .3);

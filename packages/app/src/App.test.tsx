@@ -56,3 +56,49 @@ describe('오버레이 우선순위 (리뷰 M-3)', () => {
     expect(overlays[overlays.length - 1]!.getAttribute('data-testid')).toBe('ending')
   })
 })
+
+// 최종 리뷰 Minor 9 — prologueDone이 React state라 1턴에 새로고침하면 프롤로그가 다시 떴다.
+describe('프롤로그는 새로고침해도 다시 뜨지 않는다 (최종 리뷰 Minor 9)', () => {
+  it('건너뛴 뒤 새로고침(reset)해도 홈 화면으로 돌아온다', () => {
+    const first = render(<App />)
+    expect(screen.getByTestId('prologue-skip')).toBeDefined()
+    fireEvent.click(screen.getByTestId('prologue-skip'))
+    expect(screen.queryByTestId('prologue-skip')).toBeNull()
+
+    first.unmount()
+    act(() => { useGame.getState().reset() })   // 새로고침 = 스토어를 저장에서 다시 읽는다
+    render(<App />)
+    expect(screen.queryByTestId('prologue-skip')).toBeNull()
+    expect(screen.getByTestId('next-turn')).toBeDefined()
+  })
+  it('저장을 지운 새 플레이어에게는 여전히 뜬다 (위 테스트가 공회전이 아님)', () => {
+    localStorage.clear()
+    act(() => { useGame.getState().reset(); useGame.getState().newGame(1) })
+    render(<App />)
+    expect(screen.getByTestId('prologue-skip')).toBeDefined()
+  })
+})
+
+// 최종 리뷰 Minor 8 — 탭을 옮기면 HomeScreen이 언마운트되면서 고른 카드가 사라졌다.
+describe('고른 카드는 탭을 옮겨도 남는다 (최종 리뷰 Minor 8)', () => {
+  it('시세 탭에 다녀와도 선택이 유지된다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('card-hodl'))
+    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+
+    act(() => { useGame.getState().setTab('market') })
+    expect(screen.queryByTestId('card-hodl')).toBeNull()   // 정말로 언마운트됐다
+    act(() => { useGame.getState().setTab('home') })
+
+    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)
+  })
+  it('턴을 넘기면 선택이 비워진다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('next-turn'))
+    expect(useGame.getState().picked).toEqual([])
+  })
+})

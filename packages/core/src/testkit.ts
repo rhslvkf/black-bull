@@ -23,8 +23,8 @@ export function makeState(over: Partial<GameState> = {}): GameState {
     pendingImpacts: [], news: [], firedOneShots: [], flags: {},
     pendingChoices: [], rivalAssets: BALANCE.rival.start,
     trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0,
-      maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0 },
-    prevLossPct: 0, cutscene: null, status: 'playing', ending: null,
+      maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0 },
+    prevLossPct: 0, cutscene: null, lastTurnSkip: null, status: 'playing', ending: null,
     ...over,
   }
 }

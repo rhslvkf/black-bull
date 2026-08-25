@@ -102,6 +102,22 @@ describe('runBatch', () => {
     expect(r.assetsMedian).toBeLessThanOrEqual(r.assetsP90)
   })
 
+  // 최종 리뷰 C1: 표정 축이 상수로 붕괴해 있었다(월급 입금만으로 턴 4부터 영구 joy,
+  // char.tier{n}.normal 6개 키가 사장). 붕괴는 단위 테스트로는 안 보인다 —
+  // "실제 플레이 156턴에서 세 표정이 다 나오는가"로만 잡힌다.
+  it('캐릭터 표정 3종이 실제 플레이에서 모두 나타난다', () => {
+    // buyhold: 노출이 짙어 손실·회복을 다 겪는 전형적인 판.
+    const r = runBatch(40, 'buyhold')
+    for (const m of ['normal', 'joy', 'shaken'] as const) {
+      expect(r.moodShare[m], `${m} 점유율`).toBeGreaterThan(0.02)
+      expect(r.moodReach[m], `${m} 도달 판 비율`).toBeGreaterThan(0.2)
+    }
+    // 어느 한 표정도 화면을 독점하지 않는다.
+    for (const m of ['normal', 'joy', 'shaken'] as const) {
+      expect(r.moodShare[m], `${m} 독점`).toBeLessThan(0.9)
+    }
+  })
+
   // 밸런스 게이트 — 스펙 §8.2
   it('두 존버 전략 모두 파산율이 15% 미만이다', () => {
     // seedhold: 시드의 90%만 넣고 방치 (얇은 노출) / buyhold: 매 턴 현금 90% 투입 (짙은 노출).

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
 import { cashRatio as cashRatioOf } from '../turn/accounting'
-import { settleMental, isShaken, mentalResist, lossExposure } from './mental'
+import { settleMental, isShaken, mentalResist, lossExposure, moodOf } from './mental'
 import { BALANCE } from '../balance'
 
 /**
@@ -218,5 +218,51 @@ describe('mental', () => {
     let s = losing(99, 0); s.prevLossPct = 99; s.player.employed = false
     const after = settleMental(s, 20)
     expect(after.player.mental - 0).toBeGreaterThanOrEqual(14)
+  })
+})
+
+// 최종 리뷰 C1 부작용: 표정이 '시드머니 대비 ROI ≥ 20%'로 갈려서, 월급 입금만으로
+// 턴 4에 임계를 넘어 normal 6종이 사실상 화면에 뜨지 않았다.
+describe('moodOf — 세 표정이 모두 도달 가능하다', () => {
+  /** 기준선 대비 수익률을 정확히 roiPct로 만든 상태.
+   *  held=true면 총액의 일부를 주식으로 들고 있다(joy의 '시장에 들어가 있다' 조건). */
+  const withRoi = (mental: number, roiPct: number, held = true) => {
+    const netPayroll = 10_000_000
+    const base = BALANCE.seedMoney + netPayroll
+    const total = Math.round(base * (1 + roiPct / 100))
+    const s = makeState()
+    // s1 1주 = 10,000원 (testkit 기본값)
+    const qty = held ? 100 : 0
+    return {
+      ...s,
+      player: {
+        ...s.player, mental, cash: total - qty * 10_000,
+        holdings: qty > 0 ? [{ stockId: 's1', qty, avgCost: 10_000, heldTurns: 1 }] : [],
+      },
+      trackers: { ...s.trackers, netPayroll },
+    }
+  }
+
+  it('흔들림이면 무조건 shaken이다 (수익률이 아무리 좋아도)', () => {
+    expect(moodOf(withRoi(BALANCE.mental.shakenMax, 500))).toBe('shaken')
+  })
+  it('멘탈이 넉넉하고 기준선을 앞서면 joy다', () => {
+    expect(moodOf(withRoi(100, BALANCE.mood.joyRoiPct + 1))).toBe('joy')
+  })
+  it('멘탈이 넉넉해도 기준선과 비슷하면 normal이다 — 월급만 받은 판이 여기 있다', () => {
+    expect(moodOf(withRoi(100, 0))).toBe('normal')
+    expect(moodOf(withRoi(100, BALANCE.mood.joyRoiPct - 1))).toBe('normal')
+  })
+  it('수익률이 좋아도 멘탈이 깎여 있으면 normal이다', () => {
+    expect(moodOf(withRoi(BALANCE.mood.joyMental - 1, 100))).toBe('normal')
+  })
+  it('턴 1의 새 판은 normal이다 (예전에는 턴 4부터 영구 joy였다)', () => {
+    expect(moodOf(makeState({ player: { ...makeState().player, mental: 100 } }))).toBe('normal')
+  })
+  it('주식을 한 주도 안 샀으면 현금이 아무리 늘어도 joy가 아니다', () => {
+    // 야근 카드로 번 돈은 '투자 수익'이 아니다 — 보유 조건이 없으면 무매매 판이
+    // 다시 영구 joy가 된다(브라우저 156턴 실측에서 실제로 그랬다).
+    expect(moodOf(withRoi(100, 200, false))).toBe('normal')
+    expect(moodOf(withRoi(100, 200, true))).toBe('joy')
   })
 })

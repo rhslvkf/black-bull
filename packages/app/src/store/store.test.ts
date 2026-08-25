@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useGame, SAVE_KEY, CODEX_KEY } from './store'
+import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store'
 import { BALANCE } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset() })
@@ -12,7 +12,7 @@ describe('store', () => {
   })
   it('newGame 후 localStorage에 저장된다', () => {
     useGame.getState().newGame(1)
-    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).version).toBe(1)
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)!).version).toBe(SAVE_VERSION)
   })
   it('next가 턴을 넘긴다', () => {
     useGame.getState().newGame(1)
@@ -98,7 +98,7 @@ describe('store', () => {
   })
 
   it('버전은 맞지만 구조가 깨진(필드 오염) 세이브는 무시된다', () => {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: { turn: 'NOT_A_NUMBER' } }))
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: { turn: 'NOT_A_NUMBER' } }))
     useGame.getState().reset()
     expect(useGame.getState().state).toBeNull()
   })
@@ -120,7 +120,7 @@ describe('store', () => {
     useGame.getState().newGame(1)
     const s = useGame.getState().state!
     // 컷신이 떠 있는 상태를 저장해 둔 뒤 로드
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: { ...s, cutscene: 'cutscene.promote.1' } }))
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: { ...s, cutscene: 'cutscene.promote.1' } }))
     useGame.getState().reset()
     expect(useGame.getState().state!.cutscene).toBe('cutscene.promote.1')
     useGame.getState().clearCutscene()
@@ -135,7 +135,7 @@ describe('store', () => {
     // stockDefs에 없는 종목이 stocks에 섞여 들어간, 최소 형태 검사는 통과하지만
     // 내부적으로는 깨진 state — stepPrices가 GameError가 아닌 일반 Error를 던진다.
     const broken = { ...s, stocks: [...s.stocks, { id: '__missing__', price: 1, fundamental: 1, history: [1] }] }
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: broken }))
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: broken }))
     useGame.getState().reset()
     expect(useGame.getState().state!.stocks.length).toBe(broken.stocks.length) // 로드 자체는 통과했다(sanity)
     expect(() => useGame.getState().next(['hodl'])).toThrow()

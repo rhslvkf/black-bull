@@ -33,7 +33,7 @@ export function generateRegimes(rng: RngState, totalTurns?: number): [Regime[], 
     const out: Regime[] = []
     let cur: Regime = STARTS[rand.int(0, STARTS.length - 1)]!
     while (out.length < turns) {
-      const len = Math.min(rand.int(8, 30), turns - out.length)
+      const len = Math.min(rand.int(BALANCE.regimeLen.min, BALANCE.regimeLen.max), turns - out.length)
       for (let i = 0; i < len; i++) out.push(cur)
       cur = rand.pickWeighted(nextOf(cur), p => p[1])[0]
     }

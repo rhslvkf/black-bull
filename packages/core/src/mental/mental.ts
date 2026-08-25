@@ -1,6 +1,31 @@
 import type { GameState } from '../types'
 import { BALANCE } from '../balance'
-import { cashRatio, holdingValue, portfolioLossPct, totalAssets } from '../turn/accounting'
+import { cashRatio, holdingValue, investmentRoi, portfolioLossPct, totalAssets } from '../turn/accounting'
+
+export type Mood = 'normal' | 'shaken' | 'joy'
+
+/**
+ * 홈 화면 캐릭터의 표정 구간.
+ *
+ * 1차 축은 멘탈이다(스펙 §6 "멘탈 구간별 표정 변화"): 흔들림이면 무조건 shaken.
+ * 흔들림이 아닐 때 joy와 normal을 가르는 건 **투자 성과**다 — 시장에 실제로 들어가
+ * 있고, 멘탈이 넉넉하고, 무매매 기준선보다 확실히 앞서 있을 때만 웃는다.
+ *
+ * 세 조건이 다 필요하다:
+ * - 멘탈만으로 가르면 시작값 100이 곧 joy라 첫 턴부터 환희가 된다.
+ * - ROI만으로 가르면(구 구현) 월급 입금이 곧 수익이 돼 게임 내내 환희에 고정된다.
+ * - 보유 조건이 없으면 **야근 카드로 번 돈**이 기준선을 밀어 올려, 주식을 한 주도
+ *   안 산 판이 다시 영구 joy가 된다(브라우저 156턴 실측: 156턴 중 155턴 joy).
+ *   가진 게 없으면 오를 것도 없다 — 이 표정은 "투자가 잘 되고 있다"는 뜻이다.
+ */
+export function moodOf(state: GameState): Mood {
+  if (isShaken(state)) return 'shaken'
+  const m = BALANCE.mood
+  const invested = holdingValue(state) > 0
+  return invested && state.player.mental >= m.joyMental && investmentRoi(state) >= m.joyRoiPct
+    ? 'joy'
+    : 'normal'
+}
 
 export function isShaken(state: GameState): boolean {
   return state.player.mental <= BALANCE.mental.shakenMax

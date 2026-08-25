@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
-import { loadCards, isCardAvailable, playCard } from './cards'
+import { loadCards, isCardAvailable, cardLockReason, playCard } from './cards'
 import { GameError } from '../error'
+import { BALANCE } from '../balance'
 import type { ActionCardDef, Effect, Condition, StatKey } from '../types'
 
 const cards = loadCards()
@@ -153,5 +154,89 @@ describe('playCard', () => {
   })
   it('없는 카드는 NO_CARD', () => {
     expect(() => playCard(makeState(), 'nope')).toThrow(/NO_CARD/)
+  })
+})
+
+/**
+ * 스펙 §3.3 불변식 — 회복 카드(isRecovery)는 어떤 상태에서도 잠기지 않는다.
+ * 사용자가 설계 피드백에서 직접 요구한 조항이다("행동 카드가 잠기면 실제로 멘탈 수치를
+ * 다시 복구할 길이 없어지는 거 아니야?"). 최종 리뷰 Minor A에서 `최존버와 소주`가
+ * 현금 4만원 미만일 때 잠기는 것이 발견됐다 — 문언이 지켜지지 않고 있었다.
+ */
+describe('회복 카드는 어떤 상태에서도 잠기지 않는다 (스펙 §3.3 불변식)', () => {
+  const RECOVERY = ['rest', 'exercise', 'drink']
+
+  it('회복 카드는 정확히 3종이고 이름이 스펙과 같다', () => {
+    const rec = loadCards().filter(c => c.isRecovery)
+    expect(rec.map(c => c.id).sort()).toEqual([...RECOVERY].sort())
+    expect(rec.map(c => c.name).sort()).toEqual(['운동', '최존버와 소주', '휴식'].sort())
+  })
+
+  it('현금 0 · 컨디션 0 · 멘탈 0 · 티어 0의 최악 상태에서도 3종 모두 통과한다', () => {
+    const base = makeState()
+    const s = {
+      ...base,
+      player: { ...base.player, cash: 0, condition: 0, mental: 0, tier: 0 as const, holdings: [] },
+    }
+    for (const id of RECOVERY) {
+      const card = loadCards().find(c => c.id === id)!
+      expect(isCardAvailable(s, card), `${card.name}이(가) 잠겼다`).toBe(true)
+    }
+  })
+
+  it('현금 구간 전체(0원 ~ 카드 비용 언저리)에서 회복 카드가 한 번도 잠기지 않는다', () => {
+    const base = makeState()
+    for (const cash of [0, 1, 999, 39_999, 40_000, 1_000_000]) {
+      const s = { ...base, player: { ...base.player, cash, mental: 5 } }
+      for (const id of RECOVERY) {
+        const card = loadCards().find(c => c.id === id)!
+        expect(isCardAvailable(s, card), `${card.name} @ ${cash}원`).toBe(true)
+      }
+    }
+  })
+
+  it('현금 0에서도 회복 카드를 실제로 낼 수 있고 멘탈이 오른다 (판정만 통과하는 게 아니다)', () => {
+    const base = makeState()
+    const s = { ...base, player: { ...base.player, cash: 0, mental: 5 } }
+    const after = playCard(s, 'drink')
+    expect(after.player.cash).toBe(0)                       // 클램프가 음수를 막는다
+    expect(Number(after.flags['__mentalPending'])).toBeGreaterThan(0)
+  })
+})
+
+// 최종 리뷰 Minor 12 — 화면이 잠긴 이유를 말할 수 있으려면 core가 이유를 알려줘야 한다.
+describe('cardLockReason', () => {
+  it('티어가 모자라면 tier다', () => {
+    expect(cardLockReason(makeState(), byId('report'))).toBe('tier')
+  })
+  it('퇴사자에게 야근은 requires다 (티어와 구분된다)', () => {
+    const s = makeState(); s.player.employed = false
+    expect(cardLockReason(s, byId('overtime'))).toBe('requires')
+  })
+  it('돈이 모자라면 money다', () => {
+    const s = makeState(); s.player.cash = 100
+    expect(cardLockReason(s, byId('study'))).toBe('money')
+  })
+  it('흔들림이면 shaken이다', () => {
+    const s = makeState(); s.player.mental = BALANCE.mental.shakenMax
+    expect(cardLockReason(s, byId('analyze'))).toBe('shaken')
+  })
+  it('회복 카드는 최악의 상태에서도 null이다', () => {
+    const base = makeState()
+    const s = { ...base, player: { ...base.player, cash: 0, mental: 0, condition: 0 } }
+    expect(cardLockReason(s, byId('drink'))).toBeNull()
+  })
+  it('isCardAvailable은 cardLockReason과 항상 일치한다 (두 판정이 갈라지지 않는다)', () => {
+    const base = makeState()
+    for (const cash of [0, 35_000, 1_000_000]) {
+      for (const mental of [10, 80]) {
+        for (const tier of [0, 2] as const) {
+          const s = { ...base, player: { ...base.player, cash, mental, tier } }
+          for (const c of loadCards()) {
+            expect(isCardAvailable(s, c), `${c.name}`).toBe(cardLockReason(s, c) === null)
+          }
+        }
+      }
+    }
   })
 })

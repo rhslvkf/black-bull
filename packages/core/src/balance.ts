@@ -31,6 +31,9 @@ export const BALANCE = {
     stagnation: [['recovery', 6], ['boom', 3], ['crash', 1]],
     recovery:   [['boom', 7], ['stagnation', 3]],
   } satisfies Record<Regime, [Regime, number][]>,
+  /** 국면 한 구간의 길이(턴). 스펙 §2.3이 명시한 값인데 regimes.ts에 리터럴로 박혀
+   *  있었다(최종 리뷰 M3). */
+  regimeLen: { min: 8, max: 30 },
   /** 이벤트 충격 전역 배율. 이벤트 임팩트는 주가를 움직이는 항 중 가장 큰 채널인데
    *  (턴당 |합| 기준으로 국면 드리프트의 몇 배다) 여기 손잡이가 없어 튜닝 대상에서
    *  빠져 있었다 — Fix Round 1. 채널의 '방향 편향'은 이벤트 데이터를 양방향으로
@@ -40,6 +43,29 @@ export const BALANCE = {
    *  이름과 코드를 맞추기 위한 값이다 — 레버리지는 2배로, 곱버스는 반대로 2배.
    *  (이전에는 배수가 둘 다 ±1이라 '레버리지'가 뉴스에는 레버리지가 아니었다.) */
   etfShockMul: { lev: 2, inv: -2 },
+  /** 분석력 스탯이 화면에서 체감되는 전부 — 적정가 밴드의 폭, 리스크 등급, 신뢰도.
+   *  전부 analysis.ts에 리터럴로 박혀 있어 `pnpm sim`으로 손댈 수 없었다(최종 리뷰 M3).
+   *  추정 오차 sigma = sigmaBase × (1 − 분석력/10) + sigmaFloor. */
+  analysis: {
+    sigmaBase: 0.45,          // 분석력 0일 때의 추정 오차(로그정규 sigma)
+    sigmaFloor: 0.05,         // 분석력 10에서도 남는 오차 — 0으로 두면 만렙이 정답을 본다
+    bandMul: 0.8,             // 밴드 반폭 = sigma × 이 값
+    bandMin: 0.03,            // 밴드 반폭 하한
+    volWeight: 20,            // 리스크 점수의 변동성 항 가중
+    overWeight: 2,            // 리스크 점수의 고평가 항 가중
+    riskVeryHigh: 2.2, riskHigh: 1.2, riskMid: 0.5,   // 리스크 등급 경계
+    confBase: 0.15, confPerAnalysis: 0.085,           // 표시 신뢰도
+  },
+  /** 정보력 스탯의 효용 전부: 루머가 몇 턴 앞서 보이는지(lead)와 그 확률(chance).
+   *  info가 큰 구간부터 첫 매칭을 쓰고, 어디에도 안 걸리면 lead 0(=루머 없음)이다.
+   *  events/engine.ts에 리터럴로 박혀 있었다(최종 리뷰 M3). */
+  infoTiers: [
+    { minInfo: 9, lead: 3, chance: 0.9 },
+    { minInfo: 6, lead: 2, chance: 0.7 },
+    { minInfo: 3, lead: 1, chance: 0.5 },
+  ],
+  /** 물타기 카드가 한 번에 쓰는 현금 비율. turn/effects.ts에 박혀 있었다(최종 리뷰 M3). */
+  averageDownPct: 0.2,
   mental: {
     lossHold: -3, lossHoldUnemployed: -6, worsenFactor: 0.8,
     margin: -8,
@@ -52,10 +78,26 @@ export const BALANCE = {
     // (재리뷰 N1 실측: 1주 33% vs 시드 90% 37%). 이 게임이 가르치려는 건
     // "주식을 갖고 있느냐"가 아니라 "얼마나 위험하게 굴렸느냐"다.
     // lossExposureFull: 이 노출도에서 피해가 100%가 된다(그 이상은 상한).
+    //
+    // 이 값은 **그 턴의 순간 노출도**에 걸린다 — '156턴 평균 노출' 같은 기간 평균이
+    // 아니다(Fix Round 2 보고서의 서술이 이 점에서 틀렸다). 현금의 30% 이상을 넣는
+    // 순간 이미 포화이므로, 매수 직후부터 피해는 최대치로 물린다.
+    //
+    // **월급 구조에 의존한다.** employedNet(월 73만) × totalTurns(156턴/39개월)의
+    // 입금이 매달 현금을 불려 분모(총자산)를 키우기 때문에, 같은 포지션이라도 후반으로
+    // 갈수록 노출도가 내려간다. 즉 0.30은 "이 입금 속도" 위에서 고른 값이다 —
+    // employedNet·payPeriod·totalTurns를 바꾸면 이 값을 다시 재야 한다
+    // (sim의 '멘탈 피해가 노출도를 따라간다' 게이트로 확인한다).
     lossExposureFull: 0.30,
     shakenMax: 29, resistPer: 0.06,
     sellBlockLossPct: 20,
   },
+  /** 홈 화면 캐릭터 표정(char.tier{n}.{normal|shaken|joy})의 구간.
+   *  흔들림이면 shaken, 그게 아니면서 멘탈이 joyMental 이상이고 **투자 수익률**이
+   *  joyRoiPct 이상이면 joy, 나머지는 normal이다. 이전에는 '시드머니 대비 총자산'
+   *  ROI만 봤기 때문에 월급 입금만으로 턴 4에 임계를 넘어 normal 6종이 사실상
+   *  화면에 뜨지 않았다(최종 리뷰 C1 부작용). */
+  mood: { joyMental: 70, joyRoiPct: 5 },
   condition: {
     drainEmployed: -4, drainUnemployed: -2, resistPer: 0.06,
     forcedSkipBelow: 20, forcedSkipChance: 0.4, forcedSkipPenalty: -5,
@@ -64,9 +106,14 @@ export const BALANCE = {
   loan: { minTier: 3, rate: 0.0025, maxRatio: 0.9, callRatio: 1.3 },
   whale: { minTier: 5, notionalDiv: 2e10, maxImpact: 0.03 },
   tierMins: [0, 10_000_000, 50_000_000, 100_000_000, 500_000_000, 3_000_000_000],
+  /** 티어 강등 히스테리시스 — 현재 티어 문턱의 이 비율 아래로 내려가야 강등된다.
+   *  문턱 근처에서 승급·강등 컷신이 매 턴 번갈아 뜨는 것을 막는다(최종 리뷰 M3). */
+  tierDemoteRatio: 0.9,
   rival: { start: 35_000_000, driftMul: 1.8 },
   /** 엔딩 자산 경계.
-   *  기준선은 '시드머니'가 아니라 **아무것도 안 했을 때의 최종 자산**이다:
+   *  기준선은 '시드머니'가 아니라 **거의 아무것도 안 했을 때의 최종 자산**이다
+   *  (`cash` 전략은 완전한 무매매가 아니다 — 물타기 카드·buyStockPct 이벤트가 강제하는
+   *   매수로 평균 5%의 잔여 노출이 남는다, Ruling 72):
    *  시드 300만 + 가처분 73만 × 39개월 ≈ 3,150만 (실측 무매매 중앙값 약 2,900만).
    *  경계를 시드 300만에 걸어두면 3년치 월급까지 통째로 날려야 '적금이나 들걸'이 뜨므로
    *  savings/breakeven이 사실상 도달 불가능해진다(Task 24 진단 — 엔딩이 2종으로 붕괴).

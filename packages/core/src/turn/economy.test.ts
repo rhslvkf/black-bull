@@ -78,3 +78,39 @@ describe('stepRival', () => {
     }
   })
 })
+
+// 최종 리뷰 C1: 무매매 기준선(accounting.noTradeBaseline)의 유일한 근거가 이 누계다.
+// 여기가 갱신되지 않으면 HUD 수익률이 다시 '시드머니 대비'로 되돌아간다.
+describe('settlePayroll이 netPayroll에 누적한다 (무매매 기준선의 근거)', () => {
+  it('재직 정산은 employedNet만큼 누적한다', () => {
+    const r = settlePayroll(makeState({ turn: 4 }))
+    expect(r.trackers.netPayroll).toBe(BALANCE.employedNet)
+  })
+  it('정산이 없는 턴에는 누적하지 않는다', () => {
+    expect(settlePayroll(makeState({ turn: 3 })).trackers.netPayroll).toBe(0)
+  })
+  it('퇴사 정산은 음수로 누적한다', () => {
+    const s = makeState({ turn: 4 }); s.player.employed = false
+    expect(settlePayroll(s).trackers.netPayroll).toBe(-BALANCE.unemployedOut)
+  })
+  it('현금 부족으로 덜 빠졌으면 실제로 빠진 만큼만 누적한다', () => {
+    const s = makeState({ turn: 4 }); s.player.employed = false; s.player.cash = 100
+    const r = settlePayroll(s)
+    expect(r.player.cash).toBe(0)
+    expect(r.trackers.netPayroll).toBe(-100)
+  })
+  it('여러 번 정산하면 계속 쌓인다', () => {
+    let s = makeState({ turn: 4 })
+    s = settlePayroll(s)
+    s = settlePayroll({ ...s, turn: 8 })
+    expect(s.trackers.netPayroll).toBe(BALANCE.employedNet * 2)
+  })
+})
+
+// 최종 리뷰 Minor 6 — Ruling 49(폴백 금지)가 stepRival에는 적용되지 않고 남아 있었다.
+describe('stepRival도 국면 인덱스 폴백을 두지 않는다 (Ruling 49)', () => {
+  it('regimes 범위를 벗어난 turn이면 조용히 stagnation으로 넘어가지 않고 BAD_TURN을 던진다', () => {
+    const s = makeState({ turn: BALANCE.totalTurns + 44 })
+    expect(() => stepRival(s)).toThrow(/BAD_TURN/)
+  })
+})

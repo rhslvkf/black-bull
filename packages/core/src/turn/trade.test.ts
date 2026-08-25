@@ -206,3 +206,23 @@ describe('sell', () => {
     expect(canSell(s, 's1').ok).toBe(true)
   })
 })
+
+// 최종 리뷰 Minor 13: buy 경로의 큰손 체결충격은 통째로 지워도 스위트가 조용했다.
+// sell 쪽만 고정돼 있던 대칭을 맞춘다.
+describe('큰손 체결충격은 매수·매도 양쪽에 걸린다 (최종 리뷰 Minor 13)', () => {
+  it('큰손 티어는 매수 시 주가를 밀어 올린다', () => {
+    const s = makeState()
+    s.player.tier = 5
+    s.player.cash = 1e12
+    const before = s.stocks[0]!.price
+    const after = buy(s, 's1', 5_000_000)
+    expect(after.stocks[0]!.price).toBeGreaterThan(before)
+  })
+  it('큰손이 아니면 매수해도 주가가 움직이지 않는다', () => {
+    const s = makeState()
+    s.player.cash = 1e12
+    const before = s.stocks[0]!.price
+    const after = buy(s, 's1', 5_000_000)
+    expect(after.stocks[0]!.price).toBe(before)
+  })
+})

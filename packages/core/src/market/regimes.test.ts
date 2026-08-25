@@ -31,15 +31,24 @@ describe('generateRegimes', () => {
       expect(rs).toContain('crash')
     }
   })
-  it('마지막 구간을 제외한 모든 구간 길이가 8 이상 30 이하다', () => {
+  // 구간 길이 경계는 BALANCE.regimeLen에서 파생시킨다 — 리터럴 8/30을 박아두면
+  // regimes.ts에 옛 리터럴이 남아 있어도(=BALANCE를 튜닝해도 시장이 안 바뀌어도)
+  // 그대로 통과한다(최종 리뷰 M3).
+  it('마지막 구간을 제외한 모든 구간 길이가 BALANCE.regimeLen 범위 안이다', () => {
+    const { min, max } = BALANCE.regimeLen
+    const seen = new Set<number>()
     for (let seed = 0; seed < 100; seed++) {
       const [rs] = generateRegimes(createRng(seed))
       const rr = runs(rs)
       rr.slice(0, -1).forEach(r => {
-        expect(r.n).toBeGreaterThanOrEqual(8)
-        expect(r.n).toBeLessThanOrEqual(30)
+        expect(r.n).toBeGreaterThanOrEqual(min)
+        expect(r.n).toBeLessThanOrEqual(max)
+        seen.add(r.n)
       })
     }
+    // 범위를 실제로 넓게 쓰는지도 본다 — 한 값에만 몰려 있으면 위 단언이 공회전이다.
+    expect(Math.min(...seen)).toBeLessThan(min + (max - min) / 3)
+    expect(Math.max(...seen)).toBeGreaterThan(max - (max - min) / 3)
   })
   it('모든 인접 전이가 BALANCE.regimeNext에 실제로 존재한다', () => {
     // 전이표를 BALANCE 밖(모듈 상수)에 다시 하드코딩하면 BALANCE를 튜닝해도 시장이 안 바뀐다.
@@ -113,14 +122,15 @@ describe('fallbackRegimes', () => {
       expect(rs).toContain('crash')
     }
   })
-  it('모든 구간 길이가 8 이상 30 이하다 (마지막 포함)', () => {
+  it('모든 구간 길이가 BALANCE.regimeLen 범위 안이다 (마지막 포함)', () => {
+    const { min, max } = BALANCE.regimeLen
     const testTurns = [16, 17, 23, 30, 31, 32, 47, 100, 156]
     for (const totalTurns of testTurns) {
       const rs = fallbackRegimes(totalTurns)
       const rr = runs(rs)
       rr.forEach(r => {
-        expect(r.n).toBeGreaterThanOrEqual(8)
-        expect(r.n).toBeLessThanOrEqual(30)
+        expect(r.n).toBeGreaterThanOrEqual(min)
+        expect(r.n).toBeLessThanOrEqual(max)
       })
     }
   })

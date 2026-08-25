@@ -59,12 +59,14 @@ function TierAccessories({ tier }: { tier: number }) {
   )
 }
 
-export function makeCharacter(tier: number, mood: 'normal' | 'shaken' | 'joy') {
+/** label: 스크린리더가 읽는 한국어 설명. 18개 키가 전부 "캐릭터"로 같아 티어·표정을
+ *  구분할 수 없었다(최종 리뷰 Minor 4). registry.tsx가 ART_ALT와 같은 문자열을 넘긴다. */
+export function makeCharacter(tier: number, mood: 'normal' | 'shaken' | 'joy', label: string) {
   return function Character({ size = 120, className }: ArtProps) {
     const shake = mood === 'shaken'
     const joy = mood === 'joy'
     return (
-      <svg viewBox="0 0 100 120" width={size} height={size * 1.2} className={className} role="img" aria-label="캐릭터">
+      <svg viewBox="0 0 100 120" width={size} height={size * 1.2} className={className} role="img" aria-label={label}>
         <ellipse cx="50" cy="114" rx="26" ry="5" fill="#000" opacity="0.25" />
         <path d={`M28 112 L32 70 Q50 62 68 70 L72 112 Z`} fill={OUTFIT[tier] ?? OUTFIT[0]} />
         <circle cx="50" cy="42" r="24" fill={SKIN} />

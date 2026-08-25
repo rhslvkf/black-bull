@@ -3,6 +3,7 @@ import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { priceOf, positionLossPct, fee, tax } from './accounting'
 import { applyWhaleImpact } from '../market/price'
+import { isShaken } from '../mental/mental'
 
 export function canBuy(state: GameState, stockId: string): { ok: boolean; reason?: string } {
   if (state.status !== 'playing') return { ok: false, reason: 'NOT_PLAYING' }
@@ -15,8 +16,8 @@ export function canBuy(state: GameState, stockId: string): { ok: boolean; reason
 export function canSell(state: GameState, stockId: string): { ok: boolean; reason?: string } {
   if (state.status !== 'playing') return { ok: false, reason: 'NOT_PLAYING' }
   if (!state.player.holdings.some(h => h.stockId === stockId)) return { ok: false, reason: 'NO_QTY' }
-  if (state.player.mental <= BALANCE.mental.shakenMax
-    && positionLossPct(state, stockId) >= BALANCE.mental.sellBlockLossPct) {
+  // 흔들림 판정은 core에 하나뿐이어야 한다(최종 리뷰 Minor 2 — 여기가 재구현이었다).
+  if (isShaken(state) && positionLossPct(state, stockId) >= BALANCE.mental.sellBlockLossPct) {
     return { ok: false, reason: 'SELL_BLOCKED' }
   }
   return { ok: true }

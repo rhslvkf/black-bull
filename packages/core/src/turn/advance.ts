@@ -28,8 +28,8 @@ export function initGame(seed: number): GameState {
     },
     pendingImpacts: [], news: [], firedOneShots: [], flags: {},
     pendingChoices: [], rivalAssets: BALANCE.rival.start,
-    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0 },
-    prevLossPct: 0, cutscene: null, status: 'playing', ending: null,
+    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0 },
+    prevLossPct: 0, cutscene: null, lastTurnSkip: null, status: 'playing', ending: null,
   }
 }
 
@@ -49,12 +49,15 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   if (state.pendingChoices.length > 0) throw new GameError('CHOICE_PENDING')
   if (cardIds.length > cardsPerTurn(state)) throw new GameError('TOO_MANY_CARDS')
 
-  let s: GameState = { ...state, cutscene: null }
+  let s: GameState = { ...state, cutscene: null, lastTurnSkip: null }
 
   // 1. 강제 스킵 → 2. 카드
+  // 스킵 사유는 rollForcedSkip 호출 전 상태로 판정한다(호출이 burnoutTurns를 깎으므로).
+  const skipReason = s.player.burnoutTurns > 0 ? 'burnout' : 'exhausted'
   const [skipped, afterSkip] = rollForcedSkip(s)
   s = afterSkip
-  if (!skipped) for (const id of cardIds) s = playCard(s, id)
+  if (skipped) s = { ...s, lastTurnSkip: skipReason }
+  else for (const id of cardIds) s = playCard(s, id)
 
   // 3. 가격
   const [impacts, afterImpacts] = resolveImpacts(s)

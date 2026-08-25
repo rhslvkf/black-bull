@@ -3,6 +3,15 @@ import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { holdingValue, totalAssets, priceOf, fee, tax } from './accounting'
 
+/**
+ * 신용거래(대출·이자·반대매매). **1차 슬라이스에서는 UI가 연결돼 있지 않다** —
+ * `takeLoan`/`repayLoan`을 부르는 화면이 없어 플레이어는 스스로 빚을 질 수 없다
+ * (최종 리뷰 M2, Ruling 71로 보류: 대출 UI 신설은 수정 파동이 아니라 새 기능이다).
+ * 그 결과로 `st_margin_after` 이벤트와 '신용·미수 사용 중 −8' 멘탈 항은 현재 도달
+ * 불가능하고, 칭호 '빚 없이'는 100% 부여된다. 여기 로직 자체는 정상 동작하며
+ * advanceTurn 4단계에 연결돼 있다(advance.test.ts의 T-B8/T-B9가 고정한다).
+ */
+
 export function maxLoan(state: GameState): number {
   if (state.player.tier < BALANCE.loan.minTier) return 0
   return Math.max(0, Math.floor(totalAssets(state) * BALANCE.loan.maxRatio) - state.player.loan)

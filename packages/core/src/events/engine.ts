@@ -5,17 +5,14 @@ import { Rand } from '../rng/rng'
 import { evalAll } from '../turn/conditions'
 import { applyEffects } from '../turn/effects'
 
+/** 정보력 구간표(BALANCE.infoTiers)에서 이 info가 걸리는 첫 구간. 없으면 undefined. */
+const infoTier = (info: number) => BALANCE.infoTiers.find(t => info >= t.minInfo)
+
 export function rumorLead(info: number): number {
-  if (info >= 9) return 3
-  if (info >= 6) return 2
-  if (info >= 3) return 1
-  return 0
+  return infoTier(info)?.lead ?? 0
 }
 export function rumorChance(info: number): number {
-  if (info >= 9) return 0.9
-  if (info >= 6) return 0.7
-  if (info >= 3) return 0.5
-  return 0
+  return infoTier(info)?.chance ?? 0
 }
 
 export function resolveImpacts(state: GameState): [Map<string, number>, GameState] {

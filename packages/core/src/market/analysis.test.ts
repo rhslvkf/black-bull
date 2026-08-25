@@ -3,6 +3,7 @@ import { makeState, makeStock, makeStockDef } from '../testkit'
 import { loadStockDefs, initStockStates } from './stocks'
 import { GameError } from '../error'
 import { analyzeStock } from './analysis'
+import { BALANCE } from '../balance'
 
 const withAnalysis = (a: number) => {
   const s = makeState({
@@ -104,5 +105,55 @@ describe('analyzeStock', () => {
     s.rng = { s: 424242 }
     const after = analyzeStock(s, 'a')
     expect(after).toEqual(before)
+  })
+})
+
+/**
+ * 최종 리뷰 M3 — 분석력의 체감을 결정하는 상수 전부가 analysis.ts에 리터럴로 박혀 있어
+ * `BALANCE`로 옮겼다. 옮긴 값이 **실제로 읽히는지**(하드코딩 잔재가 없는지)는 기대값을
+ * BALANCE에서 다시 계산해 비교해야만 고정된다 — 리터럴을 박으면 튜닝하는 순간 무의미해진다.
+ */
+describe('분석력 상수는 BALANCE.analysis에서만 온다 (최종 리뷰 M3)', () => {
+  const A = BALANCE.analysis
+  const halfOf = (a: number) => Math.max(A.bandMin, (A.sigmaBase * (1 - a / 10) + A.sigmaFloor) * A.bandMul)
+
+  it('밴드 반폭이 BALANCE에서 계산한 값과 일치한다', () => {
+    for (const a of [0, 3, 7, 10]) {
+      const r = analyzeStock(withAnalysis(a), 'a')
+      const half = (r.fairHigh - r.fairLow) / (r.fairHigh + r.fairLow)
+      expect(half, `분석력 ${a}`).toBeCloseTo(halfOf(a), 3)
+    }
+  })
+  it('confidence가 BALANCE에서 계산한 값과 일치한다', () => {
+    for (const a of [0, 3, 7, 10]) {
+      expect(analyzeStock(withAnalysis(a), 'a').confidence, `분석력 ${a}`)
+        .toBeCloseTo(Math.min(1, A.confBase + a * A.confPerAnalysis), 10)
+    }
+  })
+  it('리스크 등급이 BALANCE의 가중·경계에서 계산한 등급과 일치한다', () => {
+    for (const volatility of [0.01, 0.05, 0.09, 0.13]) {
+      const s = makeState({
+        stockDefs: [makeStockDef({ id: 'a', volatility })],
+        stocks: [makeStock({ id: 'a', price: 10000, fundamental: 10000 })],
+      })
+      s.player.stats.analysis = 4
+      const r = analyzeStock(s, 'a')
+      const est = (r.fairLow + r.fairHigh) / 2      // 밴드 중앙 = 추정 적정가
+      const score = (10000 / est - 1) * A.overWeight + volatility * A.volWeight
+      const expected = score > A.riskVeryHigh ? '매우 높음'
+        : score > A.riskHigh ? '높음' : score > A.riskMid ? '보통' : '낮음'
+      expect(r.risk, `volatility ${volatility} / score ${score.toFixed(3)}`).toBe(expected)
+    }
+  })
+  it('위 세 단언이 서로 다른 등급을 실제로 밟는다 (한 등급에서만 도는 공회전이 아님)', () => {
+    const grades = [0.01, 0.05, 0.09, 0.13].map(volatility => {
+      const s = makeState({
+        stockDefs: [makeStockDef({ id: 'a', volatility })],
+        stocks: [makeStock({ id: 'a', price: 10000, fundamental: 10000 })],
+      })
+      s.player.stats.analysis = 4
+      return analyzeStock(s, 'a').risk
+    })
+    expect(new Set(grades).size).toBeGreaterThanOrEqual(3)
   })
 })

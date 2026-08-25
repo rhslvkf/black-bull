@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { Root } from './Root'
 import { ErrorBoundary } from './ErrorBoundary'
-import { useGame, SAVE_KEY, CODEX_KEY } from './store/store'
+import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store/store'
 
 // React는 바운더리가 잡은 예외도 콘솔에 한 번 더 찍는다 — 테스트 출력만 조용히 만든다.
 let spy: ReturnType<typeof vi.spyOn>
@@ -50,7 +50,7 @@ describe('ErrorBoundary — 손상된 저장으로 렌더가 죽는 실제 경�
       ...s,
       player: { ...s.player, holdings: [{ stockId: '존재하지않는종목', qty: 1, avgCost: 1000, heldTurns: 0 }] },
     }
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state: broken }))
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: broken }))
     useGame.setState({ state: null })
     useGame.getState().reset()   // 손상된 저장을 다시 읽어들인다
   }

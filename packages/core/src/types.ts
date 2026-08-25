@@ -84,6 +84,12 @@ export interface ContentBundle { cards: ActionCardDef[]; events: EventDef[] }
 export interface Trackers {
   shakenTurns: number; usedMargin: boolean; lossCuts: number
   maxHeldTurns: number; cashRatioSum: number; turnsCounted: number
+  /** 시드머니 이후 **외부에서 들어온 순현금**(월급 입금 − 퇴사 후 생활비)의 누계.
+   *  '아무 매매도 하지 않았을 때의 자산'(= 무매매 기준선)을 계산하는 데 쓰인다.
+   *  턴 수로 역산하지 않고 실제 정산된 금액을 누적하는 이유는, 재직/퇴사 전환과
+   *  현금 부족 클램프 때문에 `floor(turn/payPeriod) × employedNet`이 실제와 어긋나기
+   *  때문이다. accounting.ts의 noTradeBaseline이 유일한 소비자다. */
+  netPayroll: number
 }
 
 export interface EndingResult { endingId: EndingId; endingName: string; titles: string[]; finalAssets: number }
@@ -105,6 +111,10 @@ export interface GameState {
   trackers: Trackers
   prevLossPct: number          // 직전 턴 포트폴리오 손실률(%, 0 이상)
   cutscene: string | null      // ArtKey 문자열
+  /** 직전 advanceTurn에서 강제 스킵(야근/번아웃)이 일어났는지. 스킵은 고른 카드를
+   *  통째로 버리므로, 화면이 이유를 말해주지 않으면 "버튼을 눌렀는데 아무 일도
+   *  안 일어났다"가 된다(최종 리뷰 M4). 매 턴 시작에 null로 초기화된다. */
+  lastTurnSkip: 'burnout' | 'exhausted' | null
   status: 'playing' | 'ended'
   ending: EndingResult | null
 }

@@ -1,9 +1,15 @@
-import { initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, cardsPerTurn, BALANCE, createRng, Rand } from '@bb/core'
+import {
+  initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, cardsPerTurn, moodOf,
+  BALANCE, createRng, Rand, type Mood,
+} from '@bb/core'
 import { act, type Strategy } from './strategies'
 
 export interface RunResult {
   ending: string; titles: string[]; assets: number
   shakenTurns: number; bankrupt: boolean; turns: number
+  /** 홈 화면 캐릭터 표정별 턴 수. 표정 축이 상수로 붕괴했는지는 이 값으로만 보인다 —
+   *  최종 리뷰 C1에서 실제로 붕괴해 있었고(월급만으로 턴 4부터 영구 joy) 스위트는 조용했다. */
+  moodTurns: Record<Mood, number>
   /** 종목별 최종가 / 초기가. 시장이 종목에 무슨 짓을 했는지는 자산 분위수로는 안 보인다. */
   priceMul: Record<string, number>
 }
@@ -21,6 +27,10 @@ export interface BatchReport {
   priceUpRate: Record<string, number>
   /** 칭호별 부여 비율. 100%에 붙어 있으면 수집 축이 아니라 상수다. */
   titleRate: Record<string, number>
+  /** 표정별 턴 점유율(합 1). 한 표정이 100%에 붙어 있으면 표정 축도 상수다. */
+  moodShare: Record<Mood, number>
+  /** 한 판에서 그 표정을 한 번이라도 본 판의 비율. */
+  moodReach: Record<Mood, number>
 }
 
 const events = loadEvents()
@@ -28,6 +38,8 @@ const events = loadEvents()
 export function playOne(seed: number, strategy: Strategy): RunResult {
   let s = initGame(seed)
   const rand = new Rand(createRng(seed ^ 0xabcdef))
+
+  const moodTurns: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
 
   for (let i = 0; i < BALANCE.totalTurns && s.status === 'playing'; i++) {
     // 대기 중인 선택지는 무작위로 해소
@@ -38,6 +50,7 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
       s = n > 0 ? resolveChoice(s, c.eventId, rand.int(0, n - 1), events)
                 : { ...s, pendingChoices: s.pendingChoices.slice(1) }
     }
+    moodTurns[moodOf(s)]++   // 플레이어가 이 턴에 실제로 보는 표정
     const { state, cards } = act(s, strategy, rand)
     s = advanceTurn(state, cards.slice(0, cardsPerTurn(state)))
   }
@@ -53,7 +66,7 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     titles: s.ending?.titles ?? [],
     assets, shakenTurns: s.trackers.shakenTurns,
     bankrupt: s.ending?.endingId === 'legend', turns: s.turn,
-    priceMul,
+    priceMul, moodTurns,
   }
 }
 
@@ -66,6 +79,8 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
   const muls: Record<string, number[]> = {}
   const titleCounts: Record<string, number> = {}
   let bankrupt = 0, shaken = 0, shakenRuns = 0
+  const moodTotal: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
+  const moodRuns: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
 
   for (let i = 0; i < runs; i++) {
     const r = playOne(seed0 + i, strategy)
@@ -76,6 +91,10 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     if (r.shakenTurns > 0) shakenRuns++
     for (const [id, m] of Object.entries(r.priceMul)) (muls[id] ??= []).push(m)
     for (const t of r.titles) titleCounts[t] = (titleCounts[t] ?? 0) + 1
+    for (const m of ['normal', 'shaken', 'joy'] as const) {
+      moodTotal[m] += r.moodTurns[m]
+      if (r.moodTurns[m] > 0) moodRuns[m]++
+    }
   }
   assets.sort((a, b) => a - b)
 
@@ -89,6 +108,14 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
   const titleRate: Record<string, number> = {}
   for (const [t, n] of Object.entries(titleCounts)) titleRate[t] = n / runs
 
+  const moodSum = moodTotal.normal + moodTotal.shaken + moodTotal.joy
+  const moodShare: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
+  const moodReach: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
+  for (const m of ['normal', 'shaken', 'joy'] as const) {
+    moodShare[m] = moodSum === 0 ? 0 : moodTotal[m] / moodSum
+    moodReach[m] = moodRuns[m] / runs
+  }
+
   return {
     runs, strategy, endingCounts,
     bankruptRate: bankrupt / runs,
@@ -97,6 +124,6 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     assetsP90: quantile(assets, 0.9),
     avgShakenTurns: shaken / runs,
     shakenRate: shakenRuns / runs,
-    priceMulMedian, priceUpRate, titleRate,
+    priceMulMedian, priceUpRate, titleRate, moodShare, moodReach,
   }
 }

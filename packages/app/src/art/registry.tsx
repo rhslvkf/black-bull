@@ -1,5 +1,7 @@
 import { ENDINGS } from '@bb/core'
-import { TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey } from './keys'
+import {
+  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
+} from './keys'
 import { makeCharacter, type ArtProps } from './parts/Character'
 import { makePortrait } from './parts/Portraits'
 import { makeScene, makeIcon } from './parts/Scenes'
@@ -8,7 +10,6 @@ export type ArtSource =
   | { kind: 'svg'; component: React.FC<ArtProps> }
   | { kind: 'image'; src: string }
 
-const TIER_LABELS = ['주린이', '개미', '불개미', '슬기로운 개미', '슈퍼개미', '큰손']
 const ENDING_META: Record<string, [string, string]> = {
   legend: ['#6e2b2b', '💀'], savings: ['#4a4a4a', '🏦'], breakeven: ['#3f5a6b', '😐'],
   bank: ['#3f6b52', '🙂'], wise: ['#3f7d6b', '📈'], super: ['#a58a3f', '🐜'],
@@ -40,8 +41,11 @@ const altEntries: [string, string][] = []
 
 for (const t of TIERS) for (const m of MOODS) {
   const key = `char.tier${t}.${m}`
-  entries.push([key, { kind: 'svg', component: makeCharacter(t, m) }])
-  altEntries.push([key, `${TIER_LABELS[t]} 캐릭터 (${MOOD_KO[m]})`])
+  // 같은 문자열을 <img alt>와 <svg aria-label> 양쪽에 쓴다 — 출하 중인 건 svg 소스라
+  // 여기를 나누면 실제 화면의 접근성 이름이 영영 "캐릭터"에 머문다(최종 리뷰 Minor 4).
+  const alt = `${TIER_NAMES[t]} 캐릭터 (${MOOD_KO[m]})`
+  entries.push([key, { kind: 'svg', component: makeCharacter(t, m, alt) }])
+  altEntries.push([key, alt])
 }
 for (const n of NPCS) {
   entries.push([`npc.${n}`, { kind: 'svg', component: makePortrait(n, NPC_NAME_KO[n] ?? n) }])
@@ -50,12 +54,12 @@ for (const n of NPCS) {
 // settleTier(economy.ts)는 next > cur일 때 promote.${next}(next=1..5), next < cur일 때
 // demote.${next}(next=0..4)를 만든다 — promote.0과 demote.5는 도달 불가능하다.
 for (const t of PROMOTE_TIERS) {
-  entries.push([`cutscene.promote.${t}`, { kind: 'svg', component: makeScene('#2f6b4f', '🎉', `${TIER_LABELS[t]} 승급`) }])
-  altEntries.push([`cutscene.promote.${t}`, `${TIER_LABELS[t]} 승급 장면`])
+  entries.push([`cutscene.promote.${t}`, { kind: 'svg', component: makeScene('#2f6b4f', '🎉', `${TIER_NAMES[t]} 승급`) }])
+  altEntries.push([`cutscene.promote.${t}`, `${TIER_NAMES[t]} 승급 장면`])
 }
 for (const t of DEMOTE_TIERS) {
-  entries.push([`cutscene.demote.${t}`, { kind: 'svg', component: makeScene('#5a3a3a', '💧', `${TIER_LABELS[t]} 강등`) }])
-  altEntries.push([`cutscene.demote.${t}`, `${TIER_LABELS[t]} 강등 장면`])
+  entries.push([`cutscene.demote.${t}`, { kind: 'svg', component: makeScene('#5a3a3a', '💧', `${TIER_NAMES[t]} 강등`) }])
+  altEntries.push([`cutscene.demote.${t}`, `${TIER_NAMES[t]} 강등 장면`])
 }
 for (const id of ENDING_IDS) {
   const [tone, glyph] = ENDING_META[id]!

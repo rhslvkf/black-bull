@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useGame } from './store/store'
 import { Hud } from './components/Hud'
 import { TabBar } from './components/TabBar'
@@ -16,7 +15,9 @@ export default function App() {
   const tab = useGame(s => s.tab)
   const codex = useGame(s => s.codex)
   const newGame = useGame(s => s.newGame)
-  const [prologueDone, setPrologueDone] = useState(false)
+  // 새로고침해도 프롤로그가 다시 뜨지 않도록 스토어(localStorage)가 들고 있다(최종 리뷰 Minor 9).
+  const prologueDone = useGame(s => s.prologueDone)
+  const finishPrologue = useGame(s => s.finishPrologue)
 
   if (!state) {
     return (
@@ -29,7 +30,7 @@ export default function App() {
   }
 
   const needPrologue = codex.runs === 0 && state.turn === 1 && !prologueDone
-  if (needPrologue) return <PrologueView onDone={() => setPrologueDone(true)} />
+  if (needPrologue) return <PrologueView onDone={finishPrologue} />
 
   return (
     <main className="app">

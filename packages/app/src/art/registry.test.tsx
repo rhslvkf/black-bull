@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
-import { SECTORS as CORE_SECTORS, ENDING_IDS as CORE_ENDING_IDS } from '@bb/core'
+import { SECTORS as CORE_SECTORS, ENDING_IDS as CORE_ENDING_IDS, TIER_NAMES as CORE_TIER_NAMES } from '@bb/core'
 import { ART, ALL_ART_KEYS, ART_ALT } from './registry'
 import { Art } from './Art'
 import {
-  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
+  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
 } from './keys'
 
 // Ruling 56: keys.ts의 SECTORS/ENDING_IDS는 로컬 복제가 아니라 @bb/core를 그대로
@@ -17,6 +17,19 @@ describe('SECTORS/ENDING_IDS는 @bb/core 재수출이다 (Ruling 56)', () => {
   })
   it('keys.ts의 ENDING_IDS는 @bb/core의 ENDING_IDS와 동일한 배열 객체다', () => {
     expect(ENDING_IDS).toBe(CORE_ENDING_IDS)
+  })
+  // 최종 리뷰 Minor B: registry.tsx가 TIER_LABELS라는 이름으로 티어 이름 6종을 다시
+  // 복제하고 있었다(같은 유형의 재발). 참조 동일성으로 복제를 원천 차단한다.
+  it('keys.ts의 TIER_NAMES는 @bb/core의 TIER_NAMES와 동일한 배열 객체다', () => {
+    expect(TIER_NAMES).toBe(CORE_TIER_NAMES)
+  })
+  it('컷신·캐릭터 alt 문구가 core의 티어 이름을 그대로 쓴다', () => {
+    // core 이름을 바꾸면 이 단언이 같이 따라간다 — 복제본이 있으면 여기서 어긋난다.
+    CORE_TIER_NAMES.forEach((name, i) => {
+      expect(ART_ALT[`char.tier${i}.normal` as ArtKey]).toContain(name)
+    })
+    expect(ART_ALT['cutscene.promote.3']).toContain(CORE_TIER_NAMES[3])
+    expect(ART_ALT['cutscene.demote.1']).toContain(CORE_TIER_NAMES[1])
   })
 })
 

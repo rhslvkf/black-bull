@@ -48,6 +48,19 @@ describe('rumorLead / rumorChance', () => {
     expect(rumorLead(info)).toBe(lead)
     expect(rumorChance(info)).toBeCloseTo(chance, 6)
   })
+
+  // 위 표는 '의도'의 기록이고, 아래는 '구현이 BALANCE를 실제로 읽는가'의 확인이다
+  // (최종 리뷰 M3 — 구간값이 engine.ts에 리터럴로 박혀 있었다). 둘 다 있어야
+  // "BALANCE를 튜닝했는데 엔진에 옛 리터럴이 남은" 상태가 잡힌다.
+  it('구간표가 BALANCE.infoTiers와 정확히 일치한다', () => {
+    for (const tier of BALANCE.infoTiers) {
+      expect(rumorLead(tier.minInfo), `info ${tier.minInfo}`).toBe(tier.lead)
+      expect(rumorChance(tier.minInfo), `info ${tier.minInfo}`).toBeCloseTo(tier.chance, 6)
+    }
+    const lowest = Math.min(...BALANCE.infoTiers.map(t => t.minInfo))
+    expect(rumorLead(lowest - 1)).toBe(0)
+    expect(rumorChance(lowest - 1)).toBe(0)
+  })
 })
 
 describe('revealRumors', () => {

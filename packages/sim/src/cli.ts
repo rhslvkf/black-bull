@@ -44,6 +44,10 @@ console.log('  종목별 최종가 배율 (중앙값 / 초기가 이상으로 �
 Object.entries(r.priceMulMedian).sort((a, b) => b[1] - a[1]).forEach(([id, m]) =>
   console.log(`    ${id.padEnd(5)} x${m.toFixed(2).padStart(6)}   ${((r.priceUpRate[id] ?? 0) * 100).toFixed(0).padStart(3)}%`))
 
+console.log('  캐릭터 표정 (턴 점유율 / 한 번이라도 본 판)')
+Object.entries(r.moodShare).forEach(([m, share]) =>
+  console.log(`    ${m.padEnd(7)} ${(share * 100).toFixed(1).padStart(5)}%   ${((r.moodReach[m as 'normal'] ?? 0) * 100).toFixed(0).padStart(3)}%`))
+
 console.log('  칭호 부여율')
 Object.entries(r.titleRate).sort((a, b) => b[1] - a[1]).forEach(([t, p]) =>
   console.log(`    ${t.padEnd(14)} ${(p * 100).toFixed(1)}%`))

@@ -204,3 +204,58 @@ describe('advanceTurn — 종료 시 선택지 정리 (Ruling 50)', () => {
     expect(s.pendingChoices).toEqual([])
   })
 })
+
+/**
+ * 최종 리뷰 M1 — 턴 루프 8단계 중 3단계(신용·티어·라이벌)는 통째로 지워도 545개가
+ * 전부 그린이었다. Task 15가 게이지·트래커에 대해 세운 T-B1/T-B2 처방("루프에 실제로
+ * 연결돼 있다"를 값으로 단언한다)을 나머지 단계에도 적용한다.
+ *
+ * settleTier 제거의 파급이 가장 크다: 티어가 영원히 0이라 tierGate 종목 7종이 영구
+ * 잠기고 승급·강등 컷신 10종이 한 번도 뜨지 않는다.
+ */
+describe('advanceTurn — 턴 루프 조립 확인 T-B5~T-B9 (최종 리뷰 M1)', () => {
+  it('T-B5: 티어 문턱을 넘은 자산으로 1턴 진행하면 티어가 오르고 컷신이 세팅된다', () => {
+    const base = initGame(1)
+    // 티어 2 문턱(5천만) 위로 올려둔다. 이벤트 현금 효과가 끼어도 티어가 바뀌지 않을 만큼 여유를 둔다.
+    const s = { ...base, player: { ...base.player, cash: 60_000_000 } }
+    const r = advanceTurn(s, ['hodl'])
+    expect(r.player.tier).toBe(2)
+    expect(r.cutscene).toBe('cutscene.promote.2')
+  })
+
+  it('T-B6: 티어 문턱 아래로 떨어지면 1턴 진행에 강등되고 강등 컷신이 뜬다', () => {
+    const base = initGame(1)
+    const s = { ...base, player: { ...base.player, tier: 2 as const, cash: 1_000_000 } }
+    const r = advanceTurn(s, ['hodl'])
+    expect(r.player.tier).toBe(0)
+    expect(r.cutscene).toBe('cutscene.demote.0')
+  })
+
+  it('T-B7: 1턴 진행하면 라이벌 자산이 그 턴의 국면대로 움직인다', () => {
+    const base = initGame(1)
+    const regime = base.regimes[0]!
+    const expected = Math.round(BALANCE.rival.start * Math.exp(BALANCE.regime[regime].drift * BALANCE.rival.driftMul))
+    const r = advanceTurn(base, ['hodl'])
+    expect(r.rivalAssets).toBe(expected)
+    expect(r.rivalAssets).not.toBe(BALANCE.rival.start)  // 정지해 있지 않다
+  })
+
+  it('T-B8: 대출을 안고 1턴 진행하면 이자가 실제로 붙는다', () => {
+    const base = initGame(1)
+    const loan = 1_000_000
+    const s = { ...base, player: { ...base.player, loan } }   // 담보 300만 ≥ 대출×1.3 이라 반대매매는 없다
+    const r = advanceTurn(s, ['hodl'])
+    expect(r.player.loan).toBe(loan + Math.round(loan * BALANCE.loan.rate))
+  })
+
+  it('T-B9: 담보가 모자라면 1턴 진행에 반대매매가 실행된다', () => {
+    const base = initGame(1)
+    const s = {
+      ...base,
+      player: { ...base.player, cash: 100_000, loan: 5_000_000 },  // 담보 10만 << 대출×1.3
+    }
+    const r = advanceTurn(s, ['hodl'])
+    expect(r.flags['marginCalled']).toBe(true)
+    expect(r.player.holdings).toEqual([])
+  })
+})
