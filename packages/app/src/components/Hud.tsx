@@ -1,4 +1,4 @@
-import { BALANCE, TIER_NAMES, totalAssets } from '@bb/core'
+import { BALANCE, TIER_NAMES, isShaken, totalAssets } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, pct, yearWeek } from '../format'
 import { Art } from '../art/Art'
@@ -18,7 +18,11 @@ export function Hud() {
   if (!s) return null
   const assets = totalAssets(s)
   const roi = ((assets - BALANCE.seedMoney) / BALANCE.seedMoney) * 100
-  const shaken = s.player.mental <= BALANCE.mental.shakenMax
+  // Ruling 58: 0%는 상승도 하락도 아니다 — 중립으로 표시한다. (거래가 없던 턴 1부터
+  // "오르고 있다"로 오독되는 걸 막는다. 부호는 pct()가 이미 맞게 만들지만 색·아이콘은
+  // 여기서 별도로 삼분기해야 한다.)
+  const direction = roi > 0 ? 'up' : roi < 0 ? 'down' : 'neutral'
+  const shaken = isShaken(s) // Ruling: core의 흔들림 판정을 재구현하지 않고 그대로 재사용한다
 
   return (
     <header className={`hud${shaken ? ' hud-shaken' : ''}`}>
@@ -29,8 +33,11 @@ export function Hud() {
       <div className="hud-bar"><div style={{ width: `${(s.turn / BALANCE.totalTurns) * 100}%` }} /></div>
       <div className="hud-assets">
         <strong>{won(assets)}</strong>
-        <span className={roi >= 0 ? 'up' : 'down'}>
-          <Art id={roi >= 0 ? 'ui.up' : 'ui.down'} size={11} /> {pct(roi)}
+        <span className={direction} data-testid="hud-roi">
+          {direction === 'neutral'
+            ? <span className="roi-dash" aria-hidden="true">–</span>
+            : <Art id={direction === 'up' ? 'ui.up' : 'ui.down'} size={11} />}
+          {' '}{pct(roi)}
         </span>
       </div>
       <div className="hud-cash">

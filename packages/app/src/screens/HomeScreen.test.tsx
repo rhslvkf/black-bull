@@ -139,3 +139,66 @@ describe('format 경계값', () => {
   it('won(0)은 0원이다', () => expect(won(0)).toBe('0원'))
   it('yearWeek(52)는 1년차 마지막 주다', () => expect(yearWeek(52)).toBe('1년차 52주'))
 })
+
+describe('Hud 흔들림 시각 신호 (Major #1)', () => {
+  it('멘탈 29(흔들림 경계)에서 hud-shaken 클래스·경고 배지·게이지 위험색이 뜬다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, mental: 29 } } })
+    const { container } = render(<Hud />)
+    expect(container.querySelector('.hud')!.className).toMatch(/hud-shaken/)
+    expect(screen.getByText('멘탈이 흔들리고 있다')).toBeDefined()
+    expect(container.querySelector('.gauge-critical')).not.toBeNull()
+  })
+  it('멘탈 30(경계 바로 위)에서는 흔들림 표시가 전혀 없다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, mental: 30 } } })
+    const { container } = render(<Hud />)
+    expect(container.querySelector('.hud')!.className).not.toMatch(/hud-shaken/)
+    expect(screen.queryByText('멘탈이 흔들리고 있다')).toBeNull()
+    expect(container.querySelector('.gauge-critical')).toBeNull()
+  })
+})
+
+describe('선택지 대기 시 턴 넘기기 차단 (Major #2)', () => {
+  it('pendingChoices가 있으면 카드를 골라도 턴 넘기기가 비활성이고 안내 문구가 뜬다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, pendingChoices: [{ eventId: 'dummy' }] } })
+    render(<HomeScreen />)
+    fireEvent.click(screen.getByTestId('card-hodl'))
+    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('먼저 마주한 상황부터 정리해야 한다.')).toBeDefined()
+  })
+  it('pendingChoices가 없으면 안내 문구가 뜨지 않는다', () => {
+    render(<HomeScreen />)
+    expect(screen.queryByText('먼저 마주한 상황부터 정리해야 한다.')).toBeNull()
+  })
+  it('pendingChoices가 있는 채로 next-turn을 눌러도(비활성이라 클릭 자체가 무시돼) 턴이 넘어가지 않는다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, pendingChoices: [{ eventId: 'dummy' }] } })
+    render(<HomeScreen />)
+    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('next-turn'))
+    expect(useGame.getState().state!.turn).toBe(1)
+  })
+})
+
+describe('수익률 0%는 중립 (Ruling 58, Minor #1)', () => {
+  it('roi가 정확히 0일 때 hud-roi는 up도 down도 아닌 neutral이다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, cash: 3_000_000 } } }) // (3M-3M)/3M = 0
+    render(<Hud />)
+    expect(screen.getByTestId('hud-roi').className).toBe('neutral')
+  })
+  it('roi가 +0.01%(경계 바로 위)면 up이다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, cash: 3_000_300 } } }) // +0.01%
+    render(<Hud />)
+    expect(screen.getByTestId('hud-roi').className).toBe('up')
+  })
+  it('roi가 -0.01%(경계 바로 아래)면 down이다', () => {
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, cash: 2_999_700 } } }) // -0.01%
+    render(<Hud />)
+    expect(screen.getByTestId('hud-roi').className).toBe('down')
+  })
+})
