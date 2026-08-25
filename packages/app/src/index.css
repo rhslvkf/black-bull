@@ -194,7 +194,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* ---------- Stock detail ---------- */
 .screen.detail .back {
-  background: none; border: 0; color: var(--muted); font-size: 13px; padding: 6px 0; margin-bottom: 4px; min-height: 32px;
+  background: none; border: 0; color: var(--muted); font-size: 13px; padding: 6px 0; margin-bottom: 4px; min-height: 44px;
 }
 .detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
 .detail-head h2 { margin: 0; font-size: 18px; }

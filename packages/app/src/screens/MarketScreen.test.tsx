@@ -178,4 +178,8 @@ describe('터치 타깃', () => {
     expect(minHeightOf('.trade-buttons button')).toBeGreaterThanOrEqual(44)
     expect(minHeightOf('.trade-row input')).toBeGreaterThanOrEqual(44)
   })
+  it('종목 상세의 뒤로가기(← 목록) 버튼도 44px 기준을 지킨다', () => {
+    // 재리뷰 라운드 2: 종목을 볼 때마다 누르는 버튼이라 별도로 고정한다.
+    expect(minHeightOf('.screen.detail .back')).toBeGreaterThanOrEqual(44)
+  })
 })
