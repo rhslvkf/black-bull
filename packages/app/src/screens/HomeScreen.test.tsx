@@ -75,7 +75,10 @@ describe('HomeScreen', () => {
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 10 } } })
     render(<HomeScreen />)
     fireEvent.click(screen.getByTestId('card-analyze')) // 잠긴 카드
-    expect(screen.getByTestId('card-analyze').className).not.toMatch(/picked/)
+    // 부분 문자열 단언은 'unpicked' 같은 클래스도 통과시키므로 classList로 정확히 본다.
+    // (이쪽은 disabled가 실제 방어선이 맞다 — CardGrid에서 disabled={!ok}를 지우면
+    //  이 단언이 'card picked'로 실패한다. 보고서 §7 뮤테이션 2 참고.)
+    expect(screen.getByTestId('card-analyze').classList.contains('picked')).toBe(false)
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
   })
 })
@@ -172,13 +175,32 @@ describe('선택지 대기 시 턴 넘기기 차단 (Major #2)', () => {
     render(<HomeScreen />)
     expect(screen.queryByText('먼저 마주한 상황부터 정리해야 한다.')).toBeNull()
   })
-  it('pendingChoices가 있는 채로 next-turn을 눌러도(비활성이라 클릭 자체가 무시돼) 턴이 넘어가지 않는다', () => {
+  // 이름 정정(Task 24). 이전 이름은 "비활성이라 클릭 자체가 무시돼 턴이 안 넘어간다"였는데,
+  // 그건 이 테스트가 검증하는 내용이 아니다. HomeScreen에서 `blocked`를 disabled 조건에서
+  // 빼는 뮤테이션을 넣으면(버튼이 활성이 되어 클릭이 실제로 go()를 부름) 이 테스트는 그대로
+  // 통과한다 — 턴을 막는 진짜 방어선은 버튼의 disabled가 아니라 코어 advanceTurn의
+  // CHOICE_PENDING 가드(+ 스토어 guard가 GameError만 삼키는 것)이기 때문이다.
+  // (뮤테이션 명령·출력은 보고서 §7 참고. 같은 뮤테이션을 위 두 테스트가 잡는다.)
+  // 그래서 여기서는 '클릭이 무시된다'가 아니라 'UI를 우회해 next()를 직접 불러도 턴은
+  // 안 넘어간다'를 못박는다.
+  it('선택지가 남아 있으면 next()를 직접 불러도 턴이 넘어가지 않는다 (코어 CHOICE_PENDING 가드)', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: 'dummy' }] } })
     render(<HomeScreen />)
     fireEvent.click(screen.getByTestId('card-hodl'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().state!.turn).toBe(1)
+
+    // 버튼을 완전히 우회한다. resolveChoice/advanceTurn은 GameError를 던지고 스토어가
+    // 그것만 삼키므로, "던지지 않았다"가 아니라 "state가 안 바뀌었다"를 봐야 한다.
+    useGame.getState().next(['hodl'])
+    expect(useGame.getState().state!.turn).toBe(1)
+    expect(useGame.getState().state!.pendingChoices).toHaveLength(1)
+  })
+  it('선택지를 비우면 같은 next() 호출이 실제로 턴을 넘긴다 (위 테스트가 공회전이 아님을 보증)', () => {
+    render(<HomeScreen />)
+    useGame.getState().next(['hodl'])
+    expect(useGame.getState().state!.turn).toBe(2)
   })
 })
 

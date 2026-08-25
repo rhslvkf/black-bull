@@ -58,10 +58,15 @@ describe('stepRival', () => {
   })
   it('crash에서는 driftMul로 크게 줄어든다', () => {
     const s = makeState({ turn: 1 }); s.regimes[0] = 'crash'
-    // With driftMul=1.8: exp(-0.035 * 1.8) ≈ 0.9389, so 35M → 32.86M
-    // Without driftMul: exp(-0.035) ≈ 0.9656, so 35M → 33.80M
-    // This bound rejects the implementation missing driftMul
-    expect(stepRival(s).rivalAssets).toBeLessThan(s.rivalAssets * 0.939)
+    // 상한을 'driftMul 적용'과 '미적용'의 정확히 중간(지수 평균)에 둔다.
+    //   적용   exp(drift * driftMul)
+    //   미적용 exp(drift)          ← driftMul을 빠뜨린 구현
+    // 리터럴 0.939를 박으면 drift 값을 튜닝하는 순간 무의미해진다(Task 24에서 실제로 깨졌다).
+    const { drift } = BALANCE.regime.crash
+    const bound = Math.exp(drift * (BALANCE.rival.driftMul + 1) / 2)
+    expect(stepRival(s).rivalAssets).toBeLessThan(s.rivalAssets * bound)
+    // 아래 단언이 없으면 driftMul을 터무니없이 키운 구현도 통과한다
+    expect(stepRival(s).rivalAssets).toBeGreaterThan(s.rivalAssets * Math.exp(drift * BALANCE.rival.driftMul) * 0.999)
   })
   it('regimes를 거쳐도 정수로 유지된다', () => {
     let s = makeState({ turn: 1 })

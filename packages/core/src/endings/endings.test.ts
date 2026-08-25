@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
 import { judgeEnding, ENDINGS, TITLES } from './endings'
+import { BALANCE } from '../balance'
 
 const at = (assets: number, over: Parameters<typeof makeState>[0] = {}) => {
   const s = makeState(over)
@@ -51,10 +52,23 @@ describe('judgeEnding 우선순위', () => {
     expect(judgeEnding(s, false).endingId).toBe('super')
   })
   it('자산 구간이 순서대로 잡힌다', () => {
-    expect(judgeEnding(at(200_000_000), false).endingId).toBe('wise')
-    expect(judgeEnding(at(20_000_000), false).endingId).toBe('bank')
-    expect(judgeEnding(at(3_100_000), false).endingId).toBe('breakeven')
-    expect(judgeEnding(at(1_000_000), false).endingId).toBe('savings')
+    // 경계는 BALANCE.endings에서 파생시킨다. 리터럴을 박아두면 밸런싱으로 경계를 옮길 때
+    // 판정 순서가 아니라 '옛 숫자'를 검사하게 된다 (Task 24에서 실제로 이 테스트가 깨졌다).
+    const e = BALANCE.endings
+    expect(judgeEnding(at(e.wiseMin + 1), false).endingId).toBe('wise')
+    expect(judgeEnding(at(e.breakevenHigh + 1), false).endingId).toBe('bank')
+    expect(judgeEnding(at(e.savingsBelow + 1), false).endingId).toBe('breakeven')
+    expect(judgeEnding(at(e.savingsBelow - 1), false).endingId).toBe('savings')
+  })
+  it('엔딩 경계가 오름차순이고 구간이 비어 있지 않다', () => {
+    // 위 테스트는 각 구간에 값이 하나씩 들어갈 때만 의미가 있다. 튜닝으로 경계가 뒤집히면
+    // (예: savingsBelow > breakevenHigh) breakeven 구간이 사라지는데, 그건 위 단언만으로는
+    // 드러나지 않는다.
+    const e = BALANCE.endings
+    expect(e.savingsBelow).toBeLessThan(e.breakevenHigh)
+    expect(e.breakevenHigh).toBeLessThan(e.wiseMin)
+    expect(e.wiseMin).toBeLessThan(e.superMin)
+    expect(e.superMin).toBeLessThan(e.fireMin)
   })
   it('엔딩 이름이 채워진다', () => {
     const r = judgeEnding(at(20_000_000), false)

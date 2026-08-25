@@ -28,8 +28,8 @@ describe('playOne', () => {
     // buyhold로 퇴화해도(리뷰 지적) 스위트가 그린으로 남는 맹점. "momentum vs random·cash"만
     // 비교하면 momentum이 buyhold로 퇴화해도 random·cash와는 여전히 다르므로 안 잡힌다
     // (직접 뮤테이션으로 확인, 아래 보고서 참고) — 그래서 5개 전략 전부를 서로 pairwise로
-    // 비교한다. seed=21 자산: buyhold 24.6M / panic 5.6M / momentum 34.5M / random 16.2M /
-    // cash 26.7M — 다섯 값 전부 서로 다르다.
+    // 비교한다. seed=21 자산(Task 24 튜닝 후): buyhold 30.3M / panic 16.3M / momentum 13.7M /
+    // random 24.5M / cash 27.3M — 다섯 값 전부 서로 다르다.
     const seed = 21
     const strategies = ['buyhold', 'panic', 'momentum', 'random', 'cash'] as const
     const results = strategies.map(s => playOne(seed, s))
@@ -78,22 +78,26 @@ describe('runBatch', () => {
   it('panic이 buyhold보다 확실히 나쁘다', () => {
     expect(runBatch(200, 'panic').assetsMedian).toBeLessThan(runBatch(200, 'buyhold').assetsMedian)
   })
+  it('buyhold가 무매매(cash)보다 낫다 — 투자할 이유가 있는 시장인가', () => {
+    // Task 24의 핵심 게이트. 시장 기대수익률이 0 이하면 아무것도 안 한 사람(cash)이
+    // 바이앤홀드를 이기고, 그 순간 이 게임은 "투자하지 마라"를 가르친다.
+    // 두 배치를 같은 시드 창에서 실제로 돌려 비교한다 — 기준선을 리터럴로 박아두면
+    // 밸런싱 한 번에 무의미해진다.
+    const bh = runBatch(200, 'buyhold')
+    const cash = runBatch(200, 'cash')
+    expect(bh.assetsMedian).toBeGreaterThan(cash.assetsMedian)
+  })
   it('엔딩이 한 종류로 쏠리지 않는다', () => {
     // Ruling 53 — 브리프 기본값(seed0=1, runs=300) 그대로. 이전 라운드에서 seed0=5000으로
     // 옮겨 3종 이상을 억지로 만들었으나, 13개 seed0 창을 훑어보면 3종이 뜨는 창도 3번째
-    // 엔딩이 300판 중 1~3판뿐인 동전던지기였다(예: seed0=5000 → wise 2판) — 게이트를
-    // 우회한 것이지 결함을 고친 게 아니었다. 되돌린다.
+    // 엔딩이 300판 중 1~3판뿐인 동전던지기였다 — 게이트를 우회한 것이지 결함을 고친 게
+    // 아니었다. 시드 창은 앞으로도 갈아끼우지 않는다.
     //
-    // 현재 밸런스에서 'random' 전략은 실제로 bank+kimheir 두 종류로만 끝난다(합쳐 98~100%,
-    // 모든 seed0 창에서 재현됨). savings/breakeven/wise/super/fire/legend는 사실상 0판 —
-    // 월급이 바닥을 받쳐 savings/breakeven 밑으로 안 떨어지고, 시장 기대수익률이 음수라
-    // wise(1억) 문턱을 넘기가 극히 드물다(Ruling 52가 지적한 것과 같은 원인). 이건 시뮬
-    // 버그가 아니라 BALANCE.regime 드리프트의 결함이고, 고치는 건 Task 24 몫이다.
-    // 지금은 실제로 나오는 종류 수(2)를 정직하게 고정해 둔다.
-    // TODO(Task 24): BALANCE.regime 드리프트를 조정해 wise/savings 등에 실제로 닿게 한
-    // 뒤, 아래 단언을 다시 >= 4로 올릴 것.
+    // Task 24에서 원인(시장 기대수익률 음수 + 엔딩 경계가 3년치 월급을 무시한 시드머니
+    // 기준)을 고친 뒤 단언을 원래 값인 4종으로 되돌렸다. 현재 실측: savings/breakeven/
+    // bank/wise/kimheir 5종, 최다 33%.
     const r = runBatch(300, 'random')
-    expect(Object.keys(r.endingCounts).length).toBeGreaterThanOrEqual(2)
-    expect(Math.max(...Object.values(r.endingCounts)) / r.runs).toBeLessThan(0.9)
+    expect(Object.keys(r.endingCounts).length).toBeGreaterThanOrEqual(4)
+    expect(Math.max(...Object.values(r.endingCounts)) / r.runs).toBeLessThan(0.7)
   })
 })

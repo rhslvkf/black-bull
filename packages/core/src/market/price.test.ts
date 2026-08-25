@@ -12,6 +12,33 @@ describe('stepPrices', () => {
     const [out] = stepPrices([makeStock({ id: 'a' })], defs, 'stagnation', noImpact, createRng(1))
     expect(out[0]!.price).toBe(10000)
   })
+  it('일반주의 적정가는 매 턴 fundamentalGrowth만큼 자란다', () => {
+    const defs = [makeStockDef({ id: 'a' })]
+    const [out] = stepPrices([makeStock({ id: 'a' })], defs, 'stagnation', noImpact, createRng(1))
+    expect(out[0]!.fundamental).toBe(Math.round(10000 * Math.exp(BALANCE.fundamentalGrowth)))
+    // 성장률이 0이면 위 단언은 그대로 통과한다 — 실제로 자라는지를 따로 못박는다.
+    expect(out[0]!.fundamental).toBeGreaterThan(10000)
+  })
+  it('적정가 성장 덕분에 장기 보유가 보상받는다 (침체 국면에서도 우상향)', () => {
+    // beta=0·volatility=0·hype=0·충격 없음 → 가격을 움직이는 항은 평균회귀뿐이고,
+    // 평균회귀가 쫓아가는 목표(fundamental)가 매 턴 자란다. 성장 항을 지우면 이 종목의
+    // 가격은 60턴 뒤에도 정확히 10000에 머물러 이 테스트가 실패한다 (뮤테이션 검증: 보고서).
+    const defs = [makeStockDef({ id: 'a' })]
+    let stocks = [makeStock({ id: 'a' })]
+    let rng = createRng(1)
+    for (let i = 0; i < 60; i++) {
+      const [st, r] = stepPrices(stocks, defs, 'stagnation', noImpact, rng)
+      stocks = st; rng = r
+    }
+    expect(stocks[0]!.price).toBeGreaterThan(10000)
+    // 가격은 적정가를 추월하지 않는다 (평균회귀가 목표를 뒤따르는 구조)
+    expect(stocks[0]!.price).toBeLessThan(stocks[0]!.fundamental)
+  })
+  it('ETF의 적정가는 성장하지 않고 가격을 그대로 따라간다', () => {
+    const defs = [makeStockDef({ id: 'l', etf: 'lev', beta: 0, volatility: 0, hype: 0 })]
+    const [out] = stepPrices([makeStock({ id: 'l' })], defs, 'stagnation', noImpact, createRng(1))
+    expect(out[0]!.fundamental).toBe(out[0]!.price)
+  })
   it('평균회귀: 저평가면 오른다', () => {
     const defs = [makeStockDef({ id: 'a', fundamental: 20000 })]
     const stocks = [makeStock({ id: 'a', price: 10000, fundamental: 20000 })]

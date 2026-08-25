@@ -2,13 +2,9 @@ import { Rand, type RngState } from '../rng/rng'
 import { BALANCE } from '../balance'
 import type { Regime } from '../types'
 
-const NEXT: Record<Regime, [Regime, number][]> = {
-  boom:       [['overheat', 5], ['stagnation', 2], ['crash', 1]],
-  overheat:   [['crash', 6], ['stagnation', 3], ['boom', 1]],
-  crash:      [['stagnation', 5], ['recovery', 5]],
-  stagnation: [['recovery', 5], ['boom', 2], ['crash', 2]],
-  recovery:   [['boom', 6], ['stagnation', 3], ['crash', 1]],
-}
+/** 전이 가중치는 BALANCE.regimeNext 단일 출처에서 온다 (튜닝 값은 BALANCE에만 둔다). */
+const nextOf = (r: Regime): [Regime, number][] =>
+  BALANCE.regimeNext[r].map(([to, w]) => [to, w] as [Regime, number])
 const STARTS: Regime[] = ['boom', 'stagnation', 'recovery', 'overheat']
 
 const FALLBACK_CYCLE: Regime[] = ['stagnation', 'recovery', 'boom', 'overheat']
@@ -39,7 +35,7 @@ export function generateRegimes(rng: RngState, totalTurns?: number): [Regime[], 
     while (out.length < turns) {
       const len = Math.min(rand.int(8, 30), turns - out.length)
       for (let i = 0; i < len; i++) out.push(cur)
-      cur = rand.pickWeighted(NEXT[cur], p => p[1])[0]
+      cur = rand.pickWeighted(nextOf(cur), p => p[1])[0]
     }
     if (out.includes('crash')) return [out, rand.state]
   }

@@ -1,5 +1,12 @@
 {
   "name": "black-bull",
   "private": true,
-  "scripts": { "test": "pnpm -r test", "build": "pnpm -r --if-present build" }
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter @bb/app dev",
+    "build": "pnpm --filter @bb/app build",
+    "preview": "pnpm --filter @bb/app preview",
+    "sim": "pnpm --filter @bb/sim start"
+  }
 }

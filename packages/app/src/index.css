@@ -45,6 +45,10 @@ ul { list-style: none; padding: 0; margin: 0; }
   gap: 10px;
 }
 .app.start h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+.error-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: var(--bad); word-break: break-all; max-width: 320px;
+}
 .app.start p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
 .app.start button {
   padding: 14px 32px; border: 0; border-radius: 999px;
@@ -194,7 +198,10 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* ---------- Stock detail ---------- */
 .screen.detail .back {
-  background: none; border: 0; color: var(--muted); font-size: 13px; padding: 6px 0; margin-bottom: 4px; min-height: 44px;
+  /* 터치 타깃 44x44: 높이는 min-height로, 너비는 min-width + 좌우 패딩으로 채운다.
+     margin-left 음수로 시각적 왼쪽 정렬은 그대로 둔다. */
+  background: none; border: 0; color: var(--muted); font-size: 13px;
+  padding: 6px 10px; margin: 0 0 4px -10px; min-height: 44px; min-width: 44px; text-align: left;
 }
 .detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
 .detail-head h2 { margin: 0; font-size: 18px; }

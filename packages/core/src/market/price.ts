@@ -22,7 +22,11 @@ export function stepPrices(
 
     const price = Math.max(BALANCE.minPrice, Math.round(s.price * Math.exp(r)))
     const history = [...s.history, price].slice(-BALANCE.historyLen)
-    return { ...s, price, fundamental: d.etf ? price : s.fundamental, history }
+    // 적정가는 매 턴 fundamentalGrowth만큼 자란다. 평균회귀가 가격을 끌고 가는 목표 자체가
+    // 위로 움직이므로, 국면 드리프트와 달리 이 성장분은 되돌려지지 않는다 = 장기 보유의 보상.
+    // (이번 턴 가격은 성장 전 fundamental로 계산한 뒤 성장시킨다.)
+    const fundamental = d.etf ? price : Math.round(s.fundamental * Math.exp(BALANCE.fundamentalGrowth))
+    return { ...s, price, fundamental, history }
   })
   return [out, rand.state]
 }

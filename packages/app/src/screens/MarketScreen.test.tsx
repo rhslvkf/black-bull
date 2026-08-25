@@ -162,13 +162,14 @@ describe('터치 타깃', () => {
   const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
   const css = readFileSync(cssPath, 'utf-8')
 
-  function minHeightOf(selector: string): number {
+  function dimOf(selector: string, prop: 'min-height' | 'min-width'): number {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const block = css.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`))?.[0] ?? ''
-    const m = block.match(/min-height:\s*(\d+)px/)
-    if (!m) throw new Error(`min-height not found for ${selector}`)
+    const m = block.match(new RegExp(`${prop}:\\s*(\\d+)px`))
+    if (!m) throw new Error(`${prop} not found for ${selector}`)
     return Number(m[1])
   }
+  const minHeightOf = (selector: string) => dimOf(selector, 'min-height')
 
   it('섹터 필터 칩의 min-height가 44px 이상이다', () => {
     expect(minHeightOf('.filters button')).toBeGreaterThanOrEqual(44)
@@ -178,8 +179,10 @@ describe('터치 타깃', () => {
     expect(minHeightOf('.trade-buttons button')).toBeGreaterThanOrEqual(44)
     expect(minHeightOf('.trade-row input')).toBeGreaterThanOrEqual(44)
   })
-  it('종목 상세의 뒤로가기(← 목록) 버튼도 44px 기준을 지킨다', () => {
+  it('종목 상세의 뒤로가기(← 목록) 버튼은 높이·너비 둘 다 44px 기준을 지킨다', () => {
     // 재리뷰 라운드 2: 종목을 볼 때마다 누르는 버튼이라 별도로 고정한다.
+    // Task 24: 실측(Playwright)에서 41x44px로 너비만 3px 모자랐다 — min-width도 함께 못박는다.
     expect(minHeightOf('.screen.detail .back')).toBeGreaterThanOrEqual(44)
+    expect(dimOf('.screen.detail .back', 'min-width')).toBeGreaterThanOrEqual(44)
   })
 })

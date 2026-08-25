@@ -41,6 +41,25 @@ describe('generateRegimes', () => {
       })
     }
   })
+  it('모든 인접 전이가 BALANCE.regimeNext에 실제로 존재한다', () => {
+    // 전이표를 BALANCE 밖(모듈 상수)에 다시 하드코딩하면 BALANCE를 튜닝해도 시장이 안 바뀐다.
+    // 예전 표에는 recovery -> crash 가 있었으므로, 그 표로 되돌리면 이 테스트가 깨진다.
+    const allowed = new Set(
+      Object.entries(BALANCE.regimeNext).flatMap(([from, tos]) =>
+        tos.filter(([, w]) => w > 0).map(([to]) => `${from}->${to}`)),
+    )
+    let transitions = 0
+    for (let seed = 0; seed < 200; seed++) {
+      const [rs] = generateRegimes(createRng(seed))
+      for (let i = 1; i < rs.length; i++) {
+        if (rs[i] === rs[i - 1]) continue
+        transitions++
+        expect(allowed, `seed ${seed}: ${rs[i - 1]}->${rs[i]}`).toContain(`${rs[i - 1]}->${rs[i]}`)
+      }
+    }
+    // 전이가 한 번도 안 일어났다면 위 루프는 아무것도 검사하지 않는다
+    expect(transitions).toBeGreaterThan(200)
+  })
   it('같은 시드는 같은 결과', () => {
     const [a] = generateRegimes(createRng(77))
     const [b] = generateRegimes(createRng(77))
