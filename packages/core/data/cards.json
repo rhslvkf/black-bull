@@ -22,7 +22,7 @@
   { "id": "avgdown", "name": "물타기", "desc": "평단을 낮추면 되지 않을까.",
     "effects": [{ "type": "averageDown" }] },
   { "id": "hodl", "name": "존버", "desc": "아무것도 하지 않는다. 그것이 전략이다.",
-    "effects": [{ "type": "mental", "delta": 4 }, { "type": "condition", "delta": 6 }] },
+    "effects": [{ "type": "mental", "delta": 2 }, { "type": "condition", "delta": 6 }] },
   { "id": "rest", "name": "휴식", "desc": "앱을 지운다. 3일 만에 다시 깐다.",
     "effects": [{ "type": "mental", "delta": 20 }, { "type": "condition", "delta": 10 }], "isRecovery": true },
   { "id": "exercise", "name": "운동", "desc": "런닝머신 위에서도 호가창을 본다.",

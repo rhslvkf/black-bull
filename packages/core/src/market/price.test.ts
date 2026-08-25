@@ -64,6 +64,31 @@ describe('stepPrices', () => {
     const [h] = stepPrices([makeStock({ id: 'a' })], [hi], 'stagnation', imp, createRng(1))
     expect(h[0]!.price).toBeGreaterThan(l[0]!.price)
   })
+  it('이벤트 충격에 BALANCE.impact.mul이 곱해진다', () => {
+    // 이벤트 임팩트는 주가를 움직이는 가장 큰 채널인데 BALANCE에 손잡이가 없었다(Fix Round 1).
+    // beta=0·volatility=0·fundamental=price라 충격 항만 남는 상태에서 정확히 검사한다.
+    const defs = [makeStockDef({ id: 'a', hype: 0 })]
+    const [out] = stepPrices([makeStock({ id: 'a' })], defs, 'stagnation', new Map([['market', 0.1]]), createRng(1))
+    expect(out[0]!.price).toBe(Math.round(10000 * Math.exp(0.1 * BALANCE.impact.mul)))
+    // mul이 1이면 위 단언은 그대로 통과한다 — 실제로 배율이 걸려 있는지를 따로 못박는다.
+    expect(BALANCE.impact.mul).toBeLessThan(1)
+    expect(out[0]!.price).toBeLessThan(Math.round(10000 * Math.exp(0.1)))
+  })
+  it('지수 ETF는 종목·섹터 충격을 받지 않고 시장 충격만 받는다', () => {
+    const defs = [makeStockDef({ id: 'l', etf: 'lev', beta: 0, sector: '금융' })]
+    const imp = new Map([['sector:금융', 0.2], ['stock:l', 0.2]])
+    const [out] = stepPrices([makeStock({ id: 'l' })], defs, 'stagnation', imp, createRng(1))
+    expect(out[0]!.price).toBe(10000)
+  })
+  it('곱버스(inv) ETF는 시장 충격을 반대로 받는다', () => {
+    // beta만 뒤집으면 국면 드리프트만 반대가 되고 뉴스 충격에는 시장과 같은 방향으로 움직인다.
+    const lev = makeStockDef({ id: 'l', etf: 'lev', beta: 0 })
+    const inv = makeStockDef({ id: 'i', etf: 'inv', beta: 0 })
+    const imp = new Map([['market', 0.1]])
+    const [out] = stepPrices([makeStock({ id: 'l' }), makeStock({ id: 'i' })], [lev, inv], 'stagnation', imp, createRng(1))
+    expect(out[0]!.price).toBeGreaterThan(10000)
+    expect(out[1]!.price).toBeLessThan(10000)
+  })
   it('섹터 충격이 같은 섹터에만 적용된다', () => {
     const defs = [makeStockDef({ id: 'a', sector: '바이오' }), makeStockDef({ id: 'b', sector: '조선' })]
     const stocks = [makeStock({ id: 'a' }), makeStock({ id: 'b' })]

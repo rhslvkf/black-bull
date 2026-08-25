@@ -1,3 +1,5 @@
+import type { Regime } from './types'
+
 export const BALANCE = {
   totalTurns: 156,
   seedMoney: 3_000_000,
@@ -20,17 +22,28 @@ export const BALANCE = {
     stagnation: { drift: -0.002, vol: 0.8 },
     recovery:   { drift: 0.008,  vol: 1.2 },
   },
-  /** 국면 전이 가중치. 합이 클 필요는 없고 상대 비율만 의미가 있다. */
+  /** 국면 전이 가중치. 합이 클 필요는 없고 상대 비율만 의미가 있다.
+   *  아래 satisfies가 국면 이름 오타를 컴파일 타임에 잡는다(regimes.ts의 캐스트 제거). */
   regimeNext: {
     boom:       [['overheat', 5], ['stagnation', 3], ['crash', 1]],
     overheat:   [['crash', 5], ['stagnation', 4], ['boom', 1]],
     crash:      [['stagnation', 3], ['recovery', 7]],
     stagnation: [['recovery', 6], ['boom', 3], ['crash', 1]],
     recovery:   [['boom', 7], ['stagnation', 3]],
-  },
+  } satisfies Record<Regime, [Regime, number][]>,
+  /** 이벤트 충격 전역 배율. 이벤트 임팩트는 주가를 움직이는 항 중 가장 큰 채널인데
+   *  (턴당 |합| 기준으로 국면 드리프트의 몇 배다) 여기 손잡이가 없어 튜닝 대상에서
+   *  빠져 있었다 — Fix Round 1. 채널의 '방향 편향'은 이벤트 데이터를 양방향으로
+   *  짝지어 없앴고(content.test.ts가 고정한다), 여기서는 '세기'만 조절한다. */
+  impact: { mul: 0.85 },
   mental: {
-    lossHold: -3, lossHoldUnemployed: -6, worsenFactor: 0.5,
-    margin: -8, cashCalm: 5, shakenMax: 29, resistPer: 0.06,
+    lossHold: -3, lossHoldUnemployed: -6, worsenFactor: 0.8,
+    margin: -8,
+    // 현금이 많으면 마음이 편하다. 다만 이 값이 lossHold를 이기면 손실 중에도 멘탈이
+    // 올라 흔들림이 영영 발동하지 않는다 — 월급이 매달 들어와 현금비중이 늘 높기
+    // 때문에 실제로 그렇게 돼 있었다(Fix Round 1). 문턱을 올리고 회복량을 낮췄다.
+    cashCalm: 2, calmCashRatio: 0.7,
+    shakenMax: 29, resistPer: 0.06,
     sellBlockLossPct: 20,
   },
   condition: {
@@ -55,6 +68,13 @@ export const BALANCE = {
     wiseMin: 100_000_000,        // 이상 -> wise
     superMin: 500_000_000,       // 이상 -> super
     fireMin: 1_000_000_000,      // 이상 + 퇴사 -> fire
+  },
+  /** 칭호 판정 문턱. endings.ts에 리터럴로 박혀 있던 값들을 옮겼다 —
+   *  실측 결과 7종 중 3종이 94~100% 무조건 부여돼 수집 축이 상수가 돼 있었다(Fix Round 1). */
+  titles: {
+    momIgnoredMin: 6,     // 엄마 전화·방문을 이 횟수 이상 무시해야 '엄마 몰래'
+    hodlerTurns: 52,      // 한 종목 연속 보유 턴 (1년)
+    allInCashRatio: 0.05, // 평균 현금비중이 이 값 미만이면 '풀매수'
   },
   maxEventsPerTurn: 2,
 } as const

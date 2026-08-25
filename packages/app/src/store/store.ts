@@ -4,9 +4,13 @@ import {
   GameError,
 } from '@bb/core'
 
-export const SAVE_KEY = 'blackbull.save.v1'
+/** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절). */
+export const SAVE_VERSION = 1
+/** 키 이름도 버전에서 파생시킨다 — 리터럴로 'v1'을 박아두면 SAVE_VERSION을 올렸을 때
+ *  키만 v1로 남아 이름이 거짓말이 된다(리뷰 Minor 2). 키가 바뀌면 구버전 저장은
+ *  읽히지 않고 남아 있다가 브라우저가 정리한다 — version 필드 검사와 이중 방어다. */
+export const SAVE_KEY = `blackbull.save.v${SAVE_VERSION}`
 export const CODEX_KEY = 'blackbull.codex.v1'
-const SAVE_VERSION = 1
 
 export type TabKey = 'home' | 'market' | 'account' | 'codex'
 export interface Codex { endings: string[]; titles: string[]; bestAssets: number; runs: number }

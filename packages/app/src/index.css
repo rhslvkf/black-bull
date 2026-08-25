@@ -45,6 +45,10 @@ ul { list-style: none; padding: 0; margin: 0; }
   gap: 10px;
 }
 .app.start h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+.app.start button.ghost {
+  background: none; color: var(--muted); border: 1px solid var(--border);
+  box-shadow: none; font-size: 14px; font-weight: 600; padding: 12px 20px; min-height: 44px;
+}
 .error-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
   color: var(--bad); word-break: break-all; max-width: 320px;

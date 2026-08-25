@@ -42,12 +42,12 @@ function pickTitles(state: GameState, assets: number): string[] {
   const avgCash = t.turnsCounted > 0 ? t.cashRatioSum / t.turnsCounted : 1
   const out: TitleId[] = []
   if (assets > state.rivalAssets) out.push('beatRival')
-  if (Number(state.flags['momIgnored'] ?? 0) >= 3) out.push('momSecret')
+  if (Number(state.flags['momIgnored'] ?? 0) >= BALANCE.titles.momIgnoredMin) out.push('momSecret')
   if (t.shakenTurns === 0) out.push('steelMental')
   if (t.lossCuts === 0) out.push('noCut')
   if (!t.usedMargin) out.push('noDebt')
-  if (t.maxHeldTurns >= 52) out.push('hodler')
-  if (avgCash < 0.05) out.push('allIn')
+  if (t.maxHeldTurns >= BALANCE.titles.hodlerTurns) out.push('hodler')
+  if (avgCash < BALANCE.titles.allInCashRatio) out.push('allIn')
   return out.map(titleOf)
 }
 

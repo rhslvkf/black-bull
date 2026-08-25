@@ -116,9 +116,14 @@ describe('칭호', () => {
     const s = at(10_000_000, { rivalAssets: 50_000_000 })
     expect(judgeEnding(s, false).titles).not.toContain('박대박을 이긴')
   })
-  it('엄마 전화 3회 무시면 엄마 몰래', () => {
-    const s = at(20_000_000); s.flags['momIgnored'] = 3
-    expect(judgeEnding(s, false).titles).toContain('엄마 몰래')
+  it('엄마 전화를 momIgnoredMin회 무시하면 엄마 몰래, 한 번 모자라면 안 붙는다', () => {
+    // 리터럴 3을 박아두면 문턱을 튜닝하는 순간 무의미해진다(Fix Round 1에서 3 → 6).
+    // 경계 아래도 함께 봐야 "항상 붙는 구현"을 잡는다 — 실측상 이 칭호는 99%였다.
+    const n = BALANCE.titles.momIgnoredMin
+    const hit = at(20_000_000); hit.flags['momIgnored'] = n
+    expect(judgeEnding(hit, false).titles).toContain('엄마 몰래')
+    const miss = at(20_000_000); miss.flags['momIgnored'] = n - 1
+    expect(judgeEnding(miss, false).titles).not.toContain('엄마 몰래')
   })
   it('흔들림 0턴이면 강철멘탈의', () => {
     expect(judgeEnding(at(20_000_000), false).titles).toContain('강철멘탈의')

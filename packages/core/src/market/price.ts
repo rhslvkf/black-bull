@@ -14,10 +14,15 @@ export function stepPrices(
   const out = stocks.map(s => {
     const d = byId.get(s.id)
     if (!d) throw new Error(`stepPrices: no StockDef for ${s.id}`)
-    const shock = market + (impacts.get(`stock:${s.id}`) ?? 0) + (impacts.get(`sector:${d.sector}`) ?? 0)
+    // 지수 ETF는 개별 종목·섹터 뉴스와 무관하고 시장 충격만 받는다. 곱버스(inv)는 그
+    // 시장 충격을 반대로 받는다 — beta만 뒤집어 두면 국면 드리프트만 반대가 되고
+    // 뉴스에는 시장과 같은 방향으로 움직여서 '곱버스'가 곱버스가 아니게 된다.
+    const shock = d.etf
+      ? market * (d.etf === 'inv' ? -1 : 1)
+      : (market + (impacts.get(`stock:${s.id}`) ?? 0) + (impacts.get(`sector:${d.sector}`) ?? 0)) * (1 + d.hype)
     let r = drift * d.beta
       + rand.normal(0, d.volatility * vol)
-      + shock * (1 + d.hype)
+      + shock * BALANCE.impact.mul
     if (!d.etf) r += BALANCE.meanRev * Math.log(s.fundamental / s.price)
 
     const price = Math.max(BALANCE.minPrice, Math.round(s.price * Math.exp(r)))

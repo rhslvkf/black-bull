@@ -78,14 +78,55 @@ describe('runBatch', () => {
   it('panic이 buyhold보다 확실히 나쁘다', () => {
     expect(runBatch(200, 'panic').assetsMedian).toBeLessThan(runBatch(200, 'buyhold').assetsMedian)
   })
-  it('buyhold가 무매매(cash)보다 낫다 — 투자할 이유가 있는 시장인가', () => {
+  it('buyhold가 무매매(cash)를 마진 이상으로 이긴다 — 투자할 이유가 있는 시장인가', () => {
     // Task 24의 핵심 게이트. 시장 기대수익률이 0 이하면 아무것도 안 한 사람(cash)이
     // 바이앤홀드를 이기고, 그 순간 이 게임은 "투자하지 마라"를 가르친다.
-    // 두 배치를 같은 시드 창에서 실제로 돌려 비교한다 — 기준선을 리터럴로 박아두면
+    // 두 배치를 같은 시드 창에서 실제로 돌려 비교한다 — 기준선을 리터럴로 박으면
     // 밸런싱 한 번에 무의미해진다.
+    //
+    // 마진(×1.03)이 필요한 이유: 마진 없는 `>`는 튜닝 전 BALANCE에서도 통과했다
+    // (buyhold 29,022,906 vs cash 29,020,000 = +0.01%, 2,906원 차이 — 동전던지기).
+    // 상대 마진은 '기준선 리터럴'이 아니라 두 배치의 관계이므로 밸런싱을 해도 유효하다.
+    // 현재 실측 +10.4%. (뮤테이션 검증: 보고서 Fix Round 1 §뮤테이션)
     const bh = runBatch(200, 'buyhold')
     const cash = runBatch(200, 'cash')
-    expect(bh.assetsMedian).toBeGreaterThan(cash.assetsMedian)
+    expect(bh.assetsMedian).toBeGreaterThan(cash.assetsMedian * 1.03)
+  })
+  it('어떤 종목도 시드와 무관하게 확정 승리·확정 패배가 아니다', () => {
+    // Fix Round 1의 핵심 게이트. 이전에는 에코프로형제가 300시드 전부에서 초기가 아래로
+    // 끝났고(상승률 0%), 10종 중 5종이 상승률 6% 이하였다 — 플레이어가 배우는 것이
+    // "위험을 어떻게 다룰까"가 아니라 "어떤 티커를 피할까"라는 정답표가 된다.
+    // 자산 분위수로는 안 보이는 결함이라 리포트에 종목별 최종가 배율을 추가했다.
+    const r = runBatch(200, 'random')
+    const ids = Object.keys(r.priceUpRate)
+    expect(ids.length).toBeGreaterThanOrEqual(10)
+    const bad = ids
+      .filter(id => r.priceUpRate[id]! < 0.15 || r.priceUpRate[id]! > 0.95)
+      .map(id => `${id}: 상승률 ${(r.priceUpRate[id]! * 100).toFixed(0)}% (배율 중앙 x${r.priceMulMedian[id]!.toFixed(2)})`)
+    expect(bad).toEqual([])
+  })
+  it('시장 자체가 3년 뒤 우상향한다 (buyhold의 작은 포지션을 통하지 않고 직접 잰다)', () => {
+    // buyhold는 시드머니의 90%(270만원)를 딱 한 번 사고 끝이라, 나머지 3천만원은 월급이다.
+    // 그래서 buyhold vs cash 비교는 시장 성질을 아주 얇게만 반영한다 — 시장 튜닝을 통째로
+    // 되돌려도 그 게이트는 통과한다(FM1: buyhold/cash 1.064). 시장은 직접 재야 한다.
+    // 지수 ETF는 파생이라 제외하고, 실제 종목들의 최종가 배율 중앙값의 중앙값을 본다.
+    // 현재 1.24 / 시장 튜닝을 되돌리면 0.78. (뮤테이션 검증: 보고서 Fix Round 1)
+    const r = runBatch(200, 'random')
+    const muls = Object.entries(r.priceMulMedian)
+      .filter(([id]) => id !== 'lev' && id !== 'inv')
+      .map(([, m]) => m)
+      .sort((a, b) => a - b)
+    expect(muls.length).toBeGreaterThanOrEqual(8)
+    const median = muls[Math.floor(muls.length / 2)]!
+    expect(median, `종목 배율 중앙값 ${median.toFixed(3)}`).toBeGreaterThan(1)
+  })
+  it('멘탈 시스템이 살아 있다 — 흔들림이 가끔은 발동한다', () => {
+    // 이전에는 200시드 전부가 shakenTurns 0이었다(멘탈은 100 고정). 흔들림·이성 카드
+    // 잠김·손절 봉인이 정상 플레이에서 한 번도 발동하지 않으면 그 시스템은 없는 것과 같다.
+    // 반대로 늘 발동하면 게임이 안 굴러가므로 위쪽도 막는다.
+    const r = runBatch(200, 'buyhold')
+    expect(r.shakenRate).toBeGreaterThan(0.1)
+    expect(r.shakenRate).toBeLessThan(0.9)
   })
   it('엔딩이 한 종류로 쏠리지 않는다', () => {
     // Ruling 53 — 브리프 기본값(seed0=1, runs=300) 그대로. 이전 라운드에서 seed0=5000으로

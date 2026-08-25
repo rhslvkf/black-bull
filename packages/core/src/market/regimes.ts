@@ -2,9 +2,9 @@ import { Rand, type RngState } from '../rng/rng'
 import { BALANCE } from '../balance'
 import type { Regime } from '../types'
 
-/** 전이 가중치는 BALANCE.regimeNext 단일 출처에서 온다 (튜닝 값은 BALANCE에만 둔다). */
-const nextOf = (r: Regime): [Regime, number][] =>
-  BALANCE.regimeNext[r].map(([to, w]) => [to, w] as [Regime, number])
+/** 전이 가중치는 BALANCE.regimeNext 단일 출처에서 온다 (튜닝 값은 BALANCE에만 둔다).
+ *  BALANCE 쪽 satisfies가 국면 이름을 검사하므로 여기서 캐스트할 필요가 없다. */
+const nextOf = (r: Regime): [Regime, number][] => [...BALANCE.regimeNext[r]]
 const STARTS: Regime[] = ['boom', 'stagnation', 'recovery', 'overheat']
 
 const FALLBACK_CYCLE: Regime[] = ['stagnation', 'recovery', 'boom', 'overheat']

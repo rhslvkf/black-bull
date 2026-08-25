@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useGame } from './store/store'
+import { useGame, SAVE_KEY } from './store/store'
 import { loadEvents, BALANCE, ENDING_IDS, type EndingId } from '@bb/core'
 
 const events = loadEvents()
@@ -39,7 +39,7 @@ describe('통합: 스토어로 완주', () => {
     const s = playToEnd(4)
     expect(useGame.getState().codex.runs).toBe(1)
     expect(useGame.getState().codex.endings).toContain(s.ending!.endingId as EndingId)
-    expect(localStorage.getItem('blackbull.save.v1')).not.toBeNull()
+    expect(localStorage.getItem(SAVE_KEY)).not.toBeNull()
   })
   it('새로고침(reset)해도 진행이 복원된다', () => {
     useGame.getState().newGame(9)
@@ -57,6 +57,32 @@ describe('통합: 스토어로 완주', () => {
     expect(s.player.mental).toBeLessThanOrEqual(100)
     expect(s.player.condition).toBeGreaterThanOrEqual(0)
     expect(s.player.condition).toBeLessThanOrEqual(100)
+  })
+  it('매매를 섞어 완주해도 끝까지 가고 보유가 유지된다 (스토어의 거래 경로 포함)', () => {
+    // 위 완주 테스트들은 next()만 부르므로 doBuy/doSell을 한 번도 지나지 않는다(리뷰 Minor 3).
+    const g = useGame.getState()
+    g.newGame(11)
+    g.next(['hodl'])
+    g.doBuy('sjc', 20)
+    expect(useGame.getState().state!.player.holdings).toHaveLength(1)
+    for (let i = 0; i < BALANCE.totalTurns + 5; i++) {
+      const s = useGame.getState().state!
+      if (s.status === 'ended') break
+      while (useGame.getState().state!.pendingChoices.length > 0) {
+        const c = useGame.getState().state!.pendingChoices[0]!
+        const n = events.find(e => e.id === c.eventId)?.choices?.length ?? 0
+        if (n > 0) useGame.getState().choose(c.eventId, 0)
+        else break
+      }
+      // 80턴차에 절반을 판다 — 매도 경로도 통합 수준에서 한 번은 지난다.
+      const cur = useGame.getState().state!
+      if (cur.turn === 80 && cur.player.holdings.length > 0) useGame.getState().doSell('sjc', 10)
+      useGame.getState().next(['hodl'])
+    }
+    const end = useGame.getState().state!
+    expect(end.status).toBe('ended')
+    expect(end.turn).toBe(BALANCE.totalTurns)
+    expect(end.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(10)
   })
   it('여러 판을 이어서 돌리면 도감 회차가 누적된다', () => {
     playToEnd(31)
