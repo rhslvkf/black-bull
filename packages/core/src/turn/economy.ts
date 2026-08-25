@@ -33,7 +33,6 @@ export function settleTier(state: GameState): GameState {
 export function stepRival(state: GameState): GameState {
   const regime = state.regimes[state.turn - 1] ?? 'stagnation'
   const { drift } = BALANCE.regime[regime]
-  let v = state.rivalAssets * Math.exp(drift * BALANCE.rival.driftMul)
-  if (regime === 'crash') v *= BALANCE.rival.crashDecay
+  const v = state.rivalAssets * Math.exp(drift * BALANCE.rival.driftMul)
   return { ...state, rivalAssets: Math.max(0, Math.round(v)) }
 }

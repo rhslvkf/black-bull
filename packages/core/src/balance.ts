@@ -29,7 +29,7 @@ export const BALANCE = {
   loan: { minTier: 3, rate: 0.0025, maxRatio: 0.9, callRatio: 1.3 },
   whale: { minTier: 5, notionalDiv: 2e10, maxImpact: 0.03 },
   tierMins: [0, 10_000_000, 50_000_000, 100_000_000, 500_000_000, 3_000_000_000],
-  rival: { start: 35_000_000, driftMul: 1.8, crashDecay: 0.93 },
+  rival: { start: 35_000_000, driftMul: 1.8 },
   endings: {
     savingsBelow: 2_700_000, breakevenHigh: 3_300_000,
     bankHigh: 6_000_000, wiseHigh: 500_000_000, fireMin: 1_000_000_000,

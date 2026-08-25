@@ -56,13 +56,20 @@ describe('stepRival', () => {
     const s = makeState({ turn: 1 }); s.regimes[0] = 'boom'
     expect(stepRival(s).rivalAssets).toBeGreaterThan(s.rivalAssets)
   })
-  it('crash에서는 크게 줄어든다', () => {
+  it('crash에서는 driftMul로 크게 줄어든다', () => {
     const s = makeState({ turn: 1 }); s.regimes[0] = 'crash'
-    expect(stepRival(s).rivalAssets).toBeLessThan(s.rivalAssets * 0.95)
+    // With driftMul=1.8: exp(-0.035 * 1.8) ≈ 0.9389, so 35M → 32.86M
+    // Without driftMul: exp(-0.035) ≈ 0.9656, so 35M → 33.80M
+    // This bound rejects the implementation missing driftMul
+    expect(stepRival(s).rivalAssets).toBeLessThan(s.rivalAssets * 0.939)
   })
-  it('음수가 되지 않는다', () => {
-    let s = makeState({ turn: 1 }); s.regimes[0] = 'crash'; s.rivalAssets = 1000
-    for (let i = 0; i < 200; i++) s = stepRival(s)
-    expect(s.rivalAssets).toBeGreaterThanOrEqual(0)
+  it('regimes를 거쳐도 정수로 유지된다', () => {
+    let s = makeState({ turn: 1 })
+    for (let i = 0; i < 30; i++) {
+      s = { ...s, turn: s.turn + 1 }
+      s = stepRival(s)
+      expect(Number.isInteger(s.rivalAssets)).toBe(true)
+      expect(s.rivalAssets).toBeGreaterThanOrEqual(0)
+    }
   })
 })
