@@ -16,7 +16,15 @@ function parseStrategy(raw: string): Strategy {
   return found
 }
 
-const runs = Number(arg('runs', '1000'))
+function parseRuns(raw: string): number {
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`--runs는 양의 정수여야 합니다: '${raw}'`)
+  }
+  return n
+}
+
+const runs = parseRuns(arg('runs', '1000'))
 const strategy = parseStrategy(arg('strategy', 'buyhold'))
 const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`
 
