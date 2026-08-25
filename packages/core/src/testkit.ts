@@ -11,7 +11,7 @@ export function makeStock(over: Partial<StockState> & { id: string }): StockStat
 export function makeState(over: Partial<GameState> = {}): GameState {
   return {
     turn: 1, seed0: 1, rng: { s: 1 },
-    regimes: Array(BALANCE.totalTurns).fill('stagnation') as Regime[],
+    regimes: Array.from({ length: BALANCE.totalTurns }, (): Regime => 'stagnation'),
     stockDefs: [makeStockDef({ id: 's1' }), makeStockDef({ id: 's2' })],
     stocks: [makeStock({ id: 's1' }), makeStock({ id: 's2' })],
     player: {
