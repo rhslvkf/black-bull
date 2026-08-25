@@ -21,7 +21,7 @@ export function totalAssets(state: GameState): number {
 }
 export function cashRatio(state: GameState): number {
   const t = totalAssets(state)
-  return t <= 0 ? 1 : Math.min(1, state.player.cash / t)
+  return t <= 0 ? 0 : Math.min(1, state.player.cash / t)
 }
 export function portfolioLossPct(state: GameState): number {
   const cost = state.player.holdings.reduce((a, h) => a + h.qty * h.avgCost, 0)

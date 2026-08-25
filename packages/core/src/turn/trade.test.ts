@@ -20,6 +20,19 @@ describe('accounting', () => {
     s.player.holdings = [{ stockId: 's1', qty: 1, avgCost: 10000, heldTurns: 0 }]
     expect(cashRatio(s)).toBeCloseTo(5000 / 15000, 5)
   })
+  it('cashRatio: 총자산이 음수면 0이다 (지급불능을 현금비중 1로 읽지 않는다)', () => {
+    const s = makeState()
+    s.player.cash = 0
+    s.player.loan = 1_000_000
+    expect(totalAssets(s)).toBeLessThan(0)
+    expect(cashRatio(s)).toBe(0)
+  })
+  it('cashRatio: 총자산이 정확히 0이면 0이다', () => {
+    const s = makeState()
+    s.player.cash = 0
+    expect(totalAssets(s)).toBe(0)
+    expect(cashRatio(s)).toBe(0)
+  })
   it('portfolioLossPct: 평가손실이 있으면 양수', () => {
     const s = makeState()
     s.player.holdings = [{ stockId: 's1', qty: 10, avgCost: 20000, heldTurns: 0 }]
