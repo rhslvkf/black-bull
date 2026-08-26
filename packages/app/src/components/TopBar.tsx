@@ -8,6 +8,11 @@ import { won, yearWeek } from '../format'
  *  min-width/min-height를 직접 숫자로 박아 그 착시가 반복될 여지를 없앤다. */
 export const TOUCH_TARGET_PX = 44
 
+/** §3 레이아웃 예산 — 상단바 한 줄 56px. 정의는 여기 한 곳뿐이다. jsdom은 외부 CSS를
+ *  읽지 않으므로 CharacterStage의 260px와 같은 방식으로 인라인 스타일로 내려
+ *  getComputedStyle로 실측 가능하게 한다(리뷰 Fix Round 1 Minor 1). */
+export const TOPBAR_HEIGHT_PX = 56
+
 /**
  * §3.1 홈 레이아웃의 상단바 — 메뉴 / 연차·주차·D-day / 총자산 / 정보.
  *
@@ -23,7 +28,7 @@ export function TopBar() {
   const assets = totalAssets(s)
 
   return (
-    <header className="topbar" data-testid="topbar">
+    <header className="topbar" data-testid="topbar" style={{ height: `${TOPBAR_HEIGHT_PX}px` }}>
       <button
         type="button"
         className="topbar-icon-btn"

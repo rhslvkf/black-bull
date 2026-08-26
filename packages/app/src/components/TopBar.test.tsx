@@ -3,7 +3,6 @@ import { screen } from '@testing-library/react'
 import { BALANCE } from '@bb/core'
 import { renderWithState } from '../testUtils'
 import { won } from '../format'
-import { TOUCH_TARGET_PX } from './TopBar'
 
 // Ruling 18 — 브리프는 @testing-library/jest-dom의 toHaveTextContent/toHaveAttribute를
 // 쓰지만 packages/app에는 그 의존성이 없다. 새 의존성을 추가하지 않고 순수 DOM으로
@@ -41,15 +40,22 @@ describe('TopBar', () => {
     expect(screen.getByTestId('topbar-assets').textContent).toBe(won(12_345_678))
   })
 
-  // 추가 확인: 1차 개발에서 "패딩 포함 ≥40px"을 ≥44px로 잘못 보고한 사고가 있었다
-  // (보고서 참고). getComputedStyle로 실제 min-width/min-height를 직접 잰다 —
-  // jsdom은 외부 CSS를 안 읽으므로 TopBar가 인라인 스타일로 내린 값을 그대로 본다.
-  it('메뉴·정보 버튼의 터치 타깃이 44px 이상이다', () => {
+  // 리뷰 Fix Round 1 (Major) — 이전 버전은 TopBar.tsx가 export하는 TOUCH_TARGET_PX를
+  // 그대로 import해 "그 상수가 그 상수와 같다"를 확인하는 자기참조 테스트였다. 구현이
+  // 32px를 export하든 48px를 export하든 항상 통과해 아무것도 잠그지 못했다(1차 개발의
+  // "패딩 포함 ≥40px인데 실측 33px"과 같은 종류의 사고).
+  //
+  // 44는 계획서 Global Constraints("터치 타깃 44px 이상")의 요구값이지 이 구현의
+  // 상수가 아니다 — 그래서 여기서는 TopBar.tsx의 어떤 export도 가져오지 않고 리터럴
+  // 44를 직접 적는다. ">="로 비교하는 이유도 같다: 제약은 "44px 이상"이므로, 나중에
+  // 48px로 더 넉넉하게 키우는 정당한 변경까지 이 테스트가 막아서는 안 된다.
+  it('메뉴·정보 버튼의 터치 타깃이 44px 이상이다 (Global Constraints)', () => {
+    const MIN_TOUCH_TARGET_PX = 44 // 계획서 요구값. TopBar.tsx의 상수를 import하지 않는다.
     renderWithState({})
     for (const id of ['topbar-menu', 'topbar-info']) {
       const style = getComputedStyle(screen.getByTestId(id))
-      expect(parseFloat(style.minWidth)).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
-      expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
+      expect(parseFloat(style.minWidth)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+      expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
     }
   })
 
@@ -57,5 +63,13 @@ describe('TopBar', () => {
     renderWithState({})
     expect(screen.getByTestId('topbar-menu').getAttribute('aria-label')).toBe('메뉴')
     expect(screen.getByTestId('topbar-info').getAttribute('aria-label')).toBe('정보')
+  })
+
+  // 리뷰 Fix Round 1 (Minor 1) — §3 레이아웃 예산: 상단바 56px. CharacterStage의
+  // 260px와 같은 이유로 jsdom이 실측할 수 있게 인라인 스타일로 내린다. 값은
+  // TopBar.tsx의 TOPBAR_HEIGHT_PX 상수 한 곳에서만 정의한다.
+  it('상단바 높이가 56px로 고정된다 (§3 레이아웃 예산)', () => {
+    renderWithState({})
+    expect(getComputedStyle(screen.getByTestId('topbar')).height).toBe('56px')
   })
 })

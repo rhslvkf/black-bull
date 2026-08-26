@@ -105,8 +105,12 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* §3.1 상단바: 메뉴 / 연차·주차·D-day / 총자산 / 정보. 진행바(Hud가 이미 그린다)와
    나머지 HUD 요소는 Task 12가 Hud를 정리하면서 이 자리로 옮겨온다. */
 .topbar {
+  /* 높이는 TopBar.tsx의 TOPBAR_HEIGHT_PX(56px, §3 레이아웃 예산)가 인라인으로
+     내려준다 — 여기서 세로 패딩을 더하면 그 예산을 넘긴다(리뷰 Fix Round 1 Minor 1:
+     기존 6px+12px 패딩이 44px 버튼과 합쳐져 63px까지 밀려났던 원인). */
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  padding: 0; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  box-sizing: border-box;
 }
 .topbar-icon-btn {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
