@@ -1,12 +1,12 @@
 import { BALANCE, totalAssets } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, yearWeek } from '../format'
+import { TOUCH_TARGET_PX } from '../design/layout'
 
-/** 전역 제약의 터치 타깃 최소값. jsdom은 외부 CSS를 읽지 않으므로(design/testUtils.ts
- *  주석·CharacterStage의 260px와 같은 이유) 인라인 스타일로 내려 실측 가능하게 한다.
- *  1차 개발에서 "패딩 포함 ≥40px"을 ≥44px로 잘못 보고했던 사고가 있었다 — 여기서는
- *  min-width/min-height를 직접 숫자로 박아 그 착시가 반복될 여지를 없앤다. */
-export const TOUCH_TARGET_PX = 44
+// TOUCH_TARGET_PX는 design/layout.ts로 옮겼다(Fix Round 1 Minor 3) — ActionMeter·
+// CardTile 등 다른 컴포넌트가 이 파일(TopBar.tsx)을 상수 창고로 끌어다 쓰던 구조를
+// 없애고, 그 두 파일의 import도 함께 `../design/layout`으로 갱신했다. 이 파일 자신은
+// 계속 그 값을 아래에서 쓴다.
 
 /** §3 레이아웃 예산 — 상단바 한 줄 56px. 정의는 여기 한 곳뿐이다. jsdom은 외부 CSS를
  *  읽지 않으므로 CharacterStage의 260px와 같은 방식으로 인라인 스타일로 내려

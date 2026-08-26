@@ -1,7 +1,7 @@
 import { actionPoints } from '@bb/core'
 import { apSpent, useGame } from '../store/store'
 import { useCountUp } from '../design/motion'
-import { TOUCH_TARGET_PX } from './TopBar'
+import { TOUCH_TARGET_PX } from '../design/layout'
 
 /**
  * §3.1 홈 레이아웃의 행동력 행 — 남은 행동력을 점으로, 리롤 버튼을 옆에 둔다.

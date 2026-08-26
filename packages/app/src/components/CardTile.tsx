@@ -1,15 +1,15 @@
 import type { ActionCardDef, CardGrade, SlotCard, StatKey } from '@bb/core'
 import { cardApCost, gradeCashMul, gradeMul, loadCards } from '@bb/core'
 import { Art } from '../art/Art'
-import { STAT_META } from './StatChips'
-import { TOUCH_TARGET_PX } from './TopBar'
+import { STAT_META } from '../design/stats'
+import { TOUCH_TARGET_PX } from '../design/layout'
 
 const CARDS = loadCards()
 
-/** 스탯 라벨은 StatChips가 export하는 단일 출처를 그대로 재사용한다(중복 결함 방지 —
- *  이 파일 상단 export 주석 참고). `Record<StatKey, string>`을 만들려면 빈 객체를
- *  그 타입으로 단언해야 하는데(`as` 금지), `find`로 조회하면 단언 없이도 타입이
- *  선다. */
+/** 스탯 라벨은 `design/stats.ts`가 export하는 단일 출처를 그대로 재사용한다(`StatChips`도
+ *  같은 곳을 쓴다 — Fix Round 1 Minor 3, 중복 결함 방지). `Record<StatKey, string>`을
+ *  만들려면 빈 객체를 그 타입으로 단언해야 하는데(`as` 금지), `find`로 조회하면 단언
+ *  없이도 타입이 선다. */
 function statLabel(key: StatKey): string {
   return STAT_META.find(m => m.key === key)?.label ?? key
 }
@@ -91,6 +91,19 @@ export interface CardTileProps {
  * `SlotCard`(core 타입)와 이름이 겹치지 않도록 컴포넌트 이름은 `CardTile`이다.
  * 등급 배지·효과 요약(보상)·비용(행동력 + 대가)을 한 타일 안에 모아, "등급이 오르면
  * 보상과 대가가 함께 커진다"는 이 게임의 성장 루프가 카드 한 장만 봐도 읽히게 한다.
+ *
+ * 높이 예산(Fix Round 1 Minor 1) — §3.1 다이어그램은 카드 2×2 전체(2행)에 190px을
+ * 쓴다. `recovery-marker`를 별도 줄이 아니라 비용 줄 안에 넣은 것(아래 card-cost-row
+ * 참고)이 그 예산을 맞추기 위한 조치다. 다만 카드 데이터 중 효과가 가장 많은
+ * `drink`(최존버와 소주, 효과 5개: 멘탈+스탯2 보상, 현금+컨디션 대가)가 S등급으로
+ * 회복 슬롯에 뽑히면, playwright 실측(2026-08-26, 177px 폭)으로 카드 한 장이 122px까지
+ * 커진다 — 같은 행의 다른 카드가 82px이면 그 행만 122px, 전체 2행 그리드가 약
+ * 122+8+82=212px로 190px 예산을 넘는다. 효과를 줄이면(=대가를 숨기면) 예산은 맞지만
+ * §2.2·MU7이 요구하는 "보상과 대가를 함께 보여준다"가 깨진다 — 여기서는 후자를
+ * 우선했다. jsdom은 실제 텍스트 줄바꿈을 계산하지 못해 이 픽셀 수치 자체를 CI
+ * 테스트로 고정할 수 없으므로, 그 원인이었던 "표시 줄 수"를 대신 구조로 고정한다
+ * (CardTile.test.tsx "카드 표시 줄 수 상한" — recovery-marker가 다시 별도 줄로
+ * 돌아가거나 새 줄이 추가되는 회귀를 잡는다).
  */
 export function CardTile({ slot, selected = false, disabled = false, lockReason = null, onPick }: CardTileProps) {
   const card = CARDS.find(c => c.id === slot.cardId)
@@ -145,14 +158,15 @@ export function CardTile({ slot, selected = false, disabled = false, lockReason 
         {costs.map(r => (
           <span key={r.key} className="cost-item" data-testid={`cost-${r.key}`}>{r.label} {r.text}</span>
         ))}
+        {/* 회복 슬롯은 전역 제약("회복 슬롯은 항상 열려 있고 회복 카드는 행동력을
+         *  소모하지 않는다")의 예외 없는 카드다 — ⚡0 숫자만으로는 "항상 열려 있다"는
+         *  사실까지 전달되지 않아 별도 표식을 둔다(MU9 대비). 비용 줄 안에 같이 두는
+         *  이유는 Fix Round 1 Minor 1 — 별도 줄로 두면 §3.1 카드 높이 예산을 넘긴다.
+         *  카드 시각 구별(왼쪽 초록 테두리, .card.recovery)은 그대로 유지된다. */}
+        {card.isRecovery && (
+          <span className="recovery-marker" data-testid="recovery-marker">항상 열림</span>
+        )}
       </span>
-
-      {/* 회복 슬롯은 전역 제약("회복 슬롯은 항상 열려 있고 회복 카드는 행동력을
-       *  소모하지 않는다")의 예외 없는 카드다 — ⚡0 숫자만으로는 "항상 열려 있다"는
-       *  사실까지 전달되지 않아 별도 표식을 둔다(MU9 대비). */}
-      {card.isRecovery && (
-        <span className="recovery-marker" data-testid="recovery-marker">회복 · 항상 열림</span>
-      )}
 
       {disabled && lockReason && (
         <span className="card-lock" data-testid={`card-lock-${card.id}`}>{lockReason}</span>

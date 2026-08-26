@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { GRADES, gradeMul, loadCards, type CardGrade } from '@bb/core'
@@ -10,10 +13,27 @@ import { CardTile } from './CardTile'
 // Ruling 20 — jsdom은 외부 CSS를 읽지 않고 var()도 해석하지 않는다. 등급 배지 색은
 // CardTile.tsx가 인라인 `backgroundColor: var(--grade-<등급>)`로 내리므로
 // getComputedStyle이 그 문자열을 그대로 돌려주고, 6개 등급이 서로 다른 문자열이 된다.
+// (Fix Round 1 Minor 2 — "서로 다르다"만 보고 "실제 토큰을 가리키는가"는 안 보던 구멍을
+// 아래 describe가 tokens.css를 직접 읽어 메운다.)
 
 const CARDS = loadCards()
 const analyze = CARDS.find(c => c.id === 'analyze')!
 const rest = CARDS.find(c => c.id === 'rest')!
+
+// design/tokens.test.ts(Task 9)가 세운 전례를 그대로 따른다 — tokens.css를 readFileSync로
+// 읽어 `--name: 값;` 형태의 실제 선언이 있는지 정규식으로 확인한다. 손으로 6개 이름을
+// 다시 적지 않고 core의 GRADES에서 유도한다.
+const tokensCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../design/tokens.css'),
+  'utf-8',
+)
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+function definesCustomProperty(css: string, name: string): boolean {
+  const re = new RegExp(`--${name}\\s*:\\s*[^;]+;`)
+  return re.test(stripCssComments(css))
+}
 
 describe('CardTile', () => {
   it('등급 배지를 보여준다', () => {
@@ -78,6 +98,26 @@ describe('CardTile', () => {
     })
   })
 
+  // Fix Round 1 Minor 2 — "6개 등급의 배지 색이 서로 다르다"는 위 테스트가 이미 보지만,
+  // 그 문자열이 실제로 tokens.css에 정의된 변수를 가리키는지는 안 본다(오타를 내도
+  // 6개가 여전히 서로 다른 오타 문자열이라 통과한다). 여기서 그 구멍을 막는다 —
+  // 배지의 backgroundColor에서 변수 이름을 뽑아 tokens.css에 실제 선언이 있는지 본다.
+  describe('등급 배지가 참조하는 CSS 변수가 tokens.css에 실제로 존재한다 (Fix Round 1 Minor 2)', () => {
+    it('등급 6종 전부 tokens.css에 정의된 --grade-* 변수를 가리킨다', () => {
+      for (const g of GRADES) {
+        const { container, unmount } = render(<CardTile slot={{ cardId: 'analyze', grade: g }} />)
+        const bg = getComputedStyle(container.querySelector('[data-testid=grade-badge]')!).backgroundColor
+        const m = bg.match(/^var\(--([a-zA-Z0-9-]+)\)$/)
+        expect(m, `등급 ${g} 배지의 backgroundColor가 var(--x) 형태가 아니다: "${bg}"`).not.toBeNull()
+        expect(
+          definesCustomProperty(tokensCss, m![1]!),
+          `등급 ${g}가 가리키는 --${m ? m[1] : '?'}가 tokens.css에 정의돼 있지 않다`,
+        ).toBe(true)
+        unmount()
+      }
+    })
+  })
+
   // MU9 대비 — 회복 카드는 항상 열려 있고 행동력을 쓰지 않는다는 사실이 시각적으로
   // 구별돼야 한다(전역 제약). 행동 카드에는 이 표식이 없어야 대비가 실제로 성립한다.
   describe('회복 카드는 시각적으로 구별된다 (전역 제약, MU9)', () => {
@@ -88,6 +128,25 @@ describe('CardTile', () => {
     it('행동 카드에는 recovery-marker가 없다', () => {
       render(<CardTile slot={{ cardId: 'analyze', grade: 'C' }} />)
       expect(screen.queryByTestId('recovery-marker')).toBeNull()
+    })
+  })
+
+  // Fix Round 1 Minor 1 — jsdom은 실제 그리드/텍스트 레이아웃을 계산하지 않으므로
+  // §3.1 카드 높이 예산(190px)을 픽셀로 이 스위트에서 직접 잠글 수 없다(실측은
+  // playwright로 따로 했다 — task-13-report.md "## Fix Round 1" 참고, 이 프로젝트의
+  // 실제 vitest 스위트에는 브라우저 레이아웃 엔진이 없다). 대신 픽셀 높이의 실제
+  // 원인이었던 "표시 줄 수"를 구조로 고정한다 — recovery-marker를 별도 줄로 되돌리거나
+  // 새 줄을 추가하는 회귀가 있으면 여기서 잡힌다.
+  describe('카드 표시 줄 수 상한 (Fix Round 1 Minor 1 — 높이 예산의 대리 지표)', () => {
+    it('잠기지 않은 카드는 이름줄·효과줄·비용줄, 최대 3줄을 넘지 않는다 (카드 11종 × 등급 6종 전부)', () => {
+      for (const c of CARDS) {
+        for (const g of GRADES) {
+          const { container, unmount } = render(<CardTile slot={{ cardId: c.id, grade: g }} />)
+          const rows = container.querySelector(`[data-testid="slot-card-${c.id}"]`)!.children.length
+          expect(rows, `${c.id}(${g}) 표시 줄 수가 3을 넘었다(${rows}줄)`).toBeLessThanOrEqual(3)
+          unmount()
+        }
+      }
     })
   })
 

@@ -2,23 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { Stats } from '@bb/core'
 import { useGame } from '../store/store'
 import { prefersReducedMotion } from '../design/motion'
+import { STAT_META } from '../design/stats'
 
-/**
- * 스탯 5종의 고정 메타(순서·라벨·색 토큰 이름). §2 표의 순서(분석력·정보력·강인함·
- * 체력·인맥 — 표는 그 순서지만 §3.1 다이어그램은 "강인·체력·정보·분석·인맥"으로
- * 그린다)를 그대로 따른다 — 다이어그램이 화면 문법의 최종 기준이다.
- *
- * export하는 이유: CardTile의 효과 요약(§3.1 카드 2×2)이 같은 스탯 라벨을 써야 한다.
- * 여기서 export해 재사용하지 않으면 두 파일이 각자 "분석"/"analysis" 매핑을 들고
- * 있다가 라벨이 갈라지는 사고(1차 개발에서 상수 복제가 반복 결함이었다)가 재발한다.
- */
-export const STAT_META: readonly { key: keyof Stats; label: string }[] = [
-  { key: 'grit', label: '강인' },
-  { key: 'stamina', label: '체력' },
-  { key: 'info', label: '정보' },
-  { key: 'analysis', label: '분석' },
-  { key: 'network', label: '인맥' },
-]
+// STAT_META는 design/stats.ts로 옮겼다(Fix Round 1 Minor 3) — CardTile이 이 파일을
+// 상수 창고로 끌어다 쓰던 구조를 없애고, 공용 값은 design/ 아래 공용 위치에 둔다.
+// 이 파일은 계속 그 값을 아래에서 쓴다.
 
 /** 스탯 값 하나를 소수 첫째 자리까지 보여준다(§3.1 "강인 2.1"). */
 function fmtStat(v: number): string {
