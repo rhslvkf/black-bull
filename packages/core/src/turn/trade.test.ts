@@ -229,6 +229,34 @@ describe('큰손 체결충격은 매수·매도 양쪽에 걸린다 (최종 리�
 })
 
 describe('averageDown', () => {
+  // Fix Round 2 #2(리뷰) — canBuy/canSell과 비대칭이던 부분. status를 안 보면
+  // 게임 종료 후에도(예: guard 없이 averageDown을 직접 부르는 호출자) NOT_PLAYING이
+  // 던져진다. canBuy/canSell처럼 canAverageDown도 조용히 ok:false를 돌려줘야 한다.
+  it('게임이 끝난 상태에서는 물타기할 수 없다 (canBuy/canSell과 대칭)', () => {
+    const s = makeState({
+      status: 'ended',
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    // 물타기 조건(보유·평단 이하·현금 충분) 자체는 전부 충족하는 상태다 — 그런데도
+    // status 때문에 막혀야 한다는 것을 보이려면 이 조건들을 만족시켜야 한다.
+    expect(s.player.holdings[0]!.avgCost).toBeGreaterThan(5000) // 평단보다 싸다
+    const chk = canAverageDown(s, 'sjc')
+    expect(chk.ok).toBe(false)
+    expect(chk.reason).toBe('게임이 끝났다')
+  })
+
+  it('게임이 끝난 상태에서 averageDown을 불러도 상태가 그대로다', () => {
+    const s = makeState({
+      status: 'ended',
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
   it('보유하지 않은 종목은 물타기할 수 없다', () => {
     const s = makeState({ player: { ...makeState().player, cash: 1_000_000, holdings: [] } })
     expect(canAverageDown(s, 'sjc').ok).toBe(false)

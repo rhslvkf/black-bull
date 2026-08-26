@@ -297,12 +297,49 @@ describe('StockDetail', () => {
     fireEvent.change(screen.getByTestId('qty'), { target: { value: String(max + 1) } })
     expect(screen.getByTestId('buy').hasAttribute('disabled')).toBe(true)
   })
+
+  // Fix Round 2 #1 — 리뷰가 발견: 입력 클램프(onChange의 Math.max(0, ...))를 지우는
+  // 뮤테이션이 전체 스위트(438개)를 그대로 통과했다. 클램프가 뚫리면 canSellQty가
+  // (당시엔 held.qty >= qty만 봤다) 음수 qty에서 항상 참이 되어 매도 버튼이 거짓으로
+  // 활성 상태를 유지했다. 화면에 음수로 안 남는지(클램프)와 매수·매도 버튼이 여전히
+  // 비활성인지(조건 자체) 둘 다 이 테스트로 고정한다.
+  it('수량에 음수를 입력해도 화면에 음수로 남지 않고 매수·매도 버튼이 거짓으로 활성화되지 않는다', () => {
+    useGame.getState().doBuy('sjc', 3) // 보유를 만들어 매도 경로도 함께 확인
+    render(<StockDetail />)
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '-5' } })
+    const qtyInput = screen.getByTestId('qty') as HTMLInputElement
+    expect(Number(qtyInput.value)).toBeGreaterThanOrEqual(0) // 클램프 — 화면에 음수로 안 남는다
+    expect(screen.getByTestId('buy').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('sell').hasAttribute('disabled')).toBe(true)
+    // 눌러도(만에 하나 활성이었더라도) 보유가 안 바뀐다 — core의 BAD_QTY가 이중 방어선이다.
+    fireEvent.click(screen.getByTestId('sell'))
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(3)
+  })
 })
 
 describe('물타기 버튼', () => {
   it('보유하지 않은 종목에는 버튼이 없다 (MU1)', () => {
     renderDetail({ stockId: 'sjc', holdings: [] })
     expect(screen.queryByTestId('average-down')).toBeNull()
+  })
+
+  // Fix Round 2 #2(리뷰) — canAverageDown이 status를 안 봐서, 게임이 끝난 상태에서
+  // 물타기 조건(보유·평단 이하·현금 충분)을 다 만족하는 손실 포지션이 있으면
+  // GameError(NOT_PLAYING)가 클릭 시 사용자에게 그대로 전파됐다(guard() 안 거치던
+  // 시절과 달리 이제는 store가 guard 없이 직접 commit하므로 core 자체가 막아야 한다).
+  it('게임이 끝난 상태면 물타기 버튼이 비활성이고 사유가 보인다', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+      override: { status: 'ended' },
+    })
+    const btn = screen.getByTestId('average-down')
+    expect(btn.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('average-down-reason').textContent).toContain('게임이 끝났다')
+    // 던지지 않는다 — 클릭해도 조용히 무반응이어야 한다(비활성 버튼은 클릭이 안 먹지만
+    // 이중 방어로 core 레벨까지 확인한다).
+    expect(() => fireEvent.click(btn)).not.toThrow()
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(10)
   })
 
   it('평단보다 비싸면 비활성이고 core가 주는 사유가 그대로 보인다 (MU2·MU3)', () => {
@@ -388,6 +425,20 @@ describe('물타기 버튼', () => {
     // 늘지 않는다는 것까지 확인한다.
     fireEvent.click(btn)
     expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(10)
+  })
+
+  // Fix Round 2 #1 — 세 경로(매수·매도·물타기) 중 물타기 쪽. averageDownDisabled는
+  // 이미 qty < 1을 보므로(0도 음수도 함께 막힌다) 이 경로는 원래도 안전했지만,
+  // "세 경로 모두 확인" 지시에 맞춰 여기서도 직접 고정한다.
+  it('수량에 음수를 입력해도 물타기 버튼이 거짓으로 활성화되지 않는다', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '-3' } })
+    const qtyInput = screen.getByTestId('qty') as HTMLInputElement
+    expect(Number(qtyInput.value)).toBeGreaterThanOrEqual(0)
+    expect(screen.getByTestId('average-down').hasAttribute('disabled')).toBe(true)
   })
 
   it('물타기는 주간 행동이 아니다 — 턴·행동력·리롤을 소모하지 않는다 (MU5)', () => {

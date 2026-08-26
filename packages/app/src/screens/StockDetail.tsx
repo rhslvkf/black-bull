@@ -39,7 +39,14 @@ export function StockDetail() {
   const price = priceOf(s, id)
   const max = maxBuyQty(s, id)
   const canAfford = qty > 0 && qty <= max
-  const canSellQty = !!held && held.qty >= qty
+  // Fix Round 2 #1 — 리뷰가 발견: 클램프(입력 onChange의 Math.max(0, ...))가 뚫리면
+  // (예: 다음 사람이 qty를 세팅하는 또 다른 입력 경로를 추가하면서 클램프를 안 거치면)
+  // held.qty(항상 양수) >= qty가 음수 qty에서는 늘 참이 되어 매도 버튼이 활성인 채로
+  // 남는다 — 클릭하면 core의 sell()이 BAD_QTY를 던지고 guard()가 삼켜 조용히
+  // 무반응이 되지만, 버튼 자체는 눌러도 되는 것처럼 거짓말을 한다. 클램프 하나에
+  // 기대지 않고 조건 자체가 음수를 거부하게 한다(canAfford는 원래부터 qty > 0을
+  // 요구해 이 문제가 없었다 — averageDownDisabled의 qty < 1도 마찬가지다).
+  const canSellQty = !!held && qty > 0 && held.qty >= qty
   const sellDisabled = !sellChk.ok || !canSellQty
   // Fix Round 1 Major 1 — 물타기 예산은 항상 현금 전액이 아니라, 화면에 이미 있는 수량
   // 입력을 그대로 재사용한다. Task 2가 averageDownPct(고정 20%)를 지우고 budget을

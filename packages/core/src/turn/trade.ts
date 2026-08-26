@@ -72,6 +72,12 @@ export function buy(state: GameState, stockId: string, qty: number): GameState {
  *  1차에서는 카드 효과였으나(가장 많이 물린 종목을 자동 선택), 순수한 매매 행위이므로
  *  주간 행동을 소모하지 않는 종목 상세 화면의 버튼으로 옮겼다. */
 export function canAverageDown(state: GameState, stockId: string): { ok: boolean; reason?: string } {
+  // Task 15 Fix Round 2 #2(리뷰) — canBuy/canSell은 둘 다 맨 먼저 status를 본다.
+  // canAverageDown만 이 검사가 없어서, 게임이 끝난 상태(status !== 'playing')에서
+  // guard()를 거치지 않고 averageDown을 직접 부르면(app이 아닌 다른 호출자, 또는
+  // 앞으로 guard 없이 부르는 경로가 늘어나면) GameError(NOT_PLAYING)가 그대로
+  // 던져진다 — buy/sell과 비대칭이었다. canBuy/canSell의 순서를 그대로 따른다.
+  if (state.status !== 'playing') return { ok: false, reason: '게임이 끝났다' }
   const h = state.player.holdings.find(x => x.stockId === stockId)
   if (!h) return { ok: false, reason: '보유하지 않은 종목이다' }
   if (priceOf(state, stockId) >= h.avgCost) return { ok: false, reason: '평단보다 싸야 물탈 수 있다' }
