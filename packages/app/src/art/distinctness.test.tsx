@@ -22,9 +22,25 @@ function expectAllDistinct(label: string, keys: readonly ArtKey[], excludeSelect
     .toBe(keys.length)
 }
 
-describe('아트 변형 간 시각적 구별 (리뷰 Fix Round 1 Major 1~3)', () => {
-  it('배경 4종(bg.office/home/street/exchange)은 서로 다르게 그려진다', () => {
-    expectAllDistinct('배경 4종', BACKGROUNDS.map((b): ArtKey => `bg.${b}`))
+describe('아트 변형 간 시각적 구별 (리뷰 Fix Round 1 Major 1~3, Fix Round 2)', () => {
+  it('배경 4종은 시각 정체성(그라디언트 색·실루엣 도형)만으로도 서로 다르게 그려진다', () => {
+    // 재리뷰 Fix Round 2: label(data-role="label", 모서리에 찍히는 지명)은 이미
+    // 아래 "배경 4종의 지명 라벨은 서로 다르다" 테스트가 따로 고정한다. 여기서 label
+    // 텍스트까지 지문에 넣으면, 그라디언트 색(top/bottom)과 실루엣(진짜 시각 정체성)을
+    // 전부 office로 강제해도 지명 텍스트만으로 4개가 갈려 뮤테이션을 놓친다 — ending.*에서
+    // 발견해 고친 것과 정확히 같은 함정이라 같은 방식(excludeSelector)으로 막는다.
+    expectAllDistinct('배경 4종', BACKGROUNDS.map((b): ArtKey => `bg.${b}`), '[data-role="label"]')
+  })
+
+  it('배경 4종의 지명 라벨은 서로 다르다', () => {
+    // 위 테스트가 라벨을 지문에서 뺐으니, "지명 자체가 전부 같아져도" 위 테스트는 못
+    // 잡는다(재리뷰 지시) — 그래서 라벨 고유성은 별도로 고정한다.
+    const texts = BACKGROUNDS.map(b => {
+      const { container } = render(<Art id={`bg.${b}`} />)
+      return container.querySelector('[data-role="label"]')?.textContent ?? ''
+    })
+    expect(texts.every(t => t.length > 0), `빈 라벨이 있다: ${JSON.stringify(texts)}`).toBe(true)
+    expect(new Set(texts).size, `배경 지명이 서로 겹친다: ${JSON.stringify(texts)}`).toBe(BACKGROUNDS.length)
   })
 
   it('엔딩 8종은 시각 정체성(색·glyph)만으로도 서로 다르게 그려진다', () => {

@@ -83,7 +83,13 @@ export function makeBackground(place: Place, label: string) {
         </defs>
         <rect width="160" height="90" fill={`url(#${gradientId})`} />
         <Silhouette place={place} />
-        <text x="150" y="82" textAnchor="end" fontSize="10" fill="#e6edf3" opacity="0.8">
+        {/* data-role="label": 재리뷰 Fix Round 2 — Scenes.tsx의 makeScene과 같은 패턴.
+            이 텍스트(지명)는 한국어 설명이라 registry.test.tsx의 alt/ART_ALT 테스트가 이미
+            4개 전부 다름을 보장한다. 지문 비교에서 이 텍스트까지 포함시키면, 그라디언트
+            색과 실루엣(진짜 시각 정체성)을 전부 office로 강제해도 지명 텍스트만으로 4개가
+            갈려 뮤테이션을 놓친다 — ending.*에서 발견한 것과 같은 함정이라 같은 방식으로
+            막는다. */}
+        <text data-role="label" x="150" y="82" textAnchor="end" fontSize="10" fill="#e6edf3" opacity="0.8">
           {meta.label}
         </text>
       </svg>
