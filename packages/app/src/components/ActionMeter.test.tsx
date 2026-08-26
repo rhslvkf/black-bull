@@ -19,6 +19,17 @@ describe('ActionMeter', () => {
     expect(screen.getAllByTestId('ap-dot')).toHaveLength(actionPoints(currentState()))
   })
 
+  // 브리프의 위 테스트는 stamina 3 → actionPoints=3인 상태만 본다. 3은 우연히
+  // "카드 한 장 값"처럼 보일 수 있는 작은 정수라, 이 값 하나만으로는 구현이
+  // actionPoints(state)를 실제로 읽는지 상수 3을 하드코딩했는지 구별하지 못한다
+  // (보고서에 적은 뮤테이션 MU3 무탐지 사고). 총 예산이 3이 *아닌* 상태를 하나 더 본다.
+  it('행동력 예산이 3이 아닌 상태에서도 점 개수가 그 예산과 같다 (MU3 대비)', () => {
+    renderWithState({}) // 기본 새 판: stamina 0, 재직 → actionPoints = 2
+    const budget = actionPoints(currentState())
+    expect(budget).not.toBe(3) // 이 값 자체가 3이면 아래 단언이 무의미해진다
+    expect(screen.getAllByTestId('ap-dot')).toHaveLength(budget)
+  })
+
   it('카드를 고르면 점이 꺼진다', () => {
     renderWithState({})
     fireEvent.click(screen.getAllByTestId(/^slot-card-/)[0]!)
@@ -28,6 +39,16 @@ describe('ActionMeter', () => {
   it('리롤 횟수가 0이면 버튼이 비활성이다', () => {
     renderWithState({ rerollsLeft: 0 })
     expect(screen.getByTestId('reroll').hasAttribute('disabled')).toBe(true)
+  })
+
+  // 전역 제약: "터치 타깃 44px 이상". TopBar.test.tsx와 같은 방식 — 44는 계획서 요구값이지
+  // 이 구현의 상수가 아니므로 ActionMeter.tsx의 어떤 export도 가져오지 않고 리터럴로 적는다.
+  it('리롤 버튼의 터치 타깃이 44px 이상이다 (Global Constraints)', () => {
+    const MIN_TOUCH_TARGET_PX = 44
+    renderWithState({})
+    const style = getComputedStyle(screen.getByTestId('reroll'))
+    expect(parseFloat(style.minWidth)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+    expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
   })
 
   it('리롤하면 행동 슬롯이 바뀐다', () => {
