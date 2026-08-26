@@ -69,4 +69,25 @@ describe('CodexScreen', () => {
     expect(screen.getByTestId('codex-ending-bank').textContent).toContain('은행 이자보단 낫지')
     expect(screen.getByTestId(`codex-title-${beatRival.id}`).textContent).toBe(beatRival.name)
   })
+
+  it('수집한 엔딩의 도장은 실제로 <Art>/registry를 거친다 (Fix Round 1 Minor 1)', () => {
+    // 텍스트 검사(위 테스트들)는 <span className="codex-stamp"> 안에 아무 대체 요소를
+    // 넣어도(예: 빈 <div>) 통과한다 — 도장 자리가 실제로 art/registry.tsx의 ending.* svg를
+    // 그리는지는 그 svg 고유의 표식(role="img", aria-label에 실제 엔딩 이름)으로 확인해야
+    // 한다. 잠긴 엔딩의 도장(ui.lock)은 다른 아이콘이라는 것도 함께 못박는다.
+    renderWithCodex({ endings: ['bank'] })
+
+    const gotStamp = screen.getByTestId('codex-ending-bank').querySelector('.codex-stamp')!
+    const gotSvg = gotStamp.querySelector('svg')
+    expect(gotSvg).not.toBeNull()
+    expect(gotSvg!.getAttribute('role')).toBe('img')
+    expect(gotSvg!.getAttribute('aria-label')).toBe('은행 이자보단 낫지')
+
+    const lockedId = ENDINGS.find(e => e.id !== 'bank')!.id
+    const lockedStamp = screen.getByTestId(`codex-ending-${lockedId}`).querySelector('.codex-stamp')!
+    const lockedSvg = lockedStamp.querySelector('svg')
+    expect(lockedSvg).not.toBeNull()
+    // 잠긴 자리는 자물쇠 아이콘이지 엔딩 이름이 아니다 — 스포일러가 없다.
+    expect(lockedSvg!.getAttribute('aria-label')).not.toBe(ENDINGS.find(e => e.id === lockedId)!.name)
+  })
 })

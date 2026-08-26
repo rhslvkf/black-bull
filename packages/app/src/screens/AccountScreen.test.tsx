@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import { AccountScreen } from './AccountScreen'
 import { renderWithState } from '../testUtils'
+import { useGame } from '../store/store'
 
 // sjc(윤슬반도체)·bnk(한들금융지주)는 packages/core/data/stocks.json에 고정된 실제 종목이다
 // (합성 데이터가 아니다). newGame(1)이 만드는 첫 턴(turn 1)에는 core의
@@ -98,6 +99,20 @@ describe('AccountScreen', () => {
     // 보유가 없어도 화면 전체가 비어버리지 않는다 — 수수료·세금 요약은 항상 뜬다
     // (이 헬퍼는 기본 새 판이라 trackers가 전부 0이다).
     expect(screen.getByTestId('cost-total').textContent).toContain('0원')
+  })
+
+  it('보유 행을 탭하면 시세 탭으로 이동하고 그 종목이 선택된다 (Ruling 25)', () => {
+    renderWithState({ player: { holdings: [{ stockId: 'sjc', qty: 10, avgCost: 9000, heldTurns: 1 }] } }, <AccountScreen />)
+    expect(useGame.getState().tab).toBe('home')
+    expect(useGame.getState().selectedStock).toBeNull()
+
+    fireEvent.click(screen.getByTestId('holding-sjc'))
+
+    // 두 축을 각각 따로 본다 — setTab과 selectStock 중 하나만 호출하도록 바꿔도(예:
+    // selectStock 호출을 통째로 지워도) tab 단언 하나만 있으면 통과해버린다. 두 단언이
+    // 모두 있어야 "절반만 동작해도 통과하는가"를 각각 잡는다.
+    expect(useGame.getState().tab).toBe('market')
+    expect(useGame.getState().selectedStock).toBe('sjc')
   })
 
   it('보유 종목 행의 터치 타깃이 44px 이상이다 (MU12, Global Constraints)', () => {
