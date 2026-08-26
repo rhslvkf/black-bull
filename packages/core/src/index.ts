@@ -11,6 +11,8 @@ export {
 export { maxLoan, takeLoan, repayLoan } from './turn/margin'
 export { loadCards, isCardAvailable, cardLockReason, type CardLock } from './turn/cards'
 export { GRADES, gradeMul, gradeAp, rollGrade, cardStat } from './turn/grade'
+export { drawSlots, rerollSlots, rerollCount, gradeOfSlot } from './turn/slots'
+export { slotsWith } from './testkit'
 export { loadEvents, loadContent } from './events/content'
 export { resolveChoice } from './events/engine'
 export { isShaken, lossExposure, moodOf, type Mood } from './mental/mental'

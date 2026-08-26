@@ -14,11 +14,14 @@ import { playCard } from './cards'
 import { settlePayroll, settleTier, stepRival } from './economy'
 import { cashRatio, totalAssets } from './accounting'
 import { judgeEnding } from '../endings/endings'
+import { drawSlots, rerollCount } from './slots'
 
 export function initGame(seed: number): GameState {
   const [regimes, rng] = generateRegimes(createRng(seed))
   const stockDefs = loadStockDefs()
-  return {
+  // slots/rerollsLeft는 아래에서 drawSlots·rerollCount로 채운다. 이 시점의 값은
+  // drawSlots 호출을 위한 임시 자리표시자일 뿐이고 반환되는 state에는 담기지 않는다.
+  const base: GameState = {
     turn: 1, seed0: seed, rng, regimes, stockDefs, stocks: initStockStates(stockDefs),
     player: {
       cash: BALANCE.seedMoney, loan: 0, holdings: [],
@@ -30,7 +33,14 @@ export function initGame(seed: number): GameState {
     pendingChoices: [], rivalAssets: BALANCE.rival.start,
     trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0 },
     prevLossPct: 0, cutscene: null, lastTurnSkip: null, status: 'playing', ending: null,
+    slots: { action: [], recovery: { cardId: 'rest', grade: 'C' } },
+    rerollsLeft: 0,
   }
+  // drawSlots는 state.rng를 읽기만 하므로, 초기 슬롯을 뽑아 소비한 rng를 여기서
+  // 직접 상태에 반영한다 — 초기 시드 소비도 결정론의 일부다(같은 시드는 156턴을
+  // 바이트 단위로 재현해야 한다).
+  const [slots, rng2] = drawSlots(base)
+  return { ...base, slots, rng: rng2, rerollsLeft: rerollCount(base) }
 }
 
 export function cardsPerTurn(state: GameState): number {

@@ -20,6 +20,11 @@ export interface Stats { grit: number; stamina: number; info: number; analysis: 
 /** 카드 등급. 뽑힐 때마다 굴려지며, 카드에 고정되어 성장해서 굳는 레벨이 아니다. */
 export type CardGrade = 'E' | 'D' | 'C' | 'B' | 'A' | 'S'
 
+/** 슬롯에 뽑힌 카드 한 장과 그때 굴려진 등급. */
+export interface SlotCard { cardId: string; grade: CardGrade }
+/** 이번 턴 뽑힌 슬롯 전체. 행동 슬롯은 여러 칸, 회복 슬롯은 항상 하나 열려 있다. */
+export interface TurnSlots { action: SlotCard[]; recovery: SlotCard }
+
 export interface PlayerState {
   cash: number; loan: number; holdings: Holding[]
   mental: number; condition: number; burnoutTurns: number
@@ -111,6 +116,8 @@ export interface GameState {
   pendingChoices: DrawnEvent[]
   rivalAssets: number
   trackers: Trackers
+  slots: TurnSlots             // 이번 턴 뽑힌 행동 3칸 · 회복 1칸
+  rerollsLeft: number          // 이번 턴 남은 리롤 횟수 (인맥 스탯에서 파생)
   prevLossPct: number          // 직전 턴 포트폴리오 손실률(%, 0 이상)
   cutscene: string | null      // ArtKey 문자열
   /** 직전 advanceTurn에서 강제 스킵(야근/번아웃)이 일어났는지. 스킵은 고른 카드를
