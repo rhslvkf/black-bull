@@ -7,8 +7,12 @@ import { prefersReducedMotion } from '../design/motion'
  * 스탯 5종의 고정 메타(순서·라벨·색 토큰 이름). §2 표의 순서(분석력·정보력·강인함·
  * 체력·인맥 — 표는 그 순서지만 §3.1 다이어그램은 "강인·체력·정보·분석·인맥"으로
  * 그린다)를 그대로 따른다 — 다이어그램이 화면 문법의 최종 기준이다.
+ *
+ * export하는 이유: CardTile의 효과 요약(§3.1 카드 2×2)이 같은 스탯 라벨을 써야 한다.
+ * 여기서 export해 재사용하지 않으면 두 파일이 각자 "분석"/"analysis" 매핑을 들고
+ * 있다가 라벨이 갈라지는 사고(1차 개발에서 상수 복제가 반복 결함이었다)가 재발한다.
  */
-const STAT_META: readonly { key: keyof Stats; label: string }[] = [
+export const STAT_META: readonly { key: keyof Stats; label: string }[] = [
   { key: 'grit', label: '강인' },
   { key: 'stamina', label: '체력' },
   { key: 'info', label: '정보' },
