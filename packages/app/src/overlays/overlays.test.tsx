@@ -12,7 +12,7 @@ import { HomeScreen } from '../screens/HomeScreen'
 import { useGame, SAVE_KEY, SAVE_VERSION } from '../store/store'
 import { loadEvents, ENDINGS, TITLES, TIER_NAMES, type EventDef } from '@bb/core'
 import { pinSlots } from '../testkit'
-import { renderEvent, renderWithState, currentState } from '../testUtils'
+import { renderEvent, renderWithState, currentState, renderEnding } from '../testUtils'
 import { matchMediaMock } from '../design/testUtils'
 import { ALL_ART_KEYS } from '../art/registry'
 import { PROMOTE_TIERS, DEMOTE_TIERS } from '../art/keys'
@@ -618,22 +618,19 @@ describe('CutsceneView', () => {
   })
 })
 
+// Task 21 — 이모지 배지 카드에서 잔고증명서 형식으로 전면 재작성됐다. 브리프가
+// 요구하는 문서 항목별 검증(예수금·수수료·낙폭·id 비노출·증권사명·계좌 마스킹 등)은
+// EndingView.test.tsx·EndingView.legal.test.tsx가 전담한다 — 여기서는 "이 오버레이가
+// 진행 중엔 안 뜨고, 실제 스토어 액션(다시 하기)과 맞물려 동작한다"만 남긴다.
 describe('EndingView', () => {
   it('진행 중이면 안 뜬다', () => {
     expect(render(<EndingView />).container.firstChild).toBeNull()
   })
-  it('엔딩명·칭호·자산을 보여주고 다시 시작할 수 있다', () => {
-    const s = useGame.getState().state!
-    useGame.setState({ state: { ...s, status: 'ended', ending: {
-      endingId: 'super', endingName: '슈퍼개미', titles: ['박대박을 이긴'], finalAssets: 700_000_000,
-    } } })
-    render(<EndingView />)
-    // 리뷰 Major B-1 수정으로 엔딩 아트(svg)에도 한국어 엔딩명이 그려지므로,
-    // 텍스트만으로 찾으면 svg의 <text>와 <h2>가 둘 다 걸려 모호해진다.
-    // h2로 좁혀 "엔딩명이 제목으로 보인다"는 원래 취지를 유지한다.
-    expect(screen.getByRole('heading', { name: '슈퍼개미' })).toBeDefined()
-    expect(screen.getByText(/박대박을 이긴/)).toBeDefined()
-    expect(screen.getByText('700,000,000원')).toBeDefined()
+  it('엔딩명·칭호를 보여주고 다시 시작할 수 있다', () => {
+    renderEnding({ endingId: 'super', titles: ['박대박을 이긴'], cash: 700_000_000 })
+    expect(screen.getByTestId('ending-name').textContent).toBe('슈퍼개미')
+    expect(screen.getByTestId('title-0').textContent).toBe('박대박을 이긴')
+    expect(screen.getByTestId('doc-cash').textContent).toContain('700,000,000원')
     fireEvent.click(screen.getByTestId('restart'))
     expect(useGame.getState().state!.status).toBe('playing')
     expect(useGame.getState().state!.turn).toBe(1)

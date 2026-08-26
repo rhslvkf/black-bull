@@ -1,12 +1,13 @@
 import { afterEach } from 'vitest'
 import { act, render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { resolveChoice, type EventChoice, type EventDef, type GameState, type Holding, type PlayerState, type Stats, type Trackers } from '@bb/core'
+import { ENDINGS, resolveChoice, type EndingId, type EndingResult, type EventChoice, type EventDef, type GameState, type Holding, type PlayerState, type Stats, type Trackers } from '@bb/core'
 import { useGame, type Codex, type TabKey } from './store/store'
 import { HomeScreen } from './screens/HomeScreen'
 import { StockDetail } from './screens/StockDetail'
 import { CodexScreen } from './screens/CodexScreen'
 import { EventModal } from './overlays/EventModal'
+import { EndingView } from './overlays/EndingView'
 
 /**
  * Task 11 Ruling 19 — 뒤따르는 모든 화면 태스크(Task 12~22)가 이 헬퍼를 쓴다.
@@ -301,6 +302,59 @@ export function currentState(): GameState {
   const s = useGame.getState().state
   if (!s) throw new Error('currentState: 게임 상태가 없다 (renderWithState를 먼저 불러라)')
   return s
+}
+
+/**
+ * Task 21 — `EndingView`(잔고증명서) 테스트용 편의 헬퍼. 브리프가 쓰는 다섯 옵션
+ * (`cash`·`holdingValue`·`trackers`·`endingId`·`titles`)만 지원한다.
+ */
+export interface RenderEndingOptions {
+  /** `player.cash` 편의 필드. 기본값 0. */
+  cash?: number
+  /** 보유 주식 평가금액 편의 필드. `GameState.stocks`·`player.holdings`는 `GameState`의
+   *  최상위 필드라 `GameStateOverride`로 직접 표현하기 번거로워(정확히 이 값이 되도록
+   *  가격·수량을 역산해야 한다) `renderDetail`과 같은 방식으로 렌더 뒤 `act()`에서
+   *  기준 종목 하나의 가격을 이 값으로, 수량을 1로 맞춘다. 기본값 0(보유 없음). */
+  holdingValue?: number
+  trackers?: Partial<Trackers>
+  /** 기본값 'bank' — 브리프의 '은행 이자보단 낫지' 케이스와 같은 엔딩이라, 옵션을
+   *  아무것도 안 준 렌더(실존 증권사명·계좌번호 마스킹 테스트)도 항상 유효한
+   *  엔딩 화면을 얻는다. */
+  endingId?: EndingId
+  titles?: string[]
+}
+
+/**
+ * `EndingView`를 게임이 끝난(`status: 'ended'`) 상태로 렌더한다. `renderWithState`를
+ * 그대로 재사용한다(Ruling 19). `endingName`은 이 헬퍼가 만드는 것이 아니라 core의
+ * `ENDINGS`에서 찾아 채운다 — 실제 게임에서 `judgeEnding`이 하는 일과 같다. 그래야
+ * `EndingView`가 `s.ending.endingName`을 그대로 표시하는 정직한 구현이든, id로
+ * 자체 조회하는 구현이든 똑같이 옳은 이름을 받는다.
+ */
+export function renderEnding(opts: RenderEndingOptions = {}): RenderResult {
+  const { cash = 0, holdingValue: stockValue = 0, trackers, endingId = 'bank', titles = [] } = opts
+
+  const endingName = ENDINGS.find(e => e.id === endingId)?.name ?? endingId
+  const ending: EndingResult = { endingId, endingName, titles, finalAssets: cash + stockValue }
+
+  const result = renderWithState(
+    { status: 'ended', ending, player: { cash }, trackers },
+    <EndingView />,
+  )
+
+  act(() => {
+    const s = useGame.getState().state
+    if (!s) throw new Error('renderEnding: newGame(1) 이후에도 상태가 비어 있다')
+    const stockId = s.stocks[0]?.id
+    if (!stockId) throw new Error('renderEnding: 기준 종목이 없다')
+    const stocks = s.stocks.map(x =>
+      x.id === stockId ? { ...x, price: stockValue, history: [...x.history.slice(0, -1), stockValue] } : x,
+    )
+    const holdings: Holding[] = stockValue > 0 ? [{ stockId, qty: 1, avgCost: stockValue, heldTurns: 1 }] : []
+    useGame.setState({ state: { ...s, stocks, player: { ...s.player, holdings } } })
+  })
+
+  return result
 }
 
 // 스토어(zustand)는 모듈 전역이라 한 테스트가 심어 둔 state가 다음 테스트로 새어나갈 수

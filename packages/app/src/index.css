@@ -427,9 +427,48 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 .event-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 340px; }
 .event-body { white-space: pre-line; font-size: 14px; color: var(--muted); line-height: 1.6; }
-.titles { color: var(--gold); font-size: 13px; }
-.ending-desc { color: var(--muted); font-size: 13px; max-width: 320px; }
-.final-assets { font-size: 24px; font-weight: 700; color: var(--text); }
+
+/* ---------- 엔딩 잔고증명서 (overlays/EndingView.tsx, §4.4) ----------
+   1차 엔딩은 이모지 배지 위에 숫자를 얹은 카드였다 — 이번엔 실물 문서 흉내다.
+   숫자 열은 등락색과 무관한 순수 수치 나열이라 monospace로 자릿수를 맞추고,
+   행 사이는 실제 증명서의 항목-금액 대응이 한눈에 읽히도록 점선 리더(leader)로
+   잇는다. 도장은 오른쪽 아래에 살짝 기울여 앉혀 "찍힌" 느낌을 낸다 — §5.1의
+   `ending.*` 슬롯이 엔딩마다 다른 도장 그래픽을 낸다. */
+.overlay.ending { overflow-y: auto; }
+.doc {
+  width: 100%; max-width: 340px; box-sizing: border-box; text-align: left;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  padding: 22px 20px 18px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .6);
+}
+.doc-issuer { margin: 0 0 2px; font-size: 11px; letter-spacing: .08em; color: var(--muted); }
+.doc-title {
+  margin: 0 0 16px; font-size: 17px; font-weight: 700; color: var(--text);
+  text-align: center; letter-spacing: .05em;
+}
+.doc-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 12.5px; color: var(--text); padding: 3px 0;
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1.4px);
+  background-position: bottom 7px left 0; background-repeat: repeat-x; background-size: 6px 1px;
+}
+.doc-row > span:first-child { background: var(--panel); padding-right: 6px; color: var(--muted); flex: 0 0 auto; }
+.doc-row > span:last-child { background: var(--panel); padding-left: 6px; font-weight: 600; }
+.doc-row.doc-sub { padding-left: 10px; font-size: 12px; }
+.doc-row.doc-total > span:last-child { font-weight: 800; color: var(--gold); }
+.doc-rule { border: none; border-top: 1px dashed var(--border); margin: 10px 0; }
+.doc-section { margin: 2px 0 4px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.doc-footer { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 14px; }
+.doc-date { font-size: 11px; color: var(--muted); }
+.doc-stamp-wrap { display: inline-block; transform: rotate(-9deg); opacity: .92; }
+.doc-stamp { border-radius: 50%; filter: saturate(1.15); }
+.doc-ending-name { margin: 18px 0 4px; font-size: 18px; font-weight: 800; color: var(--text); text-align: center; }
+.doc-ending-desc { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); text-align: center; line-height: 1.5; }
+.doc-titles { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.doc-title-chip {
+  font-size: 11px; color: var(--gold); border: 1px solid var(--gold); border-radius: 999px;
+  padding: 3px 10px; background: rgba(230, 180, 90, .08);
+}
 
 /* ---------- 이벤트 모달의 VN 합성 (overlays/EventModal.tsx, §4.1) ----------
    .event-card(위)는 옛 "카드 하나에 텍스트" 레이아웃의 흔적이라 폭이 좁다(340px).
