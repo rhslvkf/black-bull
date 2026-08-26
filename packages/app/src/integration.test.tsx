@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGame, SAVE_KEY } from './store/store'
 import { loadEvents, BALANCE, ENDING_IDS, type EndingId } from '@bb/core'
+import { nextTurnWith } from './testkit'
 
 const events = loadEvents()
 
@@ -17,7 +18,7 @@ function playToEnd(seed: number) {
       if (n > 0) useGame.getState().choose(c.eventId, 0)
       else break
     }
-    useGame.getState().next(['hodl'])
+    nextTurnWith()
   }
   return useGame.getState().state!
 }
@@ -43,8 +44,8 @@ describe('통합: 스토어로 완주', () => {
   })
   it('새로고침(reset)해도 진행이 복원된다', () => {
     useGame.getState().newGame(9)
-    useGame.getState().next(['hodl'])
-    useGame.getState().next(['hodl'])
+    nextTurnWith()
+    nextTurnWith()
     const turn = useGame.getState().state!.turn
     expect(turn).toBeGreaterThan(1)          // 애초에 진행이 안 됐으면 복원도 무의미하다
     useGame.setState({ state: null })
@@ -62,7 +63,7 @@ describe('통합: 스토어로 완주', () => {
     // 위 완주 테스트들은 next()만 부르므로 doBuy/doSell을 한 번도 지나지 않는다(리뷰 Minor 3).
     const g = useGame.getState()
     g.newGame(11)
-    g.next(['hodl'])
+    nextTurnWith()
     g.doBuy('sjc', 20)
     expect(useGame.getState().state!.player.holdings).toHaveLength(1)
     for (let i = 0; i < BALANCE.totalTurns + 5; i++) {
@@ -77,7 +78,7 @@ describe('통합: 스토어로 완주', () => {
       // 80턴차에 절반을 판다 — 매도 경로도 통합 수준에서 한 번은 지난다.
       const cur = useGame.getState().state!
       if (cur.turn === 80 && cur.player.holdings.length > 0) useGame.getState().doSell('sjc', 10)
-      useGame.getState().next(['hodl'])
+      nextTurnWith()
     }
     const end = useGame.getState().state!
     expect(end.status).toBe('ended')

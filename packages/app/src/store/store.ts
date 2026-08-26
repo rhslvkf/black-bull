@@ -4,8 +4,10 @@ import {
   GameError,
 } from '@bb/core'
 
-/** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절). */
-export const SAVE_VERSION = 2
+/** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절).
+ *  v3: 턴 루프가 slots·rerollsLeft를 소비하기 시작했다(Task 6). v2 저장에는 그 필드가
+ *  없어 카드 목록이 비고 턴을 넘길 수 없으므로, 버전을 올려 아예 읽지 않는다. */
+export const SAVE_VERSION = 3
 /** 키 이름도 버전에서 파생시킨다 — 리터럴로 'v1'을 박아두면 SAVE_VERSION을 올렸을 때
  *  키만 v1로 남아 이름이 거짓말이 된다(리뷰 Minor 2). 키가 바뀌면 구버전 저장은
  *  읽히지 않고 남아 있다가 브라우저가 정리한다 — version 필드 검사와 이중 방어다. */
@@ -42,6 +44,12 @@ function isValidGameState(x: unknown): x is GameState {
   // 없어 여기서 걸러지고, SAVE_KEY도 v2로 바뀌어 이중으로 막힌다.
   if (!s.trackers || typeof s.trackers !== 'object') return false
   if (typeof (s.trackers as Record<string, unknown>).netPayroll !== 'number') return false
+  // CardGrid가 렌더 즉시 읽는다(슬롯 4칸이 곧 카드 목록이다). 빠져 있으면 카드가 한 장도
+  // 안 뜨고 턴을 넘길 수 없다 — 다른 렌더 필드와 같은 급으로 검사한다. v2 저장에는 이
+  // 필드가 없어 여기서 걸러지고, SAVE_KEY도 v3으로 바뀌어 이중으로 막힌다.
+  if (!s.slots || typeof s.slots !== 'object') return false
+  if (!('action' in s.slots) || !Array.isArray(s.slots.action)) return false
+  if (!('recovery' in s.slots) || !s.slots.recovery || typeof s.slots.recovery !== 'object') return false
   return true
 }
 function readSave(): GameState | null {

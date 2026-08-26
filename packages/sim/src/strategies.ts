@@ -1,5 +1,5 @@
 import {
-  type GameState, type CardGrade, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
+  type GameState, type SlotCard, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
   loadCards, isCardAvailable, Rand, createRng, priceOf, actionPoints, cardApCost,
 } from '@bb/core'
 
@@ -45,25 +45,34 @@ function investPct(s: GameState, id: string, pct: number): GameState {
   try { return buy(s, id, qty) } catch { return s }
 }
 
-/** advance.ts의 관대한 슬롯 조회(Ruling 9)와 같은 규칙: 슬롯에 있으면 그 등급,
- *  없으면 중립 등급 'C'로 본다. sim 전략은 뽑힌 슬롯을 들여다보지 않고 `loadCards()`
- *  전체에서 카드를 고르므로, 슬롯 밖 카드를 고르는 일이 흔하다. */
-function gradeInSlots(state: GameState, cardId: string): CardGrade {
-  const inAction = state.slots.action.find(s => s.cardId === cardId)
-  if (inAction) return inAction.grade
-  if (state.slots.recovery.cardId === cardId) return state.slots.recovery.grade
-  return 'C'
+/** 이번 턴에 뽑힌 카드 전부 — 행동 3칸 + 회복 1칸. 카드 선택의 유일한 출처다.
+ *  (Task 6부터 core가 슬롯 밖 카드를 NOT_IN_SLOTS로 하드 거부한다. 예전 sim은
+ *   `loadCards()` 11장 전체에서 골랐고, advance.ts의 관대한 조회를 로컬에 복제한
+ *   `gradeInSlots`로 등급을 메웠다 — 둘 다 이 태스크에서 없앴다.) */
+const slotCards = (s: GameState): SlotCard[] => [...s.slots.action, s.slots.recovery]
+
+/** 슬롯에서 지금 실제로 낼 수 있는 카드(잠기지 않은 카드)만 남긴다. */
+function usableSlotCards(s: GameState): SlotCard[] {
+  const defs = loadCards()
+  return slotCards(s).filter(sl => {
+    const def = defs.find(c => c.id === sl.cardId)
+    return def !== undefined && isCardAvailable(s, def)
+  })
 }
 
 /** 1차의 `cards.slice(0, cardsPerTurn(state))`를 대신한다. 이번 턴 행동력 예산 안에
  *  들어오는 카드만 앞에서부터 채워 넣는다 — 회복 카드는 비용이 0이라 항상 들어간다.
+ *  슬롯 밖 카드는 core가 거부하므로 여기서 미리 떨군다(중립 등급으로 메우지 않는다).
  *  무작위성을 추가로 쓰지 않으므로 시드 결정론에 영향이 없다. */
 export function withinApBudget(state: GameState, cardIds: string[]): string[] {
   const budget = actionPoints(state)
+  const slots = slotCards(state)
   let spent = 0
   const kept: string[] = []
   for (const id of cardIds) {
-    const cost = cardApCost(id, gradeInSlots(state, id))
+    const slot = slots.find(sl => sl.cardId === id)
+    if (!slot) continue
+    const cost = cardApCost(id, slot.grade)
     if (spent + cost > budget) continue
     spent += cost
     kept.push(id)
@@ -107,11 +116,13 @@ export function act(s: GameState, strategy: Strategy, rand: Rand): { state: Game
         break
     }
   }
-  const usable = loadCards().filter(c => isCardAvailable(s, c))
+  // 카드는 **이번 턴 슬롯**에서만 고른다 — 플레이어가 실제로 마주하는 선택지와 같다.
+  // panic은 '커뮤니티 눈팅'을 선호하되, 슬롯에 없으면 뽑힌 것 중 첫 장을 쓴다.
+  const usable = usableSlotCards(s)
   const card = strategy === 'panic'
-    ? (usable.find(c => c.id === 'community') ?? usable[0])
+    ? (usable.find(c => c.cardId === 'community') ?? usable[0])
     : usable[rand.int(0, Math.max(0, usable.length - 1))]
-  return { state: s, cards: card ? [card.id] : [] }
+  return { state: s, cards: card ? [card.cardId] : [] }
 }
 
 export { createRng, Rand, totalAssets }

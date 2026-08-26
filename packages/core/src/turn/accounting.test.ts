@@ -50,7 +50,9 @@ describe('무매매 기준선 (최종 리뷰 C1)', () => {
     let s = initGame(7)
     while (s.status === 'playing') {
       while (s.pendingChoices.length > 0) s = resolveChoice(s, s.pendingChoices[0]!.eventId, 0, pool)
-      s = advanceTurn(s, ['hodl'])
+      // Task 6부터 슬롯 밖 카드는 거부되므로, '존버'가 이번 턴 회복 슬롯에 있는 상황을
+      // 직접 만든다 — 이 테스트의 의도(매 턴 존버만 고른다)를 그대로 유지하기 위해서다.
+      s = advanceTurn({ ...s, slots: { ...s.slots, recovery: { cardId: 'hodl', grade: 'C' } } }, ['hodl'])
     }
     expect(totalAssets(s)).toBeGreaterThan(20_000_000)  // 월급은 실제로 쌓였다
     // 실측(seed 7): 총자산 32,062,426 / 기준선 31,470,000 → +1.9%.

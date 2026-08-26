@@ -3,8 +3,13 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import App from './App'
 import { useGame } from './store/store'
 import { loadEvents } from '@bb/core'
+import { pinSlots } from './testkit'
 
-beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+// 카드 목록이 슬롯에서 나오므로(Task 6) 테스트가 클릭할 카드를 매 판 꽂아 둔다.
+beforeEach(() => {
+  localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1)
+  pinSlots(['overtime', 'analyze', 'news'])
+})
 
 // 리뷰 M-3: advance.ts의 5단계(이벤트/pendingChoices)가 7단계(settleTier/cutscene)보다
 // 먼저 실행되므로, 한 번의 advanceTurn 안에서 승급/강등과 이벤트가 동시에 뽑히면

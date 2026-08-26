@@ -4,6 +4,7 @@ import { HomeScreen } from './HomeScreen'
 import { Hud } from '../components/Hud'
 import { useGame } from '../store/store'
 import { BALANCE, loadCards } from '@bb/core'
+import { pinSlots } from '../testkit'
 import { won, pct, yearWeek } from '../format'
 
 // 회복 카드 목록을 하드코딩하면 카드 풀이 바뀔 때마다 손으로 맞춰야 한다(재발 이력 있음 —
@@ -11,7 +12,13 @@ import { won, pct, yearWeek } from '../format'
 // 세 테스트가 항상 실제 데이터를 따라가게 한다.
 const RECOVERY_TESTIDS = loadCards().filter(c => c.isRecovery).map(c => `card-${c.id}`)
 
-beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+// Task 6부터 카드 목록은 이번 턴 슬롯 4장(행동 3 + 회복 1)에서 나온다. 어떤 카드가
+// 뽑히는지는 시드가 정하므로, 테스트가 클릭할 카드를 매 판 슬롯에 꽂아 둔다.
+// (첫 칸을 overtime으로 두는 것은 아래 '흔들리지 않을 때 첫 카드' 테스트가 기댄다.)
+beforeEach(() => {
+  localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1)
+  pinSlots(['overtime', 'analyze', 'news'])
+})
 
 describe('format', () => {
   it('won은 천단위 구분과 원을 붙인다', () => expect(won(84_320_000)).toBe('84,320,000원'))
@@ -34,9 +41,14 @@ describe('Hud', () => {
 })
 
 describe('HomeScreen', () => {
-  it('행동 카드가 렌더된다', () => {
+  it('이번 턴 슬롯 카드만 렌더된다 (행동 3 + 회복 1)', () => {
+    // Ruling 12 — 예전에는 loadCards() 11장을 전부 그려서, 슬롯 밖 8장이 눌러도 아무
+    // 일이 없는 죽은 버튼이었다(core가 NOT_IN_SLOTS로 거부하고 스토어가 삼킨다).
     render(<HomeScreen />)
-    expect(screen.getAllByTestId(/^card-/).length).toBeGreaterThan(5)
+    // 목록 컨테이너(card-list) 자신도 /^card-/에 걸리므로 within으로 자식만 센다.
+    const buttons = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)
+    expect(buttons).toHaveLength(BALANCE.slots.action + BALANCE.slots.recovery)
+    expect(screen.queryByTestId('card-forum')).toBeNull()   // 슬롯 밖 카드는 아예 없다
   })
   it('카드를 고르기 전에는 턴 넘기기가 비활성이다', () => {
     render(<HomeScreen />)
@@ -61,15 +73,17 @@ describe('HomeScreen', () => {
     // 비면 toContain은 항상 실패하고 not.toContain은 항상 통과해 전부 무의미해진다.
     expect(RECOVERY_TESTIDS.length).toBe(4)
   })
-  it('흔들림에서도 회복 카드는 열려 있고 최상단에 온다 (스펙 §3.3)', () => {
+  it('흔들림에서도 회복 슬롯 카드는 열려 있고 최상단에 온다 (스펙 §3.3)', () => {
+    // 화면에 뜨는 회복 카드는 이번 턴 회복 슬롯 한 장뿐이다 — 4종 전부를 찾던 예전
+    // 단언은 슬롯 기반 렌더에서 성립하지 않는다. 그 한 장이 열려 있는지를 본다.
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 5 } } })
     render(<HomeScreen />)
-    for (const id of RECOVERY_TESTIDS) {
-      expect(screen.getByTestId(id).hasAttribute('disabled')).toBe(false)
-    }
+    const recoveryId = `card-${useGame.getState().state!.slots.recovery.cardId}`
+    expect(RECOVERY_TESTIDS).toContain(recoveryId)
+    expect(screen.getByTestId(recoveryId).hasAttribute('disabled')).toBe(false)
     const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(RECOVERY_TESTIDS).toContain(first.getAttribute('data-testid'))
+    expect(first.getAttribute('data-testid')).toBe(recoveryId)
   })
   it('퇴사 상태면 카드 2장을 고를 수 있다', () => {
     const s = useGame.getState().state!
@@ -353,11 +367,13 @@ describe('강제 스킵·번아웃 표시 (최종 리뷰 M4)', () => {
 // 최종 리뷰 Minor 12 — 잠긴 카드에 자물쇠 아이콘만 붙어 이유를 알 수 없었다.
 describe('잠긴 카드는 이유를 말한다 (최종 리뷰 Minor 12)', () => {
   it('티어 부족은 티어 때문이라고 쓴다', () => {
+    pinSlots(['report', 'study', 'analyze'])
     render(<HomeScreen />)   // 새 판 = 티어 0, `리포트 정독`은 티어 2 필요
     expect(screen.getByTestId('card-report').hasAttribute('disabled')).toBe(true)
     expect(screen.getByTestId('card-lock-report').textContent).toContain('티어')
   })
   it('돈 부족과 흔들림은 서로 다른 문구다', () => {
+    pinSlots(['report', 'study', 'analyze'])
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, cash: 0, mental: BALANCE.mental.shakenMax } } })
     render(<HomeScreen />)

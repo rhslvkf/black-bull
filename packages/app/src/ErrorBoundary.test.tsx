@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { Root } from './Root'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store/store'
+import { nextTurnWith } from './testkit'
 
 // React는 바운더리가 잡은 예외도 콘솔에 한 번 더 찍는다 — 테스트 출력만 조용히 만든다.
 let spy: ReturnType<typeof vi.spyOn>
@@ -44,7 +45,7 @@ describe('ErrorBoundary — 손상된 저장으로 렌더가 죽는 실제 경�
     useGame.getState().newGame(1)
     // 몇 턴 진행해 둔다 — 1턴차에서 깨뜨리면 "복구가 새 판을 열었다"와 "진행이 살아남았다"가
     // 구분되지 않는다(둘 다 turn === 1). 아래 '다시 시도' 테스트가 그 구분에 기댄다.
-    for (let i = 0; i < 5; i++) useGame.getState().next(['hodl'])
+    for (let i = 0; i < 5; i++) nextTurnWith()
     const s = useGame.getState().state!
     const broken = {
       ...s,

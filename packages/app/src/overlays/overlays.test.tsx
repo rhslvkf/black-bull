@@ -11,8 +11,13 @@ import { CodexScreen } from '../screens/CodexScreen'
 import { HomeScreen } from '../screens/HomeScreen'
 import { useGame, SAVE_KEY, SAVE_VERSION } from '../store/store'
 import { loadEvents, ENDINGS, TITLES } from '@bb/core'
+import { pinSlots } from '../testkit'
 
-beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+// 카드 목록이 슬롯에서 나오므로(Task 6) 테스트가 클릭할 카드를 매 판 꽂아 둔다.
+beforeEach(() => {
+  localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1)
+  pinSlots(['overtime', 'analyze', 'news'])
+})
 
 describe('오버레이 max-width (리뷰 M-5)', () => {
   // jsdom은 실제 CSS를 계산하지 않으므로(MarketScreen.test.tsx의 터치 타깃 검증과 동일한

@@ -9,6 +9,10 @@ import {
 /**
  * 2턴차에 sjc를 `qtyOf(state)`만큼 사고 156턴 존버한다. 매 턴 '존버' 카드만 쓴다.
  * 매수 규모만 다른 두 판을 비교하기 위한 하네스 — 전략은 그대로 두고 노출만 바꾼다.
+ *
+ * Task 6부터 슬롯 밖 카드는 거부되므로, '존버'를 그 턴 회복 슬롯에 직접 꽂아 넣는다.
+ * (뽑힌 회복 카드를 그대로 쓰면 하네스가 재는 대상이 바뀐다 — 휴식·운동은 등급 배율이
+ *  붙으면 존버보다 몇 배 강한 회복이라, 노출이 아니라 회복 운을 재게 된다.)
  */
 function ladder(seeds: number, qtyOf: (s: GameState) => number) {
   const events = loadEvents()
@@ -27,7 +31,7 @@ function ladder(seeds: number, qtyOf: (s: GameState) => number) {
         const q = Math.min(maxBuyQty(s, 'sjc'), qtyOf(s))
         if (q > 0) { try { s = buy(s, 'sjc', q) } catch { /* 티어락·자금부족은 무시 */ } }
       }
-      s = advanceTurn(s, withinApBudget(s, ['hodl']))
+      s = advanceTurn({ ...s, slots: { ...s.slots, recovery: { cardId: 'hodl', grade: 'C' } } }, ['hodl'])
     }
     if (s.trackers.shakenTurns > 0) shakenRuns++
     shakenTurns += s.trackers.shakenTurns

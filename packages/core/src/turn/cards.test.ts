@@ -3,7 +3,8 @@ import { makeState } from '../testkit'
 import { loadCards, isCardAvailable, cardLockReason, playCard } from './cards'
 import { GameError } from '../error'
 import { BALANCE } from '../balance'
-import type { ActionCardDef, Effect, Condition, StatKey } from '../types'
+import { gradeMul, GRADES } from './grade'
+import type { ActionCardDef, Effect, Condition, StatKey, CardGrade } from '../types'
 
 const cards = loadCards()
 const byId = (id: string) => cards.find(c => c.id === id)!
@@ -136,24 +137,65 @@ describe('cards.json 데이터 유효성 (raw as ActionCardDef[] 캐스팅은 �
 
 describe('playCard', () => {
   it('효과가 적용된다', () => {
-    expect(playCard(makeState(), 'analyze').player.stats.analysis).toBeGreaterThan(0)
+    expect(playCard(makeState(), 'analyze', 'C').player.stats.analysis).toBeGreaterThan(0)
   })
   it('비용이 차감된다', () => {
     const paid = cards.find(c => (c.cost?.money ?? 0) > 0)!
-    const s = playCard(makeState(), paid.id)
+    const s = playCard(makeState(), paid.id, 'C')
     expect(s.player.cash).toBeLessThan(makeState().player.cash)
   })
   it('야근은 돈을 벌고 컨디션을 깎는다', () => {
-    const s = playCard(makeState(), 'overtime')
+    const s = playCard(makeState(), 'overtime', 'C')
     expect(s.player.cash).toBeGreaterThan(makeState().player.cash)
     expect(s.flags['__conditionPending']).toBeLessThan(0)
   })
   it('잠긴 카드는 CARD_LOCKED', () => {
     const s = makeState(); s.player.mental = 5
-    expect(() => playCard(s, 'analyze')).toThrow(GameError)
+    expect(() => playCard(s, 'analyze', 'C')).toThrow(GameError)
   })
   it('없는 카드는 NO_CARD', () => {
-    expect(() => playCard(makeState(), 'nope')).toThrow(/NO_CARD/)
+    expect(() => playCard(makeState(), 'nope', 'C')).toThrow(/NO_CARD/)
+  })
+})
+
+/**
+ * Ruling 13 — 등급 배율은 효과뿐 아니라 **비용**에도 곱해진다. 브리프의 playCard
+ * 스니펫에는 cost 처리가 통째로 빠져 있었다(그대로 옮겼으면 비용이 사라지는 회귀).
+ * cards.json에서 cost를 가진 카드는 '주식 스터디'(cost.money 30,000)뿐이라,
+ * cost.condition 경로는 데이터가 없어 여기서 관측할 수단이 없다(보고서 참고).
+ */
+describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
+  const paid = loadCards().find(c => (c.cost?.money ?? 0) > 0)!
+  const rich = () => makeState({ player: { cash: 10_000_000 } })
+
+  it('돈 비용에 등급 배율이 곱해진다', () => {
+    const spent = (g: CardGrade) => rich().player.cash - playCard(rich(), paid.id, g).player.cash
+    expect(spent('C')).toBe(paid.cost!.money)
+    expect(spent('A')).toBe(Math.round(paid.cost!.money! * gradeMul('A')))
+    expect(spent('A')).toBeGreaterThan(spent('C'))
+  })
+
+  // cards.json에 cost를 가진 카드가 늘어나면(특히 cost.condition) 이 테스트가 자동으로
+  // 그 카드까지 검사한다 — 데이터가 자라도 커버리지가 따라 자라게 만든 장치다.
+  it('cost를 가진 카드는 등급이 오르면 비용도 함께 커진다 (데이터 전수)', () => {
+    const withCost = loadCards().filter(c => (c.cost?.money ?? 0) > 0 || (c.cost?.condition ?? 0) > 0)
+    expect(withCost.length).toBeGreaterThan(0)
+    for (const c of withCost) {
+      const lo = playCard(rich(), c.id, 'C')
+      const hi = playCard(rich(), c.id, 'A')
+      if (c.cost?.money) expect(hi.player.cash, `${c.name} 돈 비용`).toBeLessThan(lo.player.cash)
+      if (c.cost?.condition) {
+        expect(Number(hi.flags['__conditionPending']), `${c.name} 컨디션 비용`)
+          .toBeLessThan(Number(lo.flags['__conditionPending']))
+      }
+    }
+  })
+
+  it('배율을 곱한 뒤에도 현금은 정수 KRW다', () => {
+    for (const g of GRADES) {
+      const after = playCard(rich(), paid.id, g)
+      expect(Number.isInteger(after.player.cash), `등급 ${g}`).toBe(true)
+    }
   })
 })
 
@@ -198,7 +240,7 @@ describe('회복 카드는 어떤 상태에서도 잠기지 않는다 (스펙 §
   it('현금 0에서도 회복 카드를 실제로 낼 수 있고 멘탈이 오른다 (판정만 통과하는 게 아니다)', () => {
     const base = makeState()
     const s = { ...base, player: { ...base.player, cash: 0, mental: 5 } }
-    const after = playCard(s, 'drink')
+    const after = playCard(s, 'drink', 'C')
     expect(after.player.cash).toBe(0)                       // 클램프가 음수를 막는다
     expect(Number(after.flags['__mentalPending'])).toBeGreaterThan(0)
   })

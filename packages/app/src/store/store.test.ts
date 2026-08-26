@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store'
+import { nextTurnWith } from '../testkit'
 import { BALANCE } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset() })
@@ -16,7 +17,7 @@ describe('store', () => {
   })
   it('next가 턴을 넘긴다', () => {
     useGame.getState().newGame(1)
-    useGame.getState().next(['hodl'])
+    nextTurnWith()
     expect(useGame.getState().state!.turn).toBe(2)
   })
   it('doBuy/doSell이 반영된다', () => {
@@ -44,7 +45,7 @@ describe('store', () => {
     for (let i = 0; i < 156 && useGame.getState().state!.status === 'playing'; i++) {
       const st = useGame.getState().state!
       st.pendingChoices.forEach(c => useGame.getState().choose(c.eventId, 0))
-      useGame.getState().next(['hodl'])
+      nextTurnWith()
     }
     const codex = useGame.getState().codex
     expect(codex.runs).toBe(1)
@@ -67,7 +68,7 @@ describe('store', () => {
     for (let i = 0; i < 200 && useGame.getState().state!.status === 'playing'; i++) {
       const st = useGame.getState().state!
       st.pendingChoices.forEach(c => useGame.getState().choose(c.eventId, 0))
-      useGame.getState().next(['hodl'])
+      nextTurnWith()
     }
   }
 
@@ -138,6 +139,6 @@ describe('store', () => {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: broken }))
     useGame.getState().reset()
     expect(useGame.getState().state!.stocks.length).toBe(broken.stocks.length) // 로드 자체는 통과했다(sanity)
-    expect(() => useGame.getState().next(['hodl'])).toThrow()
+    expect(() => nextTurnWith()).toThrow()
   })
 })

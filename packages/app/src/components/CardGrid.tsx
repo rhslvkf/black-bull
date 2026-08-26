@@ -17,11 +17,20 @@ export function CardGrid({ picked, onPick }: { picked: string[]; onPick: (id: st
   const s = useGame(st => st.state)
   if (!s) return null
 
+  // Ruling 12 — 이번 턴 슬롯(행동 3칸 + 회복 1칸)만 그린다. 카드 11장을 전부 그리면
+  // 슬롯 밖 8장이 "눌러도 아무 일 없는" 버튼이 된다 — core가 NOT_IN_SLOTS로 거부하고
+  // 스토어 guard가 GameError를 삼키므로 화면에는 무반응으로 보인다.
+  // (2×2 배치·등급 배지·행동력 표시는 Task 12·13의 몫이다. 여기서는 목록의 출처만 바꾼다.)
+  const slotted = [...s.slots.action, s.slots.recovery].flatMap(slot => {
+    const def = CARDS.find(c => c.id === slot.cardId)
+    return def ? [def] : []
+  })
+
   // 흔들림일 때 회복 카드를 최상단으로 (스펙 §3.3) — 회복 카드는 절대 잠기지 않는
   // 코어 불변식(isCardAvailable)을 플레이어가 실제로 알아채도록 만드는 정렬이다.
   const ordered = isShaken(s)
-    ? [...CARDS].sort((a, b) => Number(!!b.isRecovery) - Number(!!a.isRecovery))
-    : CARDS
+    ? [...slotted].sort((a, b) => Number(!!b.isRecovery) - Number(!!a.isRecovery))
+    : slotted
 
   return (
     <div className="card-list" data-testid="card-list">

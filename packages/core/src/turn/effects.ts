@@ -21,18 +21,29 @@ function buyWithBudget(state: GameState, stockId: string, budget: number): GameS
   }
 }
 
-export function applyEffects(state: GameState, effects: Effect[]): GameState {
+/**
+ * `mul`은 카드 등급 배율(gradeMul)이다. **크기가 있는 델타** — 스탯·멘탈·컨디션·현금 —
+ * 에만 곱한다. flag/impact/retire/rivalMul/fundamentalMul/buyStockPct는 스위치이거나
+ * 이미 배수·비율이라 여기에 등급을 곱하면 의미가 없거나 배율이 두 번 먹는다.
+ *
+ * 보상만이 아니라 **대가도 함께 커진다** — 음수 델타(야근의 컨디션 −18, 소주의 현금
+ * −40,000)에도 같은 배율이 곱해진다. 이것이 등급 규칙 그 자체다(BALANCE.grade 주석).
+ *
+ * 돈은 정수 KRW이므로 곱한 뒤 반드시 반올림한다(−40,000 × 2.2가 부동소수점에서
+ * −88,000.00000000001이 된다).
+ */
+export function applyEffects(state: GameState, effects: Effect[], mul = 1): GameState {
   let s = state
   for (const e of effects) {
     switch (e.type) {
       case 'stat': {
         const stat = e.stat
-        s = { ...s, player: { ...s.player, stats: { ...s.player.stats, [stat]: clampStat(s.player.stats[stat] + e.delta) } } }
+        s = { ...s, player: { ...s.player, stats: { ...s.player.stats, [stat]: clampStat(s.player.stats[stat] + e.delta * mul) } } }
         break
       }
-      case 'mental': s = bump(s, '__mentalPending', e.delta); break
-      case 'condition': s = bump(s, '__conditionPending', e.delta); break
-      case 'cash': s = { ...s, player: { ...s.player, cash: Math.max(0, s.player.cash + e.delta) } }; break
+      case 'mental': s = bump(s, '__mentalPending', e.delta * mul); break
+      case 'condition': s = bump(s, '__conditionPending', e.delta * mul); break
+      case 'cash': s = { ...s, player: { ...s.player, cash: Math.max(0, s.player.cash + Math.round(e.delta * mul)) } }; break
       case 'flag':
         s = e.value === 'inc'
           ? bump(s, e.key, 1)

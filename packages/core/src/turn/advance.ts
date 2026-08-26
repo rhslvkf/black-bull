@@ -1,4 +1,4 @@
-import type { GameState, CardGrade } from '../types'
+import type { GameState } from '../types'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { createRng } from '../rng/rng'
@@ -14,7 +14,7 @@ import { playCard, actionPoints, cardApCost } from './cards'
 import { settlePayroll, settleTier, stepRival } from './economy'
 import { cashRatio, totalAssets } from './accounting'
 import { judgeEnding } from '../endings/endings'
-import { drawSlots, rerollCount } from './slots'
+import { drawSlots, rerollCount, gradeOfSlot } from './slots'
 
 export function initGame(seed: number): GameState {
   const [regimes, rng] = generateRegimes(createRng(seed))
@@ -43,28 +43,6 @@ export function initGame(seed: number): GameState {
   return { ...base, slots, rng: rng2, rerollsLeft: rerollCount(base) }
 }
 
-/**
- * Ruling 9 — 카드의 행동력 비용을 계산하려면 슬롯에서 등급을 알아야 하는데,
- * `gradeOfSlot`은 슬롯에 없는 카드를 물으면 던진다(계약 유지, 그대로 둔다).
- * 그런데 `advanceTurn(s, [id])` 형태의 기존 호출부가 core 테스트·sim에 이미 많고,
- * 그 id가 그 턴에 뽑힌 슬롯에 실제로 있을지는 호출자가 신경 쓰지 않는 경우가 대부분이다
- * (예: `hodl`이 그 턴의 회복 슬롯일 확률은 1/4뿐이다). 지금 하드 거부를 걸면 이 태스크가
- * sim 전략 재작성까지 끌어안게 된다.
- *
- * 그래서 지금은 관대하게: 슬롯(행동/회복 어느 쪽이든)에 있으면 그 등급을, 없으면
- * 중립 등급 'C'로 계산한다. 예외를 제어 흐름으로 쓰지 않기 위해 `gradeOfSlot`을
- * try/catch로 감싸는 대신 슬롯을 직접 조회한다.
- *
- * Task 6이 이 관대함을 하드한 `NOT_IN_SLOTS` 거부로 바꾼다 — 그때는 이 헬퍼를
- * 지우고 호출부를 `gradeOfSlot`으로 되돌린다.
- */
-function gradeOfSlotOrDefault(state: GameState, cardId: string): CardGrade {
-  const inAction = state.slots.action.find(s => s.cardId === cardId)
-  if (inAction) return inAction.grade
-  if (state.slots.recovery.cardId === cardId) return state.slots.recovery.grade
-  return 'C'
-}
-
 function takePending(s: GameState, key: string): [number, GameState] {
   const v = Number(s.flags[key] ?? 0)
   const flags = { ...s.flags }
@@ -75,8 +53,12 @@ function takePending(s: GameState, key: string): [number, GameState] {
 export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   if (state.status !== 'playing') throw new GameError('NOT_PLAYING')
   if (state.pendingChoices.length > 0) throw new GameError('CHOICE_PENDING')
+  // 슬롯 밖 카드는 여기서 gradeOfSlot이 NOT_IN_SLOTS로 거부한다 — "이번 턴에 뽑힌
+  // 카드만 낼 수 있다"가 이 게임의 규칙이므로, 등급을 모르면 비용도 효과도 정할 수 없다.
+  // (Task 4의 임시 관대 조회 gradeOfSlotOrDefault를 이 태스크가 걷어냈다.)
+  const grades = cardIds.map(id => gradeOfSlot(state, id))
   const budget = actionPoints(state)
-  const spent = cardIds.reduce((sum, id) => sum + cardApCost(id, gradeOfSlotOrDefault(state, id)), 0)
+  const spent = cardIds.reduce((sum, id, i) => sum + cardApCost(id, grades[i]!), 0)
   if (spent > budget) throw new GameError('NO_AP')
 
   let s: GameState = { ...state, cutscene: null, lastTurnSkip: null }
@@ -87,7 +69,7 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   const [skipped, afterSkip] = rollForcedSkip(s)
   s = afterSkip
   if (skipped) s = { ...s, lastTurnSkip: skipReason }
-  else for (const id of cardIds) s = playCard(s, id)
+  else cardIds.forEach((id, i) => { s = playCard(s, id, grades[i]!) })
 
   // 3. 가격
   const [impacts, afterImpacts] = resolveImpacts(s)
@@ -125,9 +107,21 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
     maxHeldTurns: Math.max(s.trackers.maxHeldTurns, ...holdings.map(h => h.heldTurns), 0),
   } }
 
-  // 9. 종료 판정
+  // 8.5 다음 턴 슬롯 — 게이지 정산(6) 이후, 종료 판정(9) 이전이다. 여기 두면 이번 턴에
+  // 오른 스탯이 다음 턴 등급 굴림과 리롤 횟수에 곧바로 반영된다.
+  // **종료되는 턴에는 뽑지 않는다** — 아무도 쓰지 못할 슬롯을 뽑느라 rng를 소비하면
+  // 마지막 턴 이후의 상태가 이유 없이 달라진다. 그래서 종료 여부를 먼저 계산한다.
   const bankrupt = totalAssets(s) <= 0
-  if (bankrupt || s.turn >= BALANCE.totalTurns) {
+  const ending = bankrupt || s.turn >= BALANCE.totalTurns
+  if (!ending) {
+    // drawSlots는 rng를 읽기만 하므로, 소비한 rng를 여기서 상태에 반영해야 한다 —
+    // 반영하지 않으면 다음 턴의 가격·이벤트가 같은 난수를 다시 쓴다(결정론이 아니라 반복).
+    const [slots, slotRng] = drawSlots(s)
+    s = { ...s, slots, rng: slotRng, rerollsLeft: rerollCount(s) }
+  }
+
+  // 9. 종료 판정
+  if (ending) {
     // 마지막 턴에 새로 뽑힌 선택지는 미해결로 소멸한다 (의도된 동작, Ruling 50).
     // judgeEnding은 이 시점의 state로 이미 확정되므로, 남겨두면 이후 resolveChoice가
     // 굳어진 ending과 모순되는 cash/mental 변화를 사후에 반영할 수 있다.
