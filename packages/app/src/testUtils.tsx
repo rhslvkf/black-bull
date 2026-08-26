@@ -1,11 +1,12 @@
 import { afterEach } from 'vitest'
 import { act, render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import type { GameState, Holding, PlayerState, Stats, Trackers } from '@bb/core'
+import type { EventChoice, EventDef, GameState, Holding, PlayerState, Stats, Trackers } from '@bb/core'
 import { useGame, type Codex, type TabKey } from './store/store'
 import { HomeScreen } from './screens/HomeScreen'
 import { StockDetail } from './screens/StockDetail'
 import { CodexScreen } from './screens/CodexScreen'
+import { EventModal } from './overlays/EventModal'
 
 /**
  * Task 11 Ruling 19 — 뒤따르는 모든 화면 태스크(Task 12~22)가 이 헬퍼를 쓴다.
@@ -172,6 +173,52 @@ export function renderDetail(opts: RenderDetailOptions): RenderResult {
   })
 
   return result
+}
+
+/**
+ * Task 18 — `EventModal`(VN 오버레이) 테스트용 편의 필드. `EventDef.text`는
+ * `title`·`body`·`speaker`를 중첩해서 담지만, 테스트에서는 평평하게 쓰는 편이
+ * 읽기 쉬워 여기서 한 번만 조립한다. `id` 외 나머지는 전부 선택 — 지정하지 않은
+ * 필드는 아래 기본값(`DEFAULT_RENDER_EVENT_TEXT`)을 쓴다.
+ */
+export interface RenderEventOptions {
+  /** 이벤트 id. 실제 콘텐츠에 있는 id가 아니어도 된다 — EventModal에 이 이벤트
+   *  하나만 주입하므로 실제 카탈로그와 무관하게 렌더된다. */
+  id: string
+  /** npc id('kim') 또는 화자 없음(undefined). EventModal이 speakerDisplayName으로
+   *  표시 이름으로 바꾸는지가 이 태스크의 핵심 검증 지점이다 — 여기서는 항상
+   *  id를 넘긴다(실제 콘텐츠 데이터의 형태 그대로). */
+  speaker?: string
+  title?: string
+  body?: string
+  category?: EventDef['category']
+  choices?: EventChoice[]
+  impact?: EventDef['impact']
+}
+
+const DEFAULT_RENDER_EVENT_TEXT = { title: '테스트 이벤트', body: '테스트 본문' }
+
+/**
+ * `EventModal`을 특정 이벤트가 대기 중인 상태로 렌더한다. `renderWithState`를 그대로
+ * 재사용해 상태를 심고(Ruling 19 — 헬퍼마다 각자 상태를 만들면 사본이 갈린다), 조립한
+ * 합성 `EventDef` 하나를 `EventModal`의 `events` prop(테스트 전용 주입 지점)으로
+ * 직접 건넨다 — 실제 `loadEvents()` 카탈로그를 몽키패치하거나 vi.mock으로 가로채지
+ * 않고도, 실제 콘텐츠에 없는 제목·화자 조합을 자유롭게 고정할 수 있다.
+ */
+export function renderEvent(opts: RenderEventOptions): RenderResult {
+  const def: EventDef = {
+    id: opts.id,
+    category: opts.category ?? 'news',
+    weight: 1,
+    text: {
+      title: opts.title ?? DEFAULT_RENDER_EVENT_TEXT.title,
+      body: opts.body ?? DEFAULT_RENDER_EVENT_TEXT.body,
+      speaker: opts.speaker,
+    },
+    choices: opts.choices,
+    impact: opts.impact,
+  }
+  return renderWithState({ pendingChoices: [{ eventId: def.id }] }, <EventModal events={[def]} />)
 }
 
 /** 지금 스토어가 들고 있는 게임 상태. `renderWithState` 호출 뒤 core 함수(예: `actionPoints`)를
