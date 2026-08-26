@@ -132,6 +132,16 @@ export const BALANCE = {
     allInCashRatio: 0.05, // 평균 현금비중이 이 값 미만이면 '풀매수'
   },
   maxEventsPerTurn: 2,
+  /** 카드 등급. 뽑힐 때마다 굴려지며 성장해서 굳는 레벨이 아니다.
+   *  mul은 효과와 컨디션 소모에 함께 곱해진다 — 보상이 커지면 소모도 커진다.
+   *  weights는 대응 스탯 0일 때의 기본 분포이고, statShift만큼 상위로 질량이 이동한다. */
+  grade: {
+    mul: { E: 0.4, D: 0.7, C: 1.0, B: 1.5, A: 2.2, S: 3.2 },
+    ap:  { E: 1,   D: 1,   C: 2,   B: 2,   A: 3,   S: 3 },
+    baseWeights: { E: 30, D: 30, C: 22, B: 12, A: 5, S: 1 },
+    /** 대응 스탯 1당 상위 등급으로 옮겨가는 가중 계수. */
+    statShift: 0.42,
+  },
 } as const
 
 export const TIER_NAMES = ['주린이', '개미', '불개미', '슬기로운 개미', '슈퍼개미', '큰손'] as const

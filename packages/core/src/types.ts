@@ -17,6 +17,9 @@ export interface StockState { id: string; price: number; fundamental: number; hi
 export interface Holding { stockId: string; qty: number; avgCost: number; heldTurns: number }
 export interface Stats { grit: number; stamina: number; info: number; analysis: number; network: number }
 
+/** 카드 등급. 뽑힐 때마다 굴려지며, 카드에 고정되어 성장해서 굳는 레벨이 아니다. */
+export type CardGrade = 'E' | 'D' | 'C' | 'B' | 'A' | 'S'
+
 export interface PlayerState {
   cash: number; loan: number; holdings: Holding[]
   mental: number; condition: number; burnoutTurns: number
