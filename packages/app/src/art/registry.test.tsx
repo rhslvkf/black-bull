@@ -177,11 +177,20 @@ const CANONICAL_NPC_NAME_KO: Record<string, string> = {
   mom: '엄마',
 }
 
+// Fix Round 1 Major — toContain(부분 문자열)은 '최존버' → '최존버2' 같은 오염을 못 잡는다
+// (오염된 값이 정본을 부분 문자열로 포함하기 때문에 여전히 통과한다). ART_ALT는
+// `등장인물 <이름> (<무드>)` 형식으로 고정돼 있으므로(registry.tsx) 그 자리에서 이름만
+// 정확히 뽑아 정본과 완전히 같은지(toBe) 비교한다.
+const ART_ALT_NAME_RE = /^등장인물 (.+) \(/
+
 describe('조연 4인의 한국어 이름은 설계 문서 §2.6 정본과 일치한다', () => {
   NPCS.forEach(n => {
     NPC_MOODS.forEach(m => {
-      it(`npc.${n}.${m}의 ART_ALT에 "${CANONICAL_NPC_NAME_KO[n]}"가 포함된다`, () => {
-        expect(ART_ALT[`npc.${n}.${m}`]).toContain(CANONICAL_NPC_NAME_KO[n]!)
+      it(`npc.${n}.${m}의 ART_ALT 이름이 "${CANONICAL_NPC_NAME_KO[n]}"와 정확히 일치한다`, () => {
+        const alt = ART_ALT[`npc.${n}.${m}`]
+        const match = ART_ALT_NAME_RE.exec(alt)
+        expect(match, `ART_ALT 형식이 "등장인물 <이름> (<무드>)"가 아니다: "${alt}"`).not.toBeNull()
+        expect(match![1]).toBe(CANONICAL_NPC_NAME_KO[n])
       })
     })
   })

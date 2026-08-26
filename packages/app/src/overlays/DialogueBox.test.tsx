@@ -249,3 +249,58 @@ describe('긴 대사·빈 대사에서도 깨지지 않는다', () => {
     expect(onAdvance).toHaveBeenCalledTimes(1)
   })
 })
+
+// Fix Round 1 Minor 1 — DialogueBox.tsx의 Enter/Space 키보드 진행 로직(handleKeyDown)이
+// 구현돼 있는데도 아무 테스트가 참조하지 않아, 통째로 지워도 기존 483개가 전부 그린이었다.
+// 클릭 테스트와 같은 계약(타이핑 도중엔 스킵만, 전문이 보인 뒤에야 onAdvance)을 키보드
+// 경로로도 고정한다.
+describe('키보드로도 진행할 수 있다 (Fix Round 1 Minor 1)', () => {
+  it('Enter는 탭과 동일하게 동작한다 — 타이핑 도중엔 스킵만, 전문이 보인 뒤엔 onAdvance', () => {
+    const onAdvance = vi.fn()
+    render(<DialogueBox speaker={null} text="짧다" onAdvance={onAdvance} />)
+    const box = screen.getByTestId('dialogue-box')
+    fireEvent.keyDown(box, { key: 'Enter' }) // 즉시 완성
+    expect(onAdvance).not.toHaveBeenCalled()
+    expect(screen.getByTestId('dialogue-text').textContent).toBe('짧다')
+    fireEvent.keyDown(box, { key: 'Enter' }) // 다음
+    expect(onAdvance).toHaveBeenCalledTimes(1)
+  })
+
+  it('Space도 동일하게 동작한다', () => {
+    const onAdvance = vi.fn()
+    render(<DialogueBox speaker={null} text="짧다" onAdvance={onAdvance} />)
+    const box = screen.getByTestId('dialogue-box')
+    fireEvent.keyDown(box, { key: ' ' })
+    fireEvent.keyDown(box, { key: ' ' })
+    expect(onAdvance).toHaveBeenCalledTimes(1)
+  })
+
+  it('Enter/Space가 아닌 다른 키는 아무 반응이 없다', () => {
+    const onAdvance = vi.fn()
+    const longText = '형님, 이번 건은 진짜 확실합니다. 제가 아는 라인에서 직접 나온 정보라니까요.'
+    render(<DialogueBox speaker="김실장" text={longText} onAdvance={onAdvance} />)
+    const box = screen.getByTestId('dialogue-box')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(onAdvance).not.toHaveBeenCalled()
+    expect(screen.getByTestId('dialogue-text').textContent).not.toBe(longText)
+  })
+})
+
+// Fix Round 1 Minor 3 — 로그는 컴포넌트 로컬 state라 언마운트되면 사라진다. 지금 그
+// 동작을 바꾸지는 않는다(이벤트 하나 안에서만 의미 있는 로그인지, 여러 이벤트에 걸쳐
+// 남아야 하는지는 Task 18이 화면을 조합할 때 결정할 문제 — 리뷰 판정). 다만 "현재
+// 동작"이 나중에 조용히 바뀌지 않도록 테스트로 못박는다.
+describe('로그는 컴포넌트가 언마운트되면 사라진다 (Fix Round 1 Minor 3 — 현재 동작 고정, 의도적으로 고치지 않음)', () => {
+  it('언마운트 후 같은 첫 대사로 다시 마운트하면 로그가 비어 있다', () => {
+    const { rerender, unmount } = render(<DialogueBox speaker="김실장" text="첫 줄" />)
+    rerender(<DialogueBox speaker="김실장" text="둘째 줄" />)
+    fireEvent.click(screen.getByTestId('dialogue-log-toggle'))
+    expect(screen.getByTestId('dialogue-log-entry-0').textContent).toContain('첫 줄')
+    unmount()
+
+    render(<DialogueBox speaker="김실장" text="첫 줄" />)
+    fireEvent.click(screen.getByTestId('dialogue-log-toggle'))
+    expect(screen.getByTestId('dialogue-log-empty')).toBeDefined()
+    expect(screen.queryByTestId('dialogue-log-entry-0')).toBeNull()
+  })
+})
