@@ -16,7 +16,7 @@ export { GRADES, gradeMul, gradeCashMul, gradeAp, rollGrade, cardStat } from './
 export { drawSlots, rerollSlots, rerollCount, gradeOfSlot } from './turn/slots'
 export { slotsWith } from './testkit'
 export { loadEvents, loadContent } from './events/content'
-export { resolveChoice } from './events/engine'
+export { resolveChoice, revealRumors } from './events/engine'
 export { isShaken, lossExposure, moodOf, type Mood } from './mental/mental'
 export { tierOf } from './turn/economy'
 export { analyzeStock } from './market/analysis'

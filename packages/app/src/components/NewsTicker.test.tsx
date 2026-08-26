@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
-import type { NewsItem } from '@bb/core'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { revealRumors, type NewsItem } from '@bb/core'
 import { renderWithState } from '../testUtils'
+import { useGame } from '../store/store'
+import { HomeScreen } from '../screens/HomeScreen'
 
 // core의 실제 뉴스 타입은 문자열 배열이 아니라 `NewsItem[]`
 // (`{ turn: number; kind: 'news' | 'rumor'; title: string }`, packages/core/src/types.ts) —
@@ -47,9 +49,61 @@ describe('NewsTicker', () => {
     expect(screen.getByTestId('ticker-line').getAttribute('data-rumor')).toBe('true')
   })
 
+  // Fix Round 1 Major 1 — 위 테스트들은 전부 손으로 만든 `{kind:'rumor', title:'[루머] ...'}`
+  // 객체를 주입한다. 그러면 앱이 어떤 방식으로 판별하든(문자열 파싱이든 core의 접두사가
+  // 바뀌든) 그 손으로 만든 객체가 시키는 대로 통과해 버려, 실제 판별 로직이 고정되지
+  // 않는다. 여기서는 core의 진짜 루머 생성 경로(`revealRumors`, engine.ts)를 실제로
+  // 태워서 나온 `NewsItem`을 주입한다 — `kind`도 `title`도 core가 만든 그대로다.
+  it('core가 실제로 만든 루머를 티커가 루머로 표시한다 (손으로 만든 rumor 객체가 아니다)', () => {
+    useGame.getState().reset()
+    useGame.getState().newGame(1)
+    let s = useGame.getState().state!
+    // info=10 → BALANCE.infoTiers 최상위 구간(lead=3, chance=0.9, engine.test.ts와 동일한
+    // 설정). dueTurn을 turn+2로 두면 lead=3 안에 들어와 매 호출 눈에 띈다.
+    s = {
+      ...s,
+      player: { ...s.player, stats: { ...s.player.stats, info: 10 } },
+      pendingImpacts: [
+        { target: 'stock:s1', magnitude: 0.2, dueTurn: s.turn + 2, revealTurn: s.turn, revealed: false, title: '수주 임박' },
+      ],
+    }
+    // 고정 시드(newGame(1))라 PRNG 시퀀스가 실행마다 항상 같다 — chance(0.9)가 매번
+    // 같은 지점에서 성공/실패하므로 이 루프는 결정적이고(진짜 난수 아님) 반복 실행해도
+    // 흔들리지 않는다. 상한을 넉넉히 잡아 무한루프만 막는다.
+    for (let i = 0; i < 30 && !s.news.some(n => n.kind === 'rumor'); i++) {
+      s = revealRumors(s)
+    }
+    const rumor = s.news.find(n => n.kind === 'rumor')
+    expect(rumor).toBeDefined()
+
+    useGame.setState({ state: s })
+    render(<HomeScreen />)
+    const line = screen.getByTestId('ticker-line')
+    // 마지막으로 news에 들어간 항목(최신)이 방금 만든 루머와 같아야 한다.
+    expect(s.news[s.news.length - 1]).toBe(rumor)
+    expect(line.getAttribute('data-rumor')).toBe('true')
+    expect(line.textContent).toContain(rumor!.title)
+  })
+
   it('루머가 아닌 뉴스는 data-rumor="false"다 (MU6 대비 — false 하드코딩이면 이 값도 우연히 맞을 수 있어 위 true 테스트와 짝을 이룬다)', () => {
     renderWithState({ news: [item(1, '평범한 소식')] })
     expect(screen.getByTestId('ticker-line').getAttribute('data-rumor')).toBe('false')
+  })
+
+  // Fix Round 1 Major 1 — 이 두 테스트가 없으면 판별을 `kind === 'rumor'`에서
+  // `title.startsWith('[루머]')` 문자열 파싱으로 되돌려도 아무것도 안 잡힌다. 위쪽
+  // 테스트들은 전부 kind와 접두사가 항상 같이 붙어 있는 데이터만 쓰기 때문에(진짜
+  // 루머는 kind='rumor'+'[루머] ' 접두사, 진짜 뉴스는 kind='news'+접두사 없음) 두
+  // 판별 방식이 항상 같은 답을 낸다 — 실제로는 kind만 봐야 한다는 게 이 테스트의
+  // 요점이므로, kind와 접두사가 **일부러 어긋나는** 데이터로 어느 쪽을 실제로
+  // 보는지 갈라 세운다.
+  it('제목이 "[루머]"로 시작해도 kind가 news면 루머로 취급하지 않는다 (텍스트가 아니라 kind로 판별한다)', () => {
+    renderWithState({ news: [item(1, '[루머] 라는 이름의 새 코너가 신설됐다', 'news')] })
+    expect(screen.getByTestId('ticker-line').getAttribute('data-rumor')).toBe('false')
+  })
+  it('제목에 "[루머]" 접두사가 없어도 kind가 rumor면 루머로 표시한다 (core가 접두사 문구를 바꿔도 흔들리지 않는다)', () => {
+    renderWithState({ news: [item(1, '뭔가 심상치 않은 움직임이 있다', 'rumor')] })
+    expect(screen.getByTestId('ticker-line').getAttribute('data-rumor')).toBe('true')
   })
 
   it('뉴스가 없을 때도 티커는 data-rumor="false"다', () => {
@@ -133,7 +187,7 @@ describe('NewsTicker', () => {
   it('아주 긴 뉴스 문자열도 한 줄 레이아웃이 깨지지 않는다', () => {
     const longTitle = '코스피가 요동치는 가운데 '.repeat(20) + '마감했다'
     renderWithState({ news: [item(1, longTitle)] })
-    const text = screen.getByTestId('ticker-line').querySelector('.ticker-text') as HTMLElement
+    const text = screen.getByTestId('ticker-line').querySelector('.ticker-text')!
     expect(text.textContent).toBe(longTitle)
     const style = getComputedStyle(text)
     expect(style.whiteSpace).toBe('nowrap')

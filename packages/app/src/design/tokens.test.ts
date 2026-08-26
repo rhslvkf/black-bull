@@ -180,3 +180,32 @@ describe('index.css가 토큰 파일을 import한다', () => {
     expect(stripCssComments(indexCss)).not.toMatch(/--bg\s*:\s*#/)
   })
 })
+
+/**
+ * Fix Round 1 Major 2 — 위 "정의되지 않은 var(--x) 참조 금지" 검사는 반대 방향의 구멍은
+ * 못 잡는다: `.ticker-line.rumor { color: var(--rumor) }`를 통째로
+ * `.ticker-line.rumor { color: #c893ff }`(hex 하드코딩)로 바꿔도, `--rumor` 토큰
+ * 자체는 여전히 tokens.css에 정의돼 있으니 위 검사는 안 걸린다. 여기서는 반대로
+ * "이 규칙이 실제로 토큰을 통해 색을 적용하는가"를 직접 본다(Task 13이 등급색에
+ * 대해 닫은 구멍과 대칭이지만 방향이 반대다: 그쪽은 "참조하는 이름이 정의됐는가",
+ * 이쪽은 "정의된 이름을 실제로 참조하는가").
+ */
+describe('루머 색은 하드코딩이 아니라 --rumor 토큰을 통해 적용된다 (Fix Round 1 Major 2)', () => {
+  /** `selector { ... }` 규칙 하나를 그대로 찾아 본문을 돌려준다. 못 찾으면 던진다 —
+   *  선택자 자체가 사라지면(리팩터로 이름이 바뀌면) 조용히 통과하는 게 아니라
+   *  이 테스트가 먼저 알아채야 한다. */
+  function ruleBody(css: string, selector: string): string {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`)
+    const m = stripCssComments(css).match(re)
+    if (!m) throw new Error(`선택자를 찾을 수 없다: ${selector}`)
+    return m[1]!
+  }
+
+  it('.ticker-line.rumor는 var(--rumor)로 색을 지정한다', () => {
+    expect(ruleBody(indexCss, '.ticker-line.rumor')).toMatch(/color:\s*var\(--rumor\)/)
+  })
+  it('.news-sheet-list li.rumor는 var(--rumor)로 색을 지정한다', () => {
+    expect(ruleBody(indexCss, '.news-sheet-list li.rumor')).toMatch(/color:\s*var\(--rumor\)/)
+  })
+})
