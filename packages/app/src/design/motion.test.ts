@@ -87,40 +87,70 @@ describe('useTypewriter', () => {
     })
   })
 
-  it('텍스트가 도중에 바뀌면 이전 텍스트가 남지 않고 처음부터 다시 친다', () => {
-    matchMediaMock('(prefers-reduced-motion: reduce)', true) // reduced-motion으로 즉시 완성 상태를 만들어 타이밍에 기대지 않는다.
-    const { result, rerender } = renderHook(
-      ({ text }: { text: string }) => useTypewriter(text),
-      { initialProps: { text: '첫 번째 대사입니다' } },
-    )
-    expect(result.current.done).toBe(true)
-    expect(result.current.shown).toBe('첫 번째 대사입니다')
+  describe('텍스트 교체 시 리셋 (regression)', () => {
+    // 이전 라운드의 테스트는 "짧은 텍스트 → 긴 텍스트" 방향만 썼는데, 그 방향에서는
+    // 리셋이 안 돼도 slice(0, oldIndex)가 새 텍스트의 접두사와 우연히 일치해(모든
+    // slice(0,n)은 정의상 그 문자열의 접두사이므로) 버그가 잡히지 않았다(재리뷰에서
+    // setIndex(0) 삭제·deps=[] 변경 둘 다로 실측 확인됨 — 283/283 그린이었음).
+    // 이번에는 (1) 길이·접두사 비교가 아니라 "완전히 처음 상태(빈 문자열)"라는 상태
+    // 자체를 직접 단언하고, (2) 옛 텍스트가 새 텍스트보다 긴 대칭 방향도 추가한다 —
+    // 그 방향에서는 리셋이 안 되면 slice가 새 텍스트 길이에서 클램프돼 오히려 "이미
+    // 다 쳐진 것처럼" 보이는 반대쪽 실패 양상이 나온다. 두 방향을 다 걸어야 어느
+    // 쪽으로 고장 나도 잡힌다.
 
-    rerender({ text: '두 번째 대사' })
+    it('[짧은 텍스트 → 긴 텍스트] 리렌더 직후 처음부터 다시 시작한다(빈 문자열)', () => {
+      matchMediaMock('(prefers-reduced-motion: reduce)', false)
+      const { result, rerender } = renderHook(
+        ({ text }: { text: string }) => useTypewriter(text),
+        { initialProps: { text: '가나다라' } }, // 4자
+      )
+      act(() => result.current.skip())
+      expect(result.current.shown).toBe('가나다라')
+      expect(result.current.done).toBe(true)
 
-    // reduced-motion이므로 다음 렌더에서도 즉시 전문이지만, 반드시 "새" 텍스트의
-    // 전문이어야 한다 — 이전 텍스트가 이어붙거나 남아 있으면 안 된다(VN에서 이벤트가
-    // 연달아 뜰 때 매우 흔한 경로).
-    expect(result.current.shown).toBe('두 번째 대사')
-    expect(result.current.done).toBe(true)
-  })
+      rerender({ text: '마바사아자차카' }) // 7자 — 옛 텍스트보다 길다
 
-  it('reduced-motion이 아닐 때도 텍스트가 바뀌면 새 텍스트를 처음부터 친다', () => {
-    matchMediaMock('(prefers-reduced-motion: reduce)', false)
-    const { result, rerender } = renderHook(
-      ({ text }: { text: string }) => useTypewriter(text),
-      { initialProps: { text: '첫 번째' } },
-    )
-    act(() => result.current.skip())
-    expect(result.current.shown).toBe('첫 번째')
-    expect(result.current.done).toBe(true)
+      // 리셋이 안 되면 index=4가 남아 새 텍스트의 앞 4글자("마바사아")가 그대로
+      // 보이는데, 그것도 "새 텍스트의 접두사"라 길이·접두사 비교식 단언은 우연히
+      // 통과해버린다. 상태 자체(빈 문자열)를 직접 본다.
+      expect(result.current.shown).toBe('')
+      expect(result.current.done).toBe(false)
+    })
 
-    rerender({ text: '두 번째 대사' })
+    it('[긴 텍스트 → 짧은 텍스트] 리렌더 직후 처음부터 다시 시작한다(빈 문자열)', () => {
+      matchMediaMock('(prefers-reduced-motion: reduce)', false)
+      const { result, rerender } = renderHook(
+        ({ text }: { text: string }) => useTypewriter(text),
+        { initialProps: { text: '가나다라마바사아자차카' } }, // 11자
+      )
+      act(() => result.current.skip())
+      expect(result.current.shown).toBe('가나다라마바사아자차카')
+      expect(result.current.done).toBe(true)
 
-    // 새 텍스트로 바뀐 직후에는 done이 다시 false이고, 드러난 부분은 새 텍스트의
-    // 접두사여야 한다(이전 텍스트 "첫 번째"의 잔재가 없어야 한다).
-    expect(result.current.done).toBe(false)
-    expect(result.current.shown.length).toBeLessThan('두 번째 대사'.length)
-    expect('두 번째 대사'.startsWith(result.current.shown)).toBe(true)
+      rerender({ text: '마바사' }) // 3자 — 옛 텍스트보다 짧다
+
+      // 리셋이 안 되면 index=11이 그대로 남아 slice(0,11)이 새 텍스트(3자) 길이에서
+      // 클램프돼 "이미 다 쳐진 상태"(shown='마바사', done=true)처럼 보인다 —
+      // 짧은→긴 방향과는 반대의 실패 양상이라 그 테스트만으로는 안 잡힌다.
+      expect(result.current.shown).toBe('')
+      expect(result.current.done).toBe(false)
+    })
+
+    it('[reduced-motion, 짧은 → 긴] 리렌더 직후 새 텍스트 전문이 바로 보인다', () => {
+      matchMediaMock('(prefers-reduced-motion: reduce)', true)
+      const { result, rerender } = renderHook(
+        ({ text }: { text: string }) => useTypewriter(text),
+        { initialProps: { text: '가나' } }, // 2자
+      )
+      expect(result.current.shown).toBe('가나')
+      expect(result.current.done).toBe(true)
+
+      rerender({ text: '마바사아자차카' }) // 7자 — 옛 텍스트보다 길다.
+      // 리셋이 안 되면(index=2 유지) slice(0,2)라 새 텍스트 앞 2글자만 보인다 —
+      // 짧은→긴 방향을 골라 클램프에 가려지지 않게 하고 reduced-motion 경로의
+      // 리셋도 함께 고정한다.
+      expect(result.current.shown).toBe('마바사아자차카')
+      expect(result.current.done).toBe(true)
+    })
   })
 })
