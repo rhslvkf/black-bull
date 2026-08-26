@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { analyzeStock, canAverageDown, canSell, maxBuyQty, priceOf } from '@bb/core'
+import { analyzeStock, canAverageDown, canSell, fee, maxBuyQty, priceOf } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, pct } from '../format'
 import { PriceChart } from '../components/PriceChart'
@@ -41,6 +41,22 @@ export function StockDetail() {
   const canAfford = qty > 0 && qty <= max
   const canSellQty = !!held && held.qty >= qty
   const sellDisabled = !sellChk.ok || !canSellQty
+  // Fix Round 1 Major 1 — 물타기 예산은 항상 현금 전액이 아니라, 화면에 이미 있는 수량
+  // 입력을 그대로 재사용한다. Task 2가 averageDownPct(고정 20%)를 지우고 budget을
+  // 매개변수화한 취지가 "얼마를 넣을지 매매 화면에서 사용자가 정한다"였는데, 원탭으로
+  // 항상 현금 100%를 넣으면 그 취지가 무의미해진다.
+  //
+  // budget을 정확히 price*qty로만 넘기면 안 된다 — averageDown은 그 budget을 다시
+  // maxBuyQty로 나눠 "몇 주를 살 수 있는가"를 계산하는데, 수수료(0.015%)가 항상 최소
+  // 1원 이상 붙어 gross(price*qty)보다 총비용이 더 크다. 그러면 딱 qty주를 살 만큼의
+  // budget이 "qty주 사기엔 1원 부족"이 되어 core가 qty-1주만 사고(qty=1일 땐 0주 —
+  // 클릭해도 조용히 아무 일도 안 일어나는 숨은 결함), 화면에 표시된 수량과 실제로
+  // 사들이는 수량이 항상 어긋난다. 그래서 그 수수료만큼 여유를 더해(price*qty +
+  // fee(price*qty)) "qty주를 사기에 정확히 충분한" budget을 넘긴다 — 현금이 모자라면
+  // averageDown/maxBuyQty가 그 안에서 알아서 더 적은 수량으로 잘라낸다(경계는 아래
+  // 테스트에서 고정).
+  const budget = qty > 0 ? price * qty + fee(price * qty) : 0
+  const averageDownDisabled = !adChk?.ok || qty < 1
 
   return (
     <section className="screen detail">
@@ -81,35 +97,42 @@ export function StockDetail() {
         </p>
       )}
 
-      {adChk && (
-        <div className="average-down">
-          <button
-            data-testid="average-down"
-            className="average-down-btn"
-            style={{ minWidth: TOUCH_TARGET_PX, minHeight: TOUCH_TARGET_PX }}
-            disabled={!adChk.ok}
-            onClick={() => doAverageDown(id, s.player.cash)}
-          >
-            물타기
-          </button>
-          {!adChk.ok && (
-            <p className="warn" data-testid="average-down-reason">{adChk.reason}</p>
-          )}
-        </div>
-      )}
-
       <div className="trade">
         <div className="trade-row">
           <label htmlFor="qty-input">수량</label>
           <input
-            id="qty-input" data-testid="qty" type="number" min={1} value={qty}
-            onChange={e => setQty(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+            id="qty-input" data-testid="qty" type="number" min={0} value={qty}
+            onChange={e => {
+              const n = Math.floor(Number(e.target.value))
+              setQty(Number.isFinite(n) ? Math.max(0, n) : 0)
+            }}
           />
         </div>
         <p className="trade-amount">
           예상 금액 <strong>{won(price * qty)}</strong>
           <span className="trade-hint"> · 최대 {max}주</span>
         </p>
+
+        {adChk && (
+          <div className="average-down">
+            <button
+              data-testid="average-down"
+              className="average-down-btn"
+              style={{ minWidth: TOUCH_TARGET_PX, minHeight: TOUCH_TARGET_PX }}
+              disabled={averageDownDisabled}
+              onClick={() => doAverageDown(id, budget)}
+            >
+              물타기
+            </button>
+            {!adChk.ok && (
+              <p className="warn" data-testid="average-down-reason">{adChk.reason}</p>
+            )}
+            {adChk.ok && qty < 1 && (
+              <p className="warn" data-testid="average-down-reason">수량을 입력해야 물탈 수 있다.</p>
+            )}
+          </div>
+        )}
+
         <div className="trade-buttons">
           <button data-testid="buy" className="buy" disabled={!canAfford} onClick={() => doBuy(id, qty)}>매수</button>
           <button data-testid="sell" className="sell" disabled={sellDisabled} onClick={() => doSell(id, qty)}>매도</button>

@@ -13,6 +13,27 @@ import { renderDetail, currentState } from '../testUtils'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
 
+// design/tokens.test.ts(Task 9)·CardTile.test.tsx(Fix Round 1 Minor 2)가 세운 전례를 그대로
+// 따른다 — tokens.css를 직접 읽어 `--name: 값;` 형태의 실제 선언이 있는지 정규식으로 본다.
+// PriceChart(Task 15 Fix Round 1 Major 2)가 var(--up)/var(--down)/var(--neutral)로 색을
+// 간접 참조하므로, "그 이름이 tokens.css에 실제로 정의돼 있는가"를 여기서도 같은 방식으로 닫는다.
+const tokensCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../design/tokens.css'),
+  'utf-8',
+)
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+function definesCustomProperty(css: string, name: string): boolean {
+  const re = new RegExp(`--${name}\\s*:\\s*[^;]+;`)
+  return re.test(stripCssComments(css))
+}
+/** jsdom은 var()를 해석하지 않으므로 getComputedStyle(el).stroke가 'var(--up)' 같은
+ *  원문 문자열을 그대로 돌려준다(CardTile.test.tsx의 backgroundColor와 같은 원리). */
+function strokeOf(el: Element): string {
+  return getComputedStyle(el).stroke
+}
+
 describe('PriceChart', () => {
   it('폴리라인을 그린다', () => {
     const { container } = render(<PriceChart history={[100, 120, 90, 130]} />)
@@ -37,17 +58,72 @@ describe('PriceChart', () => {
   })
   it('상승·하락·보합이 서로 다른 색으로 그려진다', () => {
     const up = render(<PriceChart history={[100, 130]} />)
-    const upColor = up.container.querySelector('polyline')!.getAttribute('stroke')
+    const upColor = strokeOf(up.container.querySelector('polyline')!)
     up.unmount()
     const down = render(<PriceChart history={[130, 100]} />)
-    const downColor = down.container.querySelector('polyline')!.getAttribute('stroke')
+    const downColor = strokeOf(down.container.querySelector('polyline')!)
     down.unmount()
     const flat = render(<PriceChart history={[100, 100]} />)
-    const flatColor = flat.container.querySelector('polyline')!.getAttribute('stroke')
+    const flatColor = strokeOf(flat.container.querySelector('polyline')!)
     flat.unmount()
     expect(upColor).not.toBe(downColor)
     expect(upColor).not.toBe(flatColor)
     expect(downColor).not.toBe(flatColor)
+  })
+
+  // Task 15 Fix Round 1 Major 2 — 예전엔 stroke가 리터럴 hex라 tokens.css와 값이 중복됐다.
+  // 이제는 var(--up)/var(--down)/var(--neutral)를 참조만 한다. "서로 다르다"만 보는 위
+  // 테스트는 오타(var(--upp) 등)로 세 값이 여전히 서로 다른 채로 남아도 못 잡으므로,
+  // CardTile.test.tsx의 등급색 패턴과 동일하게 "참조하는 이름이 tokens.css에 실제로
+  // 정의돼 있는가"를 직접 검사한다.
+  describe('스파크라인이 참조하는 CSS 변수가 tokens.css에 실제로 존재한다', () => {
+    it('상승·하락·보합·1개데이터 네 경우 전부 var(--x) 형태이고 그 x가 tokens.css에 정의돼 있다', () => {
+      const cases: { history: number[]; label: string }[] = [
+        { history: [100, 130], label: '상승' },
+        { history: [130, 100], label: '하락' },
+        { history: [100, 100], label: '보합' },
+        { history: [100], label: '1개데이터' },
+      ]
+      for (const { history, label } of cases) {
+        const { container, unmount } = render(<PriceChart history={history} />)
+        const el = container.querySelector('polyline') ?? container.querySelector('line')
+        expect(el, `${label}: polyline도 line도 없다`).not.toBeNull()
+        const stroke = strokeOf(el!)
+        const m = stroke.match(/^var\(--([a-zA-Z0-9-]+)\)$/)
+        expect(m, `${label}: stroke가 var(--x) 형태가 아니다: "${stroke}"`).not.toBeNull()
+        expect(
+          definesCustomProperty(tokensCss, m![1]!),
+          `${label}: --${m ? m[1] : '?'}가 tokens.css에 정의돼 있지 않다`,
+        ).toBe(true)
+        unmount()
+      }
+    })
+
+    // 한국 관례(상승 빨강/하락 파랑)는 design/tokens.test.ts의 "--up은 빨강 계열이다"가
+    // 이미 고정한다. 여기서는 그 사슬의 나머지 절반 — "상승일 때 실제로 --up을,
+    // 하락일 때 실제로 --down을 가리키는가" — 을 리터럴 var() 문자열로 못박는다.
+    // 두 테스트를 합치면 "상승은 실제로 빨강이다"가 전이적으로 성립한다.
+    it('상승은 정확히 var(--up), 하락은 정확히 var(--down)을 가리킨다', () => {
+      const up = render(<PriceChart history={[100, 130]} />)
+      expect(strokeOf(up.container.querySelector('polyline')!)).toBe('var(--up)')
+      up.unmount()
+      const down = render(<PriceChart history={[130, 100]} />)
+      expect(strokeOf(down.container.querySelector('polyline')!)).toBe('var(--down)')
+      down.unmount()
+    })
+  })
+
+  // Minor 1 — 색·데이터 반영 테스트는 방향(상승이 위로 그려지는가) 자체는 안 본다.
+  // SVG는 y가 아래로 갈수록 커진다 — 가격이 오르면 화면 위쪽(작은 y)으로 가야 한다.
+  it('단조 증가하는 이력은 y좌표가 단조 감소한다 (SVG는 위가 작은 y, Minor 1)', () => {
+    const { container } = render(<PriceChart history={[100, 150, 200]} width={100} height={50} />)
+    const raw = container.querySelector('polyline')!.getAttribute('points')!.trim()
+    const ys = raw.split(' ').map(pair => Number(pair.split(',')[1]))
+    expect(ys).toHaveLength(3)
+    for (let i = 1; i < ys.length; i++) {
+      expect(ys[i]!, `y[${i}]=${ys[i]}가 y[${i - 1}]=${ys[i - 1]}보다 작아야(위로 그려져야) 한다`)
+        .toBeLessThan(ys[i - 1]!)
+    }
   })
 })
 
@@ -133,18 +209,21 @@ describe('MarketScreen', () => {
       expect(after).not.toBe(before)
     })
 
-    it('상승은 빨강(#f0616d), 하락은 파랑(#4f8ff7)으로 그려진다 (한국 관례, MU9)', () => {
-      // 제약값(색)은 리터럴로 적는다 — tokens.css의 --bull/--down을 import해 자기 자신과
-      // 비교하면 뒤집혀도 통과한다.
-      const UP_RED = '#f0616d'
-      const DOWN_BLUE = '#4f8ff7'
+    it('상승은 var(--up)(빨강), 하락은 var(--down)(파랑)으로 그려진다 (한국 관례, MU9)', () => {
+      // 제약값(색 관례)은 리터럴로 적는다 — PriceChart는 이제 var(--up)/var(--down)로
+      // 토큰을 간접 참조하므로(Fix Round 1 Major 2), 여기서 확인하는 건 "실제 hex 빨강"이
+      // 아니라 "시세 카드가 올바른 토큰 이름을 참조하는가"다. --up이 실제로 빨강 계열임은
+      // design/tokens.test.ts의 "한국 관례 색" describe가 별도로 고정한다 — 두 테스트를
+      // 합치면 "상승은 실제로 빨강이다"가 전이적으로 성립한다.
+      const UP = 'var(--up)'
+      const DOWN = 'var(--down)'
       const s = currentState()
       useGame.setState({ state: {
         ...s, stocks: s.stocks.map(x => x.id === 'sjc' ? { ...x, history: [100, 200] } : x),
       } })
       render(<MarketScreen />)
-      const upStroke = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('stroke')
-      expect(upStroke).toBe(UP_RED)
+      const upStroke = strokeOf(screen.getByTestId('spark-sjc').querySelector('polyline')!)
+      expect(upStroke).toBe(UP)
 
       act(() => {
         const s2 = currentState()
@@ -152,8 +231,8 @@ describe('MarketScreen', () => {
           ...s2, stocks: s2.stocks.map(x => x.id === 'sjc' ? { ...x, history: [200, 100] } : x),
         } })
       })
-      const downStroke = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('stroke')
-      expect(downStroke).toBe(DOWN_BLUE)
+      const downStroke = strokeOf(screen.getByTestId('spark-sjc').querySelector('polyline')!)
+      expect(downStroke).toBe(DOWN)
     })
   })
 })
@@ -254,6 +333,61 @@ describe('물타기 버튼', () => {
     const before = Number(screen.getByTestId('avg-cost').getAttribute('data-value'))
     fireEvent.click(screen.getByTestId('average-down'))
     expect(Number(screen.getByTestId('avg-cost').getAttribute('data-value'))).toBeLessThan(before)
+  })
+
+  // Fix Round 1 Major 1 — 예전엔 클릭 한 번으로 항상 현금 전액이 들어갔다. 화면에 이미
+  // 있는 "수량" 입력을 재사용해 budget = price*qty(+수수료)로 넘기도록 바꿨다. 아래
+  // 세 테스트가 그 배선을 고정한다.
+  it('qty를 바꾸면 실제로 사들이는 수량도 그만큼 바뀐다 (budget이 화면 입력을 따라간다)', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '2' } })
+    fireEvent.click(screen.getByTestId('average-down'))
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(12) // 10 + 2
+
+    // 같은 판을 이어서 — qty를 5로 바꿔 다시 누르면 5주가 더 들어가야 한다(현금은
+    // 넉넉하므로 이 델타가 곧 budget이 실제로 qty를 따라간다는 증거다).
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '5' } })
+    fireEvent.click(screen.getByTestId('average-down'))
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(17) // 12 + 5
+  })
+
+  it('qty가 살 수 있는 수량을 넘으면 core가 잘라낸다 — 요청한 수량이 아니라 감당 가능한 수량만 산다', () => {
+    // price=5000일 때 3주를 사는 데 정확히 필요한 현금(원금+수수료)만 쥐여준다.
+    // 수수료율(BALANCE.feeRate=0.00015)과 최소수수료(1원) 규칙은 core 값이라 여기서
+    // 다시 계산하지 않고, "3주째까지는 사지고 4주째는 못 산다"는 경계를 직접 만든다.
+    const price = 5000
+    const grossFor3 = price * 3
+    const feeFor3 = Math.max(1, Math.floor((grossFor3 * 150) / 1_000_000)) // BALANCE.feeRate=0.00015
+    const cashFor3 = grossFor3 + feeFor3
+    renderDetail({
+      stockId: 'sjc', price, cash: cashFor3,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    // 10주를 물타려 하지만 현금은 정확히 3주치뿐이다.
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '10' } })
+    fireEvent.click(screen.getByTestId('average-down'))
+    const held = useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!
+    expect(held.qty).toBe(13) // 10 + 3 — core가 요청한 10이 아니라 감당 가능한 3만 산다
+    expect(useGame.getState().state!.player.cash).toBe(0) // 정확히 3주치 현금을 다 썼다
+  })
+
+  it('qty가 0(빈 칸)이면 물타기 버튼이 비활성화된다', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    expect(screen.getByTestId('average-down').hasAttribute('disabled')).toBe(false) // 기본 qty=1이면 활성
+    fireEvent.change(screen.getByTestId('qty'), { target: { value: '' } })
+    const btn = screen.getByTestId('average-down')
+    expect(btn.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('average-down-reason')).not.toBeNull()
+    // 비활성 상태에서 눌러도(disabled 버튼은 클릭이 발화하지 않지만, 이중 방어로) 보유가
+    // 늘지 않는다는 것까지 확인한다.
+    fireEvent.click(btn)
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(10)
   })
 
   it('물타기는 주간 행동이 아니다 — 턴·행동력·리롤을 소모하지 않는다 (MU5)', () => {
