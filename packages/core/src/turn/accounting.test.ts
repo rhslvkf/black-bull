@@ -157,3 +157,38 @@ describe('거래 트래커', () => {
     expect(after.trackers.tradeCount).toBe(s.trackers.tradeCount + 1)
   })
 })
+
+describe('최대 낙폭 100% 상한 (Fix Round 1 — 리뷰 Major)', () => {
+  // T-B9(advance.test.ts)와 같은 담보 강제청산 시나리오를 재사용한다. 담보(현금+평가액)가
+  // 대출×callRatio에 못 미치면 보유를 전량 청산해 상환하고, 그래도 못 갚은 빚이 남으면
+  // 총자산이 음수가 된다 — 클램프가 없으면 (peak-assets)/peak*100이 100을 가볍게 넘는다.
+  //
+  // initGame 직후(1턴째)에 곧바로 마진콜을 걸면 trackers.peakAssets가 아직 0이라
+  // peak>0 가드가 먼저 걸려 dd가 0으로 막혀버려서 오버플로 경로 자체를 타지 않는다
+  // (리뷰어가 실측한 150%대는 T-B9를 그대로 썼는데 왜 이 파일에서 재현이 안 됐는지가
+  // 바로 이 지점이었다). 그래서 정상적인 1턴을 먼저 흘려 peak을 양수로 만든 다음,
+  // 그 위에서 마진콜을 건다.
+  const pool = loadEvents()
+  const resolvePending = (state: ReturnType<typeof advanceTurn>) => {
+    let s = state
+    while (s.pendingChoices.length > 0) s = resolveChoice(s, s.pendingChoices[0]!.eventId, 0, pool)
+    return s
+  }
+
+  it('peak이 이미 양수로 서 있는 상태에서 담보 강제청산으로 순자산이 크게 음수가 돼도 낙폭은 100%를 넘지 않는다', () => {
+    const base = initGame(1)
+    let s = resolvePending(advanceTurn(base, [])) // 1턴 정상 진행 — peakAssets를 양수로 세운다
+    expect(s.trackers.peakAssets).toBeGreaterThan(0) // 전제 조건: 오버플로 경로를 실제로 태우려면 peak > 0이어야 한다
+    s = { ...s, player: { ...s.player, cash: 100_000, loan: 5_000_000 } } // 담보 10만 << 대출×1.3
+    const after = resolvePending(advanceTurn(s, []))
+    expect(after.flags['marginCalled']).toBe(true)
+    expect(totalAssets(after)).toBeLessThan(0) // 순자산이 실제로 음수인지 먼저 확인(전제 조건)
+    // 클램프 없이 계산했을 때 실제로 100%를 넘는지도 같이 고정해 둔다 — 이 테스트가
+    // 클램프 없는 raw 값으로도 100% 근처거나 미만이면(공회전) 클램프가 아무것도
+    // 잡아내지 못한다.
+    const rawDd = ((s.trackers.peakAssets - totalAssets(after)) / s.trackers.peakAssets) * 100
+    expect(rawDd).toBeGreaterThan(100)
+    expect(after.trackers.maxDrawdownPct).toBeLessThanOrEqual(100)
+    expect(after.trackers.maxDrawdownPct).toBeGreaterThanOrEqual(0)
+  })
+})

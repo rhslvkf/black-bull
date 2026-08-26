@@ -112,7 +112,15 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   // 총자산이 0이 되는 경로에서 0으로 나누어 NaN이 트래커에 눌어붙는 것을 막는다.
   const assets = totalAssets(s)
   const peak = Math.max(s.trackers.peakAssets, assets)
-  const dd = peak > 0 ? ((peak - assets) / peak) * 100 : 0
+  const ddRaw = peak > 0 ? ((peak - assets) / peak) * 100 : 0
+  // 낙폭은 정의상 [0, 100]을 벗어날 수 없다 — 100%는 "가진 걸 전부 잃었다"는 뜻이고,
+  // 그 이상 잃을 원금은 없다. 그런데 담보 강제청산(checkMarginCall)으로 총자산이
+  // 음수가 되면(빚까지 진 상태) peak 대비 (peak-assets)/peak가 1을 넘어 dd가 100을
+  // 넘는다(Fix Round 1 — 리뷰 Major, 실측 150%·263.7%). 빚의 크기는 낙폭이 아니라
+  // player.loan이 말해야 하므로 여기서는 100에서 자른다. 하한 0은 peak = Math.max(...)
+  // 불변식상 dd가 음수가 될 수 없어 실질적으로 도달하지 않지만, 부동소수 오차에 대비해
+  // 방어적으로 남겨둔다.
+  const dd = Math.max(0, Math.min(100, ddRaw))
   s = { ...s, trackers: {
     ...s.trackers,
     cashRatioSum: s.trackers.cashRatioSum + cashRatio(s),

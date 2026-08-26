@@ -5,11 +5,17 @@ import {
 } from '@bb/core'
 
 /** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절).
+ *  실제 방어선은 이 숫자 자체가 아니라 아래 isValidGameState의 필드별 형태 검사다 —
+ *  그 검사는 SAVE_VERSION과 무관하게 독립적으로 동작해서, 이 값을 실수로 안 올려도
+ *  새 필드가 없는 구버전 저장은 형태 검사에서 걸러진다(Fix Round 1 — 리뷰 Minor,
+ *  4→3으로 되돌려 실측 확인함). SAVE_VERSION을 올리는 건 그 위에 얹는 **명시적 신호**다:
+ *  스키마가 바뀌었다는 사실을 코드에 남기고, 키 이름(SAVE_KEY)도 함께 바꿔 구버전
+ *  저장이 아예 안 읽히게 이중으로 막는다 — 형태 검사 하나에만 기대지 않기 위한 방어다.
  *  v3: 턴 루프가 slots·rerollsLeft를 소비하기 시작했다(Task 6). v2 저장에는 그 필드가
- *  없어 카드 목록이 비고 턴을 넘길 수 없으므로, 버전을 올려 아예 읽지 않는다.
+ *  없어 카드 목록이 비고 턴을 넘길 수 없다.
  *  v4: trackers에 feesPaid/taxPaid/peakAssets/maxDrawdownPct/tradeCount 5개가 늘었다
  *  (Task 7). v3 저장에는 이 필드들이 없어 `undefined`로 로드되면 Math.max(undefined, x)가
- *  NaN이 되어 최대 낙폭이 영구히 NaN으로 오염되므로, 버전을 올려 아예 읽지 않는다. */
+ *  NaN이 되어 최대 낙폭이 영구히 NaN으로 오염될 수 있다(형태 검사가 실제 방어선이다). */
 export const SAVE_VERSION = 4
 /** 키 이름도 버전에서 파생시킨다 — 리터럴로 'v1'을 박아두면 SAVE_VERSION을 올렸을 때
  *  키만 v1로 남아 이름이 거짓말이 된다(리뷰 Minor 2). 키가 바뀌면 구버전 저장은
