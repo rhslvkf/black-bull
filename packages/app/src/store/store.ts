@@ -1,8 +1,21 @@
 import { create } from 'zustand'
 import {
   type GameState, initGame, advanceTurn, buy, sell, resolveChoice, loadEvents, totalAssets,
-  GameError,
+  GameError, actionPoints, cardApCost, gradeOfSlot, rerollSlots,
 } from '@bb/core'
+
+/** 이미 고른 카드들의 행동력 합. 슬롯 밖 카드(원래는 있을 수 없다)는 0으로 친다 —
+ *  gradeOfSlot이 NOT_IN_SLOTS를 던지는 경로를 게이팅 계산에서까지 전파시키지 않기
+ *  위해서다. 회복 카드는 cardApCost 자체가 항상 0을 준다(교착 방지 불변식).
+ *
+ *  export하는 이유: `ActionMeter`가 "몇 칸이 꺼졌는가"를 그리는 데 정확히 같은 계산이
+ *  필요하다. togglePick의 게이팅과 ActionMeter의 표시가 서로 다른 계산식을 쓰면(예:
+ *  한쪽만 등급을 반영하면) 화면과 실제 예산이 어긋난다 — 단일 출처로 둔다. */
+export function apSpent(state: GameState, picked: string[]): number {
+  return picked.reduce((sum, id) => {
+    try { return sum + cardApCost(id, gradeOfSlot(state, id)) } catch { return sum }
+  }, 0)
+}
 
 /** 저장된 GameState 스키마 버전. 스키마를 바꾸면 이 값을 올린다 (README '저장 스키마' 절).
  *  실제 방어선은 이 숫자 자체가 아니라 아래 isValidGameState의 필드별 형태 검사다 —
@@ -117,7 +130,7 @@ interface Store {
   picked: string[]
   newGame(seed?: number): void
   finishPrologue(): void
-  togglePick(id: string, limit: number): void
+  togglePick(id: string): void
   next(cards: string[]): void
   doBuy(id: string, qty: number): void
   doSell(id: string, qty: number): void
@@ -125,6 +138,11 @@ interface Store {
   setTab(t: TabKey): void
   selectStock(id: string | null): void
   clearCutscene(): void
+  /** 행동 슬롯을 다시 굴린다(core의 rerollSlots). 회복 슬롯은 건드리지 않는다.
+   *  rerollsLeft가 0이면 core가 상태를 그대로 돌려준다 — 여기서 별도로 막지 않아도
+   *  안전하다(rerollSlots 자체의 계약). GameError를 던지지 않으므로 guard()를 쓰지
+   *  않는다 — guard는 GameError를 삼키는 통로인데 여기엔 삼킬 예외가 없다. */
+  doReroll(): void
   reset(): void
 }
 
@@ -171,11 +189,28 @@ export const useGame = create<Store>((set, get) => {
       try { localStorage.setItem(PROLOGUE_KEY, '1') } catch { /* 무시 */ }
       set({ prologueDone: true })
     },
-    togglePick(id, limit) {
+    // Ruling 21 배경 — 예전엔 카드 한 장 = 행동력 1로 세는 count 기반 limit이었다.
+    // 등급별로 행동력 소모가 달라지는 이번 재설계(§2.2)에서 count 기반 게이팅을 그대로
+    // 두면, 등급 C(⚡2) 카드 하나만 골라도 예산 2/2를 이미 다 썼는데 count는 1이라
+    // 두 번째 카드까지 고를 수 있어 버린다 — next-turn을 눌러도 core가 NO_AP로 조용히
+    // 거부하는(guard가 GameError를 삼키는) 죽은 클릭이 된다. 그래서 여기서는 실제
+    // 행동력 예산(actionPoints)과 실제 소모(cardApCost × 등급)를 직접 비교한다.
+    togglePick(id) {
+      const s = get().state
+      if (!s) return
       const p = get().picked
-      const next = p.includes(id)
-        ? p.filter(x => x !== id)
-        : p.length >= limit ? [...p.slice(1), id] : [...p, id]
+      if (p.includes(id)) { set({ picked: p.filter(x => x !== id) }); return }
+
+      const budget = actionPoints(s)
+      let cost: number
+      try { cost = cardApCost(id, gradeOfSlot(s, id)) } catch { return } // 슬롯 밖 카드 — 무반응
+
+      // 새 카드 하나만으로 예산을 넘으면 아무 것도 비우지 않고 그냥 거부한다(스왑할
+      // 이유가 없다 — 비워도 어차피 안 들어간다). 그 외에는 오래 고른 카드부터 밀어내
+      // 예산 안으로 맞춘다(슬라이딩 윈도우 — 예전 count 기반 동작과 같은 감각을 유지).
+      if (cost > budget) return
+      let next = [...p, id]
+      while (next.length > 1 && apSpent(s, next) > budget) next = next.slice(1)
       set({ picked: next })
     },
     next(cards) { guard(s => advanceTurn(s, cards)); set({ picked: [] }) },
@@ -190,6 +225,11 @@ export const useGame = create<Store>((set, get) => {
       const next = { ...s, cutscene: null }
       writeSave(next)
       set({ state: next })
+    },
+    doReroll() {
+      const s = get().state
+      if (!s) return
+      commit(rerollSlots(s))
     },
     reset() {
       set({

@@ -33,6 +33,13 @@ export function CardGrid({ picked, onPick }: { picked: string[]; onPick: (id: st
     : slotted
 
   return (
+    // Ruling 21 (Task 12) — 카드 버튼의 testid를 `card-${id}` → `slot-card-${id}`로
+    // 바꾸고 `data-card-id`를 얹는다. Task 13이 이 자리를 2×2로 다시 그리며 같은
+    // 선택자 계약(`slot-card-*` + `data-card-id`)을 유지할 것이므로, 컨테이너
+    // testid(`card-list`)와 잠금 사유 testid(`card-lock-${id}`)는 카드 *버튼* 선택자와
+    // 겹치는 접두사 문제가 없어(‘card-list’·’card-lock-x’는 `/^slot-card-/`에 걸리지
+    // 않는다) 그대로 둔다 — 여기까지 바꾸면 Task 13이 계약을 유지할 이유가 없는
+    // 부분까지 흔드는 셈이다.
     <div className="card-list" data-testid="card-list">
       {ordered.map(c => {
         const lock = cardLockReason(s, c)
@@ -40,7 +47,7 @@ export function CardGrid({ picked, onPick }: { picked: string[]; onPick: (id: st
         const on = picked.includes(c.id)
         return (
           <button
-            key={c.id} data-testid={`card-${c.id}`} disabled={!ok}
+            key={c.id} data-testid={`slot-card-${c.id}`} data-card-id={c.id} disabled={!ok}
             className={`card${on ? ' picked' : ''}${c.isRecovery ? ' recovery' : ''}`}
             onClick={() => onPick(c.id)}
           >

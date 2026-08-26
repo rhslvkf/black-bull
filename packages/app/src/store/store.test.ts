@@ -208,3 +208,81 @@ describe('store', () => {
     expect(() => nextTurnWith()).toThrow()
   })
 })
+
+// Task 12 — store.doReroll(). core의 rerollSlots를 그대로 부르고 결과를 커밋한다.
+describe('doReroll', () => {
+  it('rerollsLeft를 1 줄인다 (MU9 — 아무 일도 안 하는 뮤테이션 대비)', () => {
+    useGame.getState().newGame(1)
+    useGame.setState({ state: { ...useGame.getState().state!, rerollsLeft: 2 } })
+    useGame.getState().doReroll()
+    expect(useGame.getState().state!.rerollsLeft).toBe(1)
+  })
+
+  it('회복 슬롯은 건드리지 않는다 — 리롤은 행동 슬롯만 다시 굴린다', () => {
+    useGame.getState().newGame(1)
+    const before = useGame.getState().state!
+    useGame.setState({ state: { ...before, rerollsLeft: 2 } })
+    const recoveryBefore = useGame.getState().state!.slots.recovery
+    useGame.getState().doReroll()
+    expect(useGame.getState().state!.slots.recovery).toEqual(recoveryBefore)
+  })
+
+  it('rerollsLeft가 0이면 아무 일도 하지 않는다(예외 없이 상태를 그대로 둔다)', () => {
+    useGame.getState().newGame(1)
+    useGame.setState({ state: { ...useGame.getState().state!, rerollsLeft: 0 } })
+    const before = useGame.getState().state!
+    expect(() => useGame.getState().doReroll()).not.toThrow()
+    expect(useGame.getState().state).toEqual(before)
+  })
+
+  it('게임이 없으면 아무 일도 하지 않는다', () => {
+    expect(useGame.getState().state).toBeNull()
+    expect(() => useGame.getState().doReroll()).not.toThrow()
+    expect(useGame.getState().state).toBeNull()
+  })
+})
+
+// Task 12 — togglePick이 카드 장수가 아니라 실제 행동력 소모(등급별 cardApCost)를
+// 기준으로 게이팅한다(§2.2 — 등급이 오르면 행동력 소모도 오른다). count 기반이던 예전
+// 로직은 등급 C(⚡2) 카드 하나만 골라도 예산 2/2를 다 쓴 뒤에도 count가 1이라 두 번째
+// 카드까지 고를 수 있게 허용해, next-turn을 눌러도 core가 NO_AP로 조용히 거부하는
+// 죽은 클릭을 만들었다.
+describe('togglePick — 행동력 예산 기준 게이팅', () => {
+  it('예산을 이미 다 쓴 뒤에는 새 카드를 더 고를 수 없다', () => {
+    useGame.getState().newGame(1)
+    // stamina 0, 재직 상태 → actionPoints = 2. slotsWith 대신 실제 pinSlots 스타일로
+    // 두 장을 등급 C(⚡2)로 꽂는다 — 첫 장만으로 예산이 이미 꽉 찬다.
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, stats: { ...s.player.stats, stamina: 0 }, employed: true },
+      slots: { action: [{ cardId: 'analyze', grade: 'C' }, { cardId: 'news', grade: 'C' }, { cardId: 'overtime', grade: 'C' }],
+        recovery: { cardId: 'hodl', grade: 'C' } } } })
+    useGame.getState().togglePick('analyze')
+    expect(useGame.getState().picked).toEqual(['analyze'])
+    useGame.getState().togglePick('news')
+    // 예산(2)을 이미 analyze 한 장(⚡2)이 다 썼으므로, news를 더하려면 오래된 선택부터
+    // 밀어낸다(슬라이딩 윈도우 — 예전 count 기반 동작과 같은 감각). count 기반이었다면
+    // 밀어내지 않고 그냥 ['analyze','news']가 됐을 것이다(예산 초과인데도 둘 다 남는다).
+    expect(useGame.getState().picked).toEqual(['news'])
+  })
+
+  it('회복 카드는 행동력을 쓰지 않으므로 예산이 꽉 차도 함께 고를 수 있다', () => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: { ...s.player, stats: { ...s.player.stats, stamina: 0 }, employed: true },
+      slots: { action: [{ cardId: 'analyze', grade: 'C' }, { cardId: 'news', grade: 'C' }, { cardId: 'overtime', grade: 'C' }],
+        recovery: { cardId: 'hodl', grade: 'C' } } } })
+    useGame.getState().togglePick('analyze')
+    useGame.getState().togglePick('hodl')
+    expect(useGame.getState().picked).toEqual(['analyze', 'hodl'])
+  })
+
+  it('이미 고른 카드를 다시 누르면 선택이 풀린다', () => {
+    useGame.getState().newGame(1)
+    // 이번 턴 실제로 뽑힌 회복 카드를 쓴다 — 어떤 카드가 뽑히는지는 시드가 정한다.
+    const recoveryId = useGame.getState().state!.slots.recovery.cardId
+    useGame.getState().togglePick(recoveryId)
+    expect(useGame.getState().picked).toEqual([recoveryId])
+    useGame.getState().togglePick(recoveryId)
+    expect(useGame.getState().picked).toEqual([])
+  })
+})

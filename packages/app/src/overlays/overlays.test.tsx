@@ -70,7 +70,7 @@ describe('EventModal', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
     render(<><HomeScreen /><EventModal /></>)
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)

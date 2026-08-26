@@ -1,9 +1,10 @@
-import { actionPoints } from '@bb/core'
 import { useGame } from '../store/store'
 import { NewsFeed } from '../components/NewsFeed'
 import { CardGrid } from '../components/CardGrid'
 import { TopBar } from '../components/TopBar'
 import { CharacterStage } from '../components/CharacterStage'
+import { StatChips } from '../components/StatChips'
+import { ActionMeter } from '../components/ActionMeter'
 
 export function HomeScreen() {
   const s = useGame(st => st.state)
@@ -13,8 +14,6 @@ export function HomeScreen() {
   const picked = useGame(st => st.picked)
   const togglePick = useGame(st => st.togglePick)
   if (!s) return null
-
-  const limit = actionPoints(s)
 
   // 선택지 대기 중에는 next()가 CHOICE_PENDING을 조용히 삼키므로, 버튼을 눌러도
   // 아무 일도 안 일어나는 화면이 되지 않도록 여기서 먼저 막고 안내한다.
@@ -29,7 +28,7 @@ export function HomeScreen() {
       : null
   const burnoutAhead = s.player.burnoutTurns > 0
 
-  const pick = (id: string) => togglePick(id, limit)
+  const pick = (id: string) => togglePick(id)
   const go = () => next(picked)
 
   return (
@@ -38,9 +37,9 @@ export function HomeScreen() {
       <CharacterStage />
       {skipNotice && <p className="turn-skipped" data-testid="turn-skipped">{skipNotice}</p>}
       <NewsFeed />
-      <h2 className="section-title">
-        이번 주에 뭘 할까 <small>{picked.length}/{limit}</small>
-      </h2>
+      <StatChips />
+      <ActionMeter picked={picked} />
+      <h2 className="section-title">이번 주에 뭘 할까</h2>
       <CardGrid picked={picked} onPick={pick} />
       {blocked && <p className="turn-blocked">먼저 마주한 상황부터 정리해야 한다.</p>}
       {burnoutAhead && (

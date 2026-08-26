@@ -89,20 +89,20 @@ describe('고른 카드는 탭을 옮겨도 남는다 (최종 리뷰 Minor 8)', 
   it('시세 탭에 다녀와도 선택이 유지된다', () => {
     render(<App />)
     goHome()
-    fireEvent.click(screen.getByTestId('card-hodl'))
-    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
+    expect(screen.getByTestId('slot-card-hodl').className).toContain('picked')
 
     act(() => { useGame.getState().setTab('market') })
-    expect(screen.queryByTestId('card-hodl')).toBeNull()   // 정말로 언마운트됐다
+    expect(screen.queryByTestId('slot-card-hodl')).toBeNull()   // 정말로 언마운트됐다
     act(() => { useGame.getState().setTab('home') })
 
-    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+    expect(screen.getByTestId('slot-card-hodl').className).toContain('picked')
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)
   })
   it('턴을 넘기면 선택이 비워진다', () => {
     render(<App />)
     goHome()
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().picked).toEqual([])
   })
