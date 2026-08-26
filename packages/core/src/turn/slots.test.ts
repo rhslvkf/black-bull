@@ -7,6 +7,24 @@ import { createRng } from '../rng/rng'
 import { makeState, slotsWith } from '../testkit'
 import { GameError } from '../error'
 import { initGame } from './advance'
+import { generateRegimes } from '../market/regimes'
+
+describe('카드 데이터: isRecovery 명시성 (Ruling 7)', () => {
+  // 위 "행동 슬롯에 회복 카드가 섞이지 않는다"는 한 번의 drawSlots가 뽑은 3장만
+  // 본다 — 뽑히지 않은 나머지 행동 카드가 isRecovery를 빠뜨려도 못 잡는다.
+  // 여기서는 loadCards() 전수를 직접 검사해 7장 모두를 고정한다.
+  it('행동 카드 7장 전부가 isRecovery: false를 명시한다', () => {
+    const recoveryIds = new Set(['hodl', 'rest', 'exercise', 'drink'])
+    const actionCards = loadCards().filter(c => !recoveryIds.has(c.id))
+    expect(actionCards).toHaveLength(7)
+    for (const c of actionCards) expect(c.isRecovery).toBe(false)
+  })
+  it('회복 카드 4장 전부가 isRecovery: true다', () => {
+    for (const id of ['hodl', 'rest', 'exercise', 'drink']) {
+      expect(loadCards().find(c => c.id === id)!.isRecovery).toBe(true)
+    }
+  })
+})
 
 describe('drawSlots', () => {
   it('행동 3칸 · 회복 1칸을 만든다', () => {
@@ -15,10 +33,10 @@ describe('drawSlots', () => {
     expect(slots.recovery).toBeDefined()
   })
   it('행동 슬롯에 회복 카드가 섞이지 않는다', () => {
-    // isRecovery는 회복 카드에만 `true`로 박혀 있고 행동 카드에는 필드 자체가 없다
-    // (undefined) — cards.json 실제 스키마. toBe(false)로 쓰면 항상 실패하므로 falsy로 본다.
+    // cards.json의 행동 카드 7장은 isRecovery: false를 명시한다(Ruling 7) — 새 카드를
+    // 추가하며 이 필드를 빠뜨리면(undefined) 이 엄격한 toBe(false)가 잡는다.
     const [slots] = drawSlots(makeState({}))
-    for (const s of slots.action) expect(loadCards().find(c => c.id === s.cardId)!.isRecovery).toBeFalsy()
+    for (const s of slots.action) expect(loadCards().find(c => c.id === s.cardId)!.isRecovery).toBe(false)
   })
   it('회복 슬롯은 반드시 회복 카드다', () => {
     const [slots] = drawSlots(makeState({}))
@@ -70,6 +88,28 @@ describe('drawSlots', () => {
     const lowStat = countHigh(0, 0, 0, 0, 0)
     const highStat = countHigh(9, 9, 9, 9, 9)
     expect(highStat).toBeGreaterThan(lowStat * 3)
+  })
+  // Fix Round 1 Major 1 — draw()가 카드는 뽑되 rng를 진행시키지 않아도(=인자로 받은
+  // rng를 그대로 반환해도) 기존 스위트가 전부 그린이었다. 재현성 테스트만으로는
+  // "굴렸다"와 "안 굴렸는데 우연히 같다"를 구분하지 못한다 — rng가 실제로
+  // 전진했는지를 직접 단언해야 한다.
+  it('반환된 rng가 넘긴 rng와 다르다 (실제로 소비된다)', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const s = makeState({ rng: createRng(seed) })
+      const [, nextRng] = drawSlots(s)
+      expect(nextRng).not.toEqual(s.rng)
+    }
+  })
+  it('반환된 rng를 이어받아 다시 뽑으면 다른 슬롯이 나온다 (rng가 실제로 전진했다는 증거)', () => {
+    let differed = 0
+    const total = 20
+    for (let seed = 1; seed <= total; seed++) {
+      const s = makeState({ rng: createRng(seed) })
+      const [a, r1] = drawSlots(s)
+      const [b] = drawSlots({ ...s, rng: r1 })
+      if (JSON.stringify(a) !== JSON.stringify(b)) differed++
+    }
+    expect(differed).toBe(total)
   })
 })
 
@@ -124,6 +164,22 @@ describe('gradeOfSlot', () => {
   })
 })
 
+describe('slotsWith', () => {
+  it('넘긴 cardId와 grade가 행동 슬롯에 그대로 들어간다', () => {
+    const s = slotsWith('report', 'S')
+    expect(s.action).toEqual([{ cardId: 'report', grade: 'S' }])
+  })
+  it('grade 인자가 실제로 반영된다 (등급별로 결과가 달라진다)', () => {
+    expect(slotsWith('overtime', 'E').action[0]!.grade).toBe('E')
+    expect(slotsWith('overtime', 'S').action[0]!.grade).toBe('S')
+  })
+  it('회복 슬롯이 항상 채워져 있고 회복 카드다', () => {
+    const s = slotsWith('overtime', 'C')
+    expect(s.recovery).toBeDefined()
+    expect(loadCards().find(c => c.id === s.recovery.cardId)!.isRecovery).toBe(true)
+  })
+})
+
 describe('initGame과 슬롯의 결정론', () => {
   it('같은 시드로 initGame을 두 번 호출하면 슬롯까지 완전히 같다', () => {
     const a = initGame(123)
@@ -131,6 +187,15 @@ describe('initGame과 슬롯의 결정론', () => {
     expect(a.slots).toEqual(b.slots)
     expect(a.rerollsLeft).toBe(b.rerollsLeft)
     expect(a.rng).toEqual(b.rng)
+  })
+  // Fix Round 1 Major 2 — initGame이 drawSlots가 돌려준 새 rng를 버리고
+  // generateRegimes 직후의 rng를 그대로 최종 상태에 남겨도 위 "두 번 부르면 같다"
+  // 테스트는 통과한다(rng를 아예 안 쓰는 구현도 재현성은 만족하므로). 슬롯 뽑기가
+  // rng를 실제로 추가 소비했다는 것 자체를 국면 생성 직후의 rng와 직접 비교해 고정한다.
+  it('슬롯을 뽑은 뒤의 rng가 국면 생성 직후의 rng와 다르다 (슬롯 뽑기가 rng를 소비했다)', () => {
+    const [, rngAfterRegimes] = generateRegimes(createRng(7))
+    const state = initGame(7)
+    expect(state.rng).not.toEqual(rngAfterRegimes)
   })
   it('initGame이 뽑은 슬롯도 행동 3 · 회복 1 규칙을 지킨다', () => {
     const s = initGame(1)
