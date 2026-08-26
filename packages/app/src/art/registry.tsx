@@ -7,6 +7,7 @@ import { makeCharacter, type ArtProps } from './parts/Character'
 import { makePortrait } from './parts/Portraits'
 import { makeScene, makeIcon } from './parts/Scenes'
 import { makeBackground } from './parts/Backgrounds'
+import { NPC_NAME_KO } from '../design/speakers'
 
 export type ArtSource =
   | { kind: 'svg'; component: React.FC<ArtProps> }
@@ -30,7 +31,8 @@ const UI_GLYPH: Record<string, string> = {
 // 않도록, 사람이 읽을 수 있는 한국어 설명을 키 단위로 미리 만들어 둔다. Art.tsx가
 // image 소스일 때 이 맵을 alt로 쓴다.
 const MOOD_KO: Record<string, string> = { normal: '평상시', shaken: '흔들리는 모습', joy: '기쁜 모습' }
-const NPC_NAME_KO: Record<string, string> = { daebak: '박대박', cho: '최존버', kim: '김실장', mom: '엄마' }
+// NPC_NAME_KO는 Task 17에서 design/speakers.ts로 옮겼다(대화창도 같은 이름이 필요해서다) —
+// 값은 그대로, 위에서 import해 쓴다.
 // Task 10: 조연 초상의 무드 축(normal/alt)은 char.*의 MOOD_KO(normal/shaken/joy)와 값이
 // 겹치지 않는 별개 맵이다 — 하나로 합치면 'alt'가 없는 키에도 존재하는 것처럼 보인다.
 const NPC_MOOD_KO: Record<string, string> = { normal: '기본 모습', alt: '다른 모습' }

@@ -437,6 +437,36 @@ ul { list-style: none; padding: 0; margin: 0; }
 .ending-desc { color: var(--muted); font-size: 13px; max-width: 320px; }
 .final-assets { font-size: 24px; font-weight: 700; color: var(--text); }
 
+/* ---------- 대화창 (overlays/DialogueBox.tsx, §4.1) ---------- */
+.dialogue-box {
+  position: relative; width: 100%; max-width: 480px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px 52px 18px 18px; cursor: pointer;
+}
+.dialogue-speaker {
+  position: absolute; top: -14px; left: 14px; padding: 5px 14px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; color: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+}
+.dialogue-text { margin: 8px 0 0; font-size: 14.5px; line-height: 1.7; color: var(--text); white-space: pre-line; word-break: break-word; min-height: 1.7em; }
+.dialogue-caret { display: inline-block; width: 7px; height: 1em; margin-left: 2px; background: var(--accent); vertical-align: -0.15em; animation: dialogue-caret-blink 800ms steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .dialogue-caret { animation: none; } }
+@keyframes dialogue-caret-blink { 50% { opacity: 0; } }
+.dialogue-log-toggle {
+  position: absolute; right: 6px; bottom: 6px; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; color: var(--muted); font-size: 16px; border-radius: 9px;
+}
+.dialogue-log-toggle[aria-pressed="true"] { color: var(--accent); }
+.dialogue-log {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); max-height: 220px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px; text-align: left; z-index: 1;
+}
+.dialogue-log-empty { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; }
+.dialogue-log-entry { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.dialogue-log-entry:last-child { border-bottom: 0; padding-bottom: 0; }
+.dialogue-log-speaker { font-size: 11.5px; font-weight: 700; color: var(--accent); }
+.dialogue-log-text { font-size: 12.5px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+
 /* ---------- 아트 슬롯 (art/slots.tsx) ---------- */
 /* 슬롯 컨테이너는 aspect-ratio로 종류별 비율을 고정하고, 안의 svg 폴백/<img> 둘 다
    art-slot-content 클래스로 같은 자리를 꽉 채운다 — 이미지가 꽂혀도 레이아웃이 안 흔들린다. */
