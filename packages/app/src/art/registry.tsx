@@ -1,10 +1,12 @@
 import { ENDINGS } from '@bb/core'
 import {
-  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
+  TIERS, MOODS, NPCS, NPC_MOODS, BACKGROUNDS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS,
+  PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
 } from './keys'
 import { makeCharacter, type ArtProps } from './parts/Character'
 import { makePortrait } from './parts/Portraits'
 import { makeScene, makeIcon } from './parts/Scenes'
+import { makeBackground } from './parts/Backgrounds'
 
 export type ArtSource =
   | { kind: 'svg'; component: React.FC<ArtProps> }
@@ -29,6 +31,10 @@ const UI_GLYPH: Record<string, string> = {
 // image 소스일 때 이 맵을 alt로 쓴다.
 const MOOD_KO: Record<string, string> = { normal: '평상시', shaken: '흔들리는 모습', joy: '기쁜 모습' }
 const NPC_NAME_KO: Record<string, string> = { daebak: '박대박', cho: '최존버', kim: '김실장', mom: '엄마' }
+// Task 10: 조연 초상의 무드 축(normal/alt)은 char.*의 MOOD_KO(normal/shaken/joy)와 값이
+// 겹치지 않는 별개 맵이다 — 하나로 합치면 'alt'가 없는 키에도 존재하는 것처럼 보인다.
+const NPC_MOOD_KO: Record<string, string> = { normal: '기본 모습', alt: '다른 모습' }
+const BG_NAME_KO: Record<string, string> = { office: '사무실', home: '집', street: '거리', exchange: '거래소' }
 const UI_NAME_KO: Record<string, string> = {
   'ui.mental': '멘탈', 'ui.condition': '컨디션', 'ui.cash': '현금', 'ui.assets': '자산',
   'ui.up': '상승', 'ui.down': '하락', 'ui.lock': '잠금', 'ui.rumor': '루머',
@@ -47,9 +53,15 @@ for (const t of TIERS) for (const m of MOODS) {
   entries.push([key, { kind: 'svg', component: makeCharacter(t, m, alt) }])
   altEntries.push([key, alt])
 }
-for (const n of NPCS) {
-  entries.push([`npc.${n}`, { kind: 'svg', component: makePortrait(n, NPC_NAME_KO[n] ?? n) }])
-  altEntries.push([`npc.${n}`, `등장인물 ${NPC_NAME_KO[n] ?? n}`])
+for (const n of NPCS) for (const m of NPC_MOODS) {
+  const alt = `등장인물 ${NPC_NAME_KO[n] ?? n} (${NPC_MOOD_KO[m]})`
+  entries.push([`npc.${n}.${m}`, { kind: 'svg', component: makePortrait(n, m, alt) }])
+  altEntries.push([`npc.${n}.${m}`, alt])
+}
+for (const b of BACKGROUNDS) {
+  const alt = `배경: ${BG_NAME_KO[b] ?? b}`
+  entries.push([`bg.${b}`, { kind: 'svg', component: makeBackground(b, alt) }])
+  altEntries.push([`bg.${b}`, alt])
 }
 // settleTier(economy.ts)는 next > cur일 때 promote.${next}(next=1..5), next < cur일 때
 // demote.${next}(next=0..4)를 만든다 — promote.0과 demote.5는 도달 불가능하다.

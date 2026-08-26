@@ -8,6 +8,13 @@ export { SECTORS, ENDING_IDS, TIER_NAMES }
 export const TIERS = [0, 1, 2, 3, 4, 5] as const
 export const MOODS = ['normal', 'shaken', 'joy'] as const
 export const NPCS = ['daebak', 'cho', 'kim', 'mom'] as const
+// Task 10: 조연 초상은 화자당 두 무드(기본/다른 모습)로 나뉜다 — docs §5 아트 슬롯 규격의
+// `npc.*.{normal,alt}` 행. char.*의 MOODS(normal/shaken/joy)와는 별개 축이라 이름을 분리했다
+// — 재사용하면 조연에 없는 'shaken'/'joy'가 타입에 섞여 들어간다.
+export const NPC_MOODS = ['normal', 'alt'] as const
+// docs §5 아트 슬롯 규격 표의 배경 4행. @bb/core에 대응하는 상수가 없어(장소는 게임 로직이
+// 아니라 연출 개념) Ruling 56 원칙에 따라 이 파일 한 곳에만 정의한다 — 복제할 원본이 없다.
+export const BACKGROUNDS = ['office', 'home', 'street', 'exchange'] as const
 export const UI_KEYS = [
   'ui.mental', 'ui.condition', 'ui.cash', 'ui.assets', 'ui.up', 'ui.down',
   'ui.lock', 'ui.rumor', 'ui.news', 'ui.card', 'ui.tier', 'ui.calendar',
@@ -22,7 +29,8 @@ export const DEMOTE_TIERS = [0, 1, 2, 3, 4] as const
 
 export type ArtKey =
   | `char.tier${(typeof TIERS)[number]}.${(typeof MOODS)[number]}`
-  | `npc.${(typeof NPCS)[number]}`
+  | `npc.${(typeof NPCS)[number]}.${(typeof NPC_MOODS)[number]}`
+  | `bg.${(typeof BACKGROUNDS)[number]}`
   | `cutscene.promote.${(typeof PROMOTE_TIERS)[number]}`
   | `cutscene.demote.${(typeof DEMOTE_TIERS)[number]}`
   | `ending.${(typeof ENDING_IDS)[number]}`

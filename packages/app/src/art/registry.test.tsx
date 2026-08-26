@@ -4,7 +4,8 @@ import { SECTORS as CORE_SECTORS, ENDING_IDS as CORE_ENDING_IDS, TIER_NAMES as C
 import { ART, ALL_ART_KEYS, ART_ALT } from './registry'
 import { Art } from './Art'
 import {
-  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
+  TIERS, MOODS, NPCS, NPC_MOODS, BACKGROUNDS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS,
+  PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
 } from './keys'
 
 // Ruling 56: keys.ts의 SECTORS/ENDING_IDS는 로컬 복제가 아니라 @bb/core를 그대로
@@ -43,9 +44,10 @@ describe('아트 레지스트리', () => {
   it('컷신 10종이 있다', () => {
     expect(ALL_ART_KEYS.filter(k => k.startsWith('cutscene.'))).toHaveLength(10)
   })
-  it('엔딩 8종·조연 4종·섹터 8종이 있다', () => {
+  it('엔딩 8종·조연 8종(4인×2무드)·배경 4종·섹터 8종이 있다', () => {
     expect(ALL_ART_KEYS.filter(k => k.startsWith('ending.'))).toHaveLength(8)
-    expect(ALL_ART_KEYS.filter(k => k.startsWith('npc.'))).toHaveLength(4)
+    expect(ALL_ART_KEYS.filter(k => k.startsWith('npc.'))).toHaveLength(8)
+    expect(ALL_ART_KEYS.filter(k => k.startsWith('bg.'))).toHaveLength(4)
     expect(ALL_ART_KEYS.filter(k => k.startsWith('sector.'))).toHaveLength(8)
   })
   it('모든 키가 예외 없이 렌더된다', () => {
@@ -74,21 +76,42 @@ describe('아트 레지스트리', () => {
 describe('ArtKey 유니온 ↔ 레지스트리 양방향 정합성', () => {
   const expectedKeys: string[] = []
   for (const t of TIERS) for (const m of MOODS) expectedKeys.push(`char.tier${t}.${m}`)
-  for (const n of NPCS) expectedKeys.push(`npc.${n}`)
+  for (const n of NPCS) for (const m of NPC_MOODS) expectedKeys.push(`npc.${n}.${m}`)
+  for (const b of BACKGROUNDS) expectedKeys.push(`bg.${b}`)
   for (const t of PROMOTE_TIERS) expectedKeys.push(`cutscene.promote.${t}`)
   for (const t of DEMOTE_TIERS) expectedKeys.push(`cutscene.demote.${t}`)
   for (const id of ENDING_IDS) expectedKeys.push(`ending.${id}`)
   for (const s of SECTORS) expectedKeys.push(`sector.${s}`)
   for (const k of UI_KEYS) expectedKeys.push(k)
 
-  it('기대 키 개수는 60개다', () => {
-    expect(expectedKeys).toHaveLength(60)
+  it('기대 키 개수는 68개다', () => {
+    expect(expectedKeys).toHaveLength(68)
   })
   it('ART의 키 집합이 기대 키 집합과 정확히 일치한다 (양방향)', () => {
     expect(new Set(Object.keys(ART))).toEqual(new Set(expectedKeys))
   })
   it('ALL_ART_KEYS 집합이 기대 키 집합과 정확히 일치한다 (양방향)', () => {
     expect(new Set(ALL_ART_KEYS)).toEqual(new Set(expectedKeys))
+  })
+})
+
+// docs/superpowers/specs/2026-08-26-black-bull-vn-redesign.md §5 아트 슬롯 규격 표는
+// 사용자가 외부 AI 도구로 실제 이미지를 그려 넣을 "컷" 목록이다(Task 23이 소비한다).
+// UI_KEYS(멘탈·현금 등 아이콘 12종)는 그 표에 없는 순수 UI 글리프라 컷이 아니다 — 그래서
+// 이 카운트에서는 뺀다. 컷이 하나라도 빠지거나 늘면 Task 23의 프롬프트 문서가 즉시 어긋나야
+// 하므로, §5 표의 6행을 그대로 재현해 합계(56)를 고정한다.
+describe('스펙 §5 아트 슬롯 규격 — 이미지 생성 대상 "컷" 개수 (UI 아이콘 제외)', () => {
+  const cutKeys = ALL_ART_KEYS.filter(k => !(UI_KEYS as readonly string[]).includes(k))
+  it('컷 총 개수는 56개다 (18+8+4+10+8+8)', () => {
+    expect(cutKeys).toHaveLength(56)
+  })
+  it('char 18 · npc 8 · bg 4 · cutscene 10 · ending 8 · sector 8', () => {
+    expect(cutKeys.filter(k => k.startsWith('char.'))).toHaveLength(18)
+    expect(cutKeys.filter(k => k.startsWith('npc.'))).toHaveLength(8)
+    expect(cutKeys.filter(k => k.startsWith('bg.'))).toHaveLength(4)
+    expect(cutKeys.filter(k => k.startsWith('cutscene.'))).toHaveLength(10)
+    expect(cutKeys.filter(k => k.startsWith('ending.'))).toHaveLength(8)
+    expect(cutKeys.filter(k => k.startsWith('sector.'))).toHaveLength(8)
   })
 })
 
@@ -156,8 +179,10 @@ const CANONICAL_NPC_NAME_KO: Record<string, string> = {
 
 describe('조연 4인의 한국어 이름은 설계 문서 §2.6 정본과 일치한다', () => {
   NPCS.forEach(n => {
-    it(`npc.${n}의 ART_ALT에 "${CANONICAL_NPC_NAME_KO[n]}"가 포함된다`, () => {
-      expect(ART_ALT[`npc.${n}`]).toContain(CANONICAL_NPC_NAME_KO[n]!)
+    NPC_MOODS.forEach(m => {
+      it(`npc.${n}.${m}의 ART_ALT에 "${CANONICAL_NPC_NAME_KO[n]}"가 포함된다`, () => {
+        expect(ART_ALT[`npc.${n}.${m}`]).toContain(CANONICAL_NPC_NAME_KO[n]!)
+      })
     })
   })
 })
