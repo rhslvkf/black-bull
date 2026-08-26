@@ -2,7 +2,7 @@ import {
   initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, moodOf, isShaken,
   GRADES, BALANCE, createRng, Rand, type Mood,
 } from '@bb/core'
-import { act, apCostOf, withinApBudget, type Strategy } from './strategies'
+import { act, apCostOf, type Strategy } from './strategies'
 
 /** 등급을 숫자로 — E=0 … S=5. 후반 등급 상승을 재려면 순서가 있는 축이 필요하다. */
 const gradeIdx = (g: string): number => GRADES.findIndex(x => x === g)
@@ -31,6 +31,11 @@ export interface RunResult {
   everShaken: boolean; endedShaken: boolean
   /** 카드 id별 사용 횟수. 전략이 실제로 서로 다른 카드를 쓰는지는 이걸로만 보인다. */
   cardUse: Record<string, number>
+  /** 이 판이 한 번이라도 도달했던 총자산의 최고치(`trackers.peakAssets`).
+   *  최종 자산으로는 "대출 문턱에 닿아본 적이 있는가"를 못 본다 — 닿았다가 잃으면 사라진다. */
+  peakAssets: number
+  /** 이 판이 신용(대출)을 한 번이라도 썼는가. */
+  usedMargin: boolean
 }
 export interface BatchReport {
   runs: number; strategy: Strategy
@@ -75,6 +80,15 @@ export interface BatchReport {
   stuckInShakenRate: number
   /** 카드 id별 사용 점유율(합 1). 전략별 카드 선택이 실제로 다른지는 이걸로만 보인다. */
   cardUse: Record<string, number>
+  /** 판을 통틀어 도달한 총자산의 최고치와 그 중앙값. 대출 문턱(`BALANCE.loan.minTier`의
+   *  자산선)에 **원리적으로 닿는가**를 보는 자다 — Ruling 16. */
+  peakAssetsMax: number
+  peakAssetsMedian: number
+  /** 대출 문턱 이상까지 자산이 올라가 본 판의 비율. 신용 시스템이 살아 있는지는 이 값이
+   *  0을 벗어나는지로만 보인다. */
+  loanReachRate: number
+  /** 신용을 한 번이라도 쓴 판의 비율. sim 전략은 아무도 대출을 부르지 않으므로 0이다. */
+  marginRate: number
 }
 
 const events = loadEvents()
@@ -108,10 +122,11 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
       if (early) { gradeSumEarly += gradeIdx(sl.grade); gradeCountEarly++ }
       else { gradeSumLate += gradeIdx(sl.grade); gradeCountLate++ }
     }
-    const played = withinApBudget(state, cards)
-    apSpent += apCostOf(state, played)
-    for (const id of played) cardUse[id] = (cardUse[id] ?? 0) + 1
-    s = advanceTurn(state, played)
+    // 예산은 `chooseCards`가 이미 걸었다 — 여기서 다시 거르지 않는다(Fix Round 1
+    // Minor 5). 넘치면 core의 advanceTurn이 NO_AP로 던져 조용히 지나가지 못한다.
+    apSpent += apCostOf(state, cards)
+    for (const id of cards) cardUse[id] = (cardUse[id] ?? 0) + 1
+    s = advanceTurn(state, cards)
   }
 
   const assets = Math.max(0, totalAssets(s))
@@ -130,6 +145,8 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     gradeSumEarly, gradeCountEarly, gradeSumLate, gradeCountLate,
     everShaken: everShaken || isShaken(s), endedShaken: isShaken(s),
     cardUse,
+    peakAssets: s.trackers.peakAssets,
+    usedMargin: s.trackers.usedMargin,
   }
 }
 
@@ -148,6 +165,10 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
   let apSpent = 0, rerolls = 0, turnsPlayed = 0
   let gEarlySum = 0, gEarlyN = 0, gLateSum = 0, gLateN = 0
   let everShakenRuns = 0, stuckRuns = 0
+  let loanReach = 0, marginRuns = 0
+  const peaks: number[] = []
+  // 대출 문턱의 자산선. loan.minTier는 티어 번호이고, 그 티어의 하한이 tierMins에 있다.
+  const loanFloor = BALANCE.tierMins[BALANCE.loan.minTier] ?? Infinity
 
   for (let i = 0; i < runs; i++) {
     const r = playOne(seed0 + i, strategy)
@@ -164,6 +185,9 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     gLateSum += r.gradeSumLate; gLateN += r.gradeCountLate
     if (r.everShaken) { everShakenRuns++; if (r.endedShaken) stuckRuns++ }
     for (const [id, n] of Object.entries(r.cardUse)) cardTotal[id] = (cardTotal[id] ?? 0) + n
+    peaks.push(r.peakAssets)
+    if (r.peakAssets >= loanFloor) loanReach++
+    if (r.usedMargin) marginRuns++
     for (const t of r.titles) titleCounts[t] = (titleCounts[t] ?? 0) + 1
     for (const m of ['normal', 'shaken', 'joy'] as const) {
       moodTotal[m] += r.moodTurns[m]
@@ -211,5 +235,9 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     rerollUse: turnsPlayed === 0 ? 0 : rerolls / turnsPlayed,
     stuckInShakenRate: everShakenRuns === 0 ? 0 : stuckRuns / everShakenRuns,
     cardUse,
+    peakAssetsMax: peaks.length === 0 ? 0 : Math.max(...peaks),
+    peakAssetsMedian: quantile([...peaks].sort((a, b) => a - b), 0.5),
+    loanReachRate: loanReach / runs,
+    marginRate: marginRuns / runs,
   }
 }

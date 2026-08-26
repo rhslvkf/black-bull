@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
-import { act, withinApBudget, CARD_PREF, RECOVERY_AT } from './strategies'
+import { act, apCostOf, CARD_PREF, RECOVERY_AT } from './strategies'
 import {
   BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
@@ -70,20 +70,21 @@ describe('playOne', () => {
   it('같은 시드·전략은 같은 결과 (결정론)', () => {
     expect(playOne(5, 'momentum')).toEqual(playOne(5, 'momentum'))
   })
-  it('여섯 전략 모두 예외 없이 완주한다', () => {
-    for (const s of ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const) {
+  it('일곱 전략 모두 예외 없이 완주한다', () => {
+    for (const s of ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const) {
       expect(() => playOne(3, s)).not.toThrow()
     }
   })
-  it('여섯 전략은 같은 시드에서 서로 다른 결과를 낸다', () => {
+  it('일곱 전략은 같은 시드에서 서로 다른 결과를 낸다', () => {
     // panic vs buyhold는 §8.2 게이트가 이미 구분하지만, 나머지 조합은 구분하는 테스트가
     // 없었다 — momentum이 조용히 buyhold로 퇴화해도 스위트가 그린으로 남는 맹점.
     // "momentum vs random·cash"만 비교하면 momentum이 buyhold로 퇴화해도 random·cash와는
     // 여전히 다르므로 안 잡힌다 — 그래서 6개 전략 전부를 서로 pairwise로 비교한다.
     // seedhold(옛 buyhold)와 buyhold(=진짜 존버, 매 턴 현금 90% 투입·무매도)가 같은 것으로
     // 퇴화하는 것도 여기서 잡힌다.
+    // `labor`는 `cash`와 **매매가 같고 카드만 다르다** — 카드 정책이 퇴화하면 여기서 잡힌다.
     const seed = 21
-    const strategies = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const
+    const strategies = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const
     const results = strategies.map(s => playOne(seed, s))
     for (let i = 0; i < results.length; i++) {
       for (let j = i + 1; j < results.length; j++) {
@@ -109,20 +110,20 @@ describe('playOne', () => {
       }
       const { state, cards } = act(s, 'cash', rand)
       expect(state.player.holdings).toEqual([])
-      s = advanceTurn(state, withinApBudget(state, cards))
+      s = advanceTurn(state, cards)
     }
   })
 })
 
 /**
  * 리뷰 Minor 1 — sim이 "슬롯에서만 고른다"가 어떤 테스트로도 고정돼 있지 않았다.
- * `withinApBudget`가 슬롯 밖 id를 조용히 걸러냈기 때문에, 카드 선택을 `loadCards()`
+ * 예전 예산 필터가 슬롯 밖 id를 조용히 걸러냈기 때문에, 카드 선택을 `loadCards()`
  * 전체로 되돌려도 예외 없이 통과하고 결과만 소리 없이 움직였다(panic 32.9M → 34.7M).
  */
 describe('전략은 이번 턴 슬롯에서만 카드를 고른다 (리뷰 Minor 1)', () => {
-  const ALL = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
 
-  it('여섯 전략 × 여러 시드에서 고른 카드가 항상 슬롯 안에 있다', () => {
+  it('일곱 전략 × 여러 시드에서 고른 카드가 항상 슬롯 안에 있다', () => {
     const events = loadEvents()
     for (const strategy of ALL) {
       for (const seed of [1, 2, 3]) {
@@ -138,18 +139,21 @@ describe('전략은 이번 턴 슬롯에서만 카드를 고른다 (리뷰 Minor
           const { state, cards } = act(s, strategy, rand)
           const inSlots = [...state.slots.action.map(a => a.cardId), state.slots.recovery.cardId]
           for (const id of cards) expect(inSlots, `${strategy} / seed ${seed} / turn ${state.turn}`).toContain(id)
-          s = advanceTurn(state, withinApBudget(state, cards))
+          s = advanceTurn(state, cards)
         }
       }
     }
   })
 
   it('슬롯 밖 카드를 넘기면 조용히 떨구지 않고 NOT_IN_SLOTS로 터진다', () => {
+    // sim이 카드를 세는 경로(`apCostOf`)와 실제로 내는 경로(`advanceTurn`) **둘 다**
+    // 슬롯 밖 id를 거부해야 한다. 한쪽만 막으면 계측과 플레이가 조용히 갈라진다.
     const s = initGame(1)
     const inSlots = [...s.slots.action.map(a => a.cardId), s.slots.recovery.cardId]
     const outside = loadCards().map(c => c.id).find(id => !inSlots.includes(id))!
     expect(outside).toBeDefined()
-    expect(() => withinApBudget(s, [outside])).toThrow(/NOT_IN_SLOTS/)
+    expect(() => apCostOf(s, [outside])).toThrow(/NOT_IN_SLOTS/)
+    expect(() => advanceTurn(s, [outside])).toThrow(/NOT_IN_SLOTS/)
   })
 })
 
@@ -179,11 +183,51 @@ describe('runBatch', () => {
   })
 
   // 밸런스 게이트 — 스펙 §8.2
-  it('두 존버 전략 모두 파산율이 15% 미만이다', () => {
-    // seedhold: 시드의 90%만 넣고 방치 (얇은 노출) / buyhold: 매 턴 현금 90% 투입 (짙은 노출).
-    // 노출이 10배 넘게 차이 나므로 둘 다 재야 "사놓고 버티면 망하지 않는다"가 성립한다.
-    expect(batch(200, 'seedhold').bankruptRate, 'seedhold').toBeLessThan(0.15)
-    expect(batch(200, 'buyhold').bankruptRate, 'buyhold').toBeLessThan(0.15)
+  /**
+   * **Ruling 16 — 예전 제목은 `두 존버 전략 모두 파산율이 15% 미만이다`였고, 하한이 없는
+   * `< 15%`는 언제나 0을 보고 통과했다(전 전략 0.0%). 구조적으로 공허했다.**
+   *
+   * 진짜 이유는 "존버가 안전하다"가 아니라 **sim 전략이 신용을 한 번도 부르지 않는다**는
+   * 것이다(`takeLoan` 호출이 전략 코드에 없다). 총자산이 0 이하로 내려가려면 빚이
+   * 있어야 하므로, 신용을 안 쓰는 한 파산은 **원리적으로 불가능**하다.
+   * 제목이 실제로 재는 것을 말하도록 바꾸고, 전제(`marginRate`)를 함께 단언한다.
+   *
+   * **이 테스트가 red가 되면 그건 회귀가 아니라 신용 시스템이 살아났다는 뜻이다.**
+   * 그때는 `bankruptRate === 0`을 지우고 예전의 상한 게이트(`< 0.15`)를 **하한과 함께**
+   * 되살려라 — "가끔은 망한다"와 "자주 망하지는 않는다"를 둘 다 재야 한다.
+   */
+  it('신용을 쓰지 않는 sim 전략에서는 파산이 원리적으로 발생하지 않는다 (Ruling 16)', () => {
+    // 이미 다른 게이트가 돌린 배치를 그대로 재사용한다(메모) — 일곱 전략을 전부 덮는다.
+    const probes: [number, Strategy][] = [
+      [500, 'cash'], [500, 'labor'], [500, 'seedhold'], [500, 'buyhold'],
+      [500, 'panic'], [300, 'random'], [200, 'momentum'],
+    ]
+    for (const [n, st] of probes) {
+      const r = batch(n, st)
+      expect(r.marginRate, `${st} 신용 사용률`).toBe(0)
+      expect(r.bankruptRate, `${st} 파산율`).toBe(0)
+    }
+  })
+
+  /**
+   * Ruling 16의 나머지 절반 — **왜** 신용이 안 쓰이는지를 수치로 못박는다.
+   *
+   * 리뷰 Fix Round 1의 가설은 "`BALANCE.loan.minTier`(=3, 자산 1억)가 너무 높아 어떤
+   * 플레이로도 문턱에 도달하지 못한다"였는데, **실측은 그 반대다.** 최종 자산이 아니라
+   * `trackers.peakAssets`(판 중 한 번이라도 도달한 최고 자산)로 재면 문턱을 넘는 판이
+   * 실제로 있다: panic 15.6% · momentum 9.0% · random 2.8% · buyhold 1.0% (각 500판).
+   * 즉 막고 있는 것은 **문턱이 아니라 sim 전략이 대출을 부르지 않는다는 사실**이다.
+   *
+   * 이 단언이 red가 되는 경우는 두 가지고 둘 다 회귀가 아니다:
+   *  - 문턱을 크게 올리면(도달 불가) → 그때는 "문턱이 원인"이 되므로 위 주석을 고쳐라.
+   *  - 성장 곡선이 눌려 아무도 1억에 못 닿으면 → 그건 밸런스 회귀 신호다.
+   */
+  it('대출 문턱 자체에는 도달한다 — 신용이 죽은 원인은 문턱이 아니다 (Ruling 16)', () => {
+    const floor = BALANCE.tierMins[BALANCE.loan.minTier]
+    expect(floor, '대출 문턱 티어의 자산선').toBeGreaterThan(0)
+    const reach = (['panic', 'buyhold'] as const).map(st => batch(500, st).loanReachRate)
+    expect(Math.max(...reach), `문턱 ${floor}원 도달률 ${reach.map(x => (x * 100).toFixed(1)).join(' / ')}%`)
+      .toBeGreaterThan(0)
   })
   it('panic이 buyhold(노출을 맞춘 존버)보다 확실히 나쁘다', () => {
     // 재리뷰 §5: panic은 매 턴 자본의 95%를 굴리므로 시장 노출이 buyhold(진짜 존버)와
@@ -278,6 +322,56 @@ describe('runBatch', () => {
     expect(heavy.shakenRate, `몰빵 ${(heavy.shakenRate * 100).toFixed(0)}%`).toBeGreaterThan(0.15)
     expect(heavy.shakenRate).toBeGreaterThan(tiny.shakenRate * 3)
   })
+  /**
+   * **Fix Round 1 Major 1 — 이 태스크의 헤드라인 주장에 게이트가 없었다.**
+   *
+   * Task 8은 `BALANCE.grade.cashMul`을 새로 들여 야근 S를 576,000원(턴당 월급의 3.16배)
+   * 에서 180,000원으로 내렸다. 그런데 리뷰어가 `cashMul`을 옛 `grade.mul`(0.4~3.2)로
+   * 되돌리자 core 1건만 red고 **sim 24/24가 전부 그린**이었다 — 성질을 만들어 놓고
+   * 고정하지 않았던 것이다. `labor` 전략은 오직 이 게이트를 위해 존재한다.
+   *
+   * **비교 대상을 고르는 데 실측이 필요했다.** 브리프가 제안한 "노동 특화 무매매 vs
+   * 짙은 노출 투자"(buyhold/labor)는 **구분하지 못한다**: buyhold도 야근이 1순위라
+   * 양쪽이 같이 커져 비율이 거의 안 움직인다 — 500판 시드창 6개 실측으로
+   * 새 배율 1.274~1.366 / 옛 배율 1.295~1.338로 **범위가 겹친다.**
+   * 노동 소득만 분리하려면 **야근을 쓰지 않는 기준선**과 비교해야 한다:
+   *
+   * | 지표 (n=500, 시드창 6개) | 새 cashMul | 옛 grade.mul |
+   * |---|---|---|
+   * | `labor / cash` (노동 소득 그 자체) | 1.079 ~ 1.097 | 1.213 ~ 1.233 |
+   * | `labor / seedhold` (노동 vs 얇은 투자) | 1.012 ~ 1.034 | 1.130 ~ 1.164 |
+   * | `buyhold / labor` (브리프 제안) | 1.274 ~ 1.366 | 1.295 ~ 1.338 (겹침) |
+   *
+   * 통과선은 두 범위의 **가운데**에 둔다 — 실측값에 딱 붙이지 않되(시드창 변동 흡수)
+   * 옛 배율을 통과시킬 만큼 헐겁지도 않게. 여유: 아래 1.15는 현행 최악 창(1.097) 위로
+   * 5.3%p, 옛 배율 최선 창(1.213) 아래로 6.3%p다. 1.08은 각각 4.6%p / 5.0%p.
+   */
+  it('노동이 투자를 압도하지 못한다 — 야근은 무위험 차익거래가 아니다 (Fix Round 1)', () => {
+    const labor = batch(500, 'labor')
+    const cash = batch(500, 'cash')
+    const seedhold = batch(500, 'seedhold')
+    // ① 노동 소득 자체의 상한. `labor`와 `cash`는 매매가 같고(하지 않는다) 야근 우선순위만
+    //    다르므로, 이 비율이 곧 "카드로 버는 돈이 무매매 기준선을 얼마나 밀어 올리는가"다.
+    expect(labor.assetsMedian, `labor/cash ${(labor.assetsMedian / cash.assetsMedian).toFixed(4)}`)
+      .toBeLessThan(cash.assetsMedian * 1.15)
+    // ② 노동이 **얇은 노출 투자**를 크게 앞지르지 않는다. 지금도 labor가 seedhold를
+    //    1~3% 이기지만(보고서 §Fix Round 1 Minor 6 — 어중간한 투자는 성실한 노동만
+    //    못하다는 의도된 결과다), 옛 배율에서는 그 격차가 13~16%였다.
+    expect(labor.assetsMedian, `labor/seedhold ${(labor.assetsMedian / seedhold.assetsMedian).toFixed(4)}`)
+      .toBeLessThan(seedhold.assetsMedian * 1.08)
+  })
+
+  it('짙은 노출 투자가 노동 특화 무매매를 확실히 이긴다', () => {
+    // 이 태스크의 헤드라인 문장. **`cashMul` 되돌리기는 이 게이트로 잡히지 않는다**
+    // (위 표의 buyhold/labor 행 — 두 범위가 겹친다). 여기서 잡는 것은 다른 것이다:
+    // 시장의 상승 원천이 죽으면(`fundamentalGrowth → 0` 같은) 짙은 노출의 우위가
+    // 사라지고 이 게이트가 red가 된다. 실측 여유: 현행 최악 창 1.274, 통과선 1.15.
+    const bh = batch(500, 'buyhold')
+    const labor = batch(500, 'labor')
+    expect(bh.assetsMedian, `buyhold/labor ${(bh.assetsMedian / labor.assetsMedian).toFixed(4)}`)
+      .toBeGreaterThan(labor.assetsMedian * 1.15)
+  })
+
   // ── Task 8이 추가한 게이트 3개 ──────────────────────────────────────────────
   // 슬롯·행동력·등급이 들어온 뒤에도 "선택이 실제로 존재하는가 / 성장이 체감되는가 /
   // 교착이 나는가"를 재는 자가 하나도 없었다. 셋 다 단위 테스트로는 안 보이고
@@ -336,11 +430,11 @@ describe('runBatch', () => {
 
 /**
  * Task 8 — "전략이 행동력을 어떻게 쓰는가"가 전략마다 실제로 다른지 실측으로 고정한다.
- * 여섯 전략이 전부 같은 카드를 고르면 위의 전략 비교 게이트들은 전략 차이가 아니라
+ * 일곱 전략이 전부 같은 카드를 고르면 위의 전략 비교 게이트들은 전략 차이가 아니라
  * 매매 차이만 재게 되고, `CARD_PREF` 표는 있으나 마나 한 장식이 된다.
  */
 describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
-  const ALL = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
   const use = () => Object.fromEntries(ALL.map(s => [s, batch(60, s).cardUse]))
   /** 두 카드 사용 분포의 거리(L1). 0이면 완전히 같고 2면 겹치는 카드가 하나도 없다. */
   function l1(a: Record<string, number>, b: Record<string, number>): number {
@@ -384,7 +478,13 @@ describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
   })
 
   it('회복 임계는 리터럴이 아니라 BALANCE에서 유도된다', () => {
-    // 문턱을 다시 튜닝했을 때 sim이 따라오지 않으면 게이트가 옛 문턱을 재게 된다.
+    // Fix Round 1 Minor 1 — 예전 단언은 `35 > 29`, `30 > 20`으로 **순서만** 재서,
+    // RECOVERY_AT을 `{ mental: 35, condition: 30 }` 리터럴로 하드코딩해도 그린이었다.
+    // 제목이 말하는 것을 실제로 재려면 유도식과 **같은 값인지**를 봐야 한다.
+    // 여유폭(+6 / +10)의 근거는 strategies.ts의 RECOVERY_AT 주석에 있다.
+    expect(RECOVERY_AT.mental).toBe(BALANCE.mental.shakenMax + 6)
+    expect(RECOVERY_AT.condition).toBe(BALANCE.condition.forcedSkipBelow + 10)
+    // 여유폭이 유도의 전부가 아니라는 것도 못박는다 — 문턱 자체가 움직이면 임계도 움직인다.
     expect(RECOVERY_AT.mental).toBeGreaterThan(BALANCE.mental.shakenMax)
     expect(RECOVERY_AT.condition).toBeGreaterThan(BALANCE.condition.forcedSkipBelow)
   })

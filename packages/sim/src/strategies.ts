@@ -21,8 +21,17 @@ import {
  * - `momentum` 최근 3턴 상승률 1등으로 갈아탄다
  * - `random`   무작위 매매
  * - `panic`    오르면 사고 내리면 판다 — 전형적인 흑우
+ * - `labor`    **노동 특화 무매매.** 주식은 한 주도 사지 않고 야근만 판다.
+ *              `cash`와 매매는 같고(하지 않는다) 카드 정책만 다르다.
+ *
+ *              **이 전략이 존재하는 이유는 오직 하나 — "노동이 투자를 이기지 못한다"를
+ *              게이트로 고정하기 위해서다.** Task 8이 `BALANCE.grade.cashMul`을 새로
+ *              들여 야근 S를 576,000원에서 180,000원으로 내린 것이 이 태스크의 헤드라인
+ *              주장인데, Fix Round 1 리뷰가 `cashMul`을 옛 `grade.mul`로 되돌려도
+ *              sim 24/24가 전부 그린인 것을 실측했다. 성질을 만들어 놓고 고정하지
+ *              않으면 다음 사람이 한 줄로 되돌려도 아무도 모른다.
  */
-export type Strategy = 'cash' | 'seedhold' | 'buyhold' | 'momentum' | 'random' | 'panic'
+export type Strategy = 'cash' | 'seedhold' | 'buyhold' | 'momentum' | 'random' | 'panic' | 'labor'
 
 const tradable = (s: GameState) => s.stockDefs.filter(d => canBuy(s, d.id).ok)
 
@@ -61,29 +70,20 @@ function usableSlotCards(s: GameState): SlotCard[] {
   })
 }
 
-/** 1차의 `cards.slice(0, cardsPerTurn(state))`를 대신한다. 이번 턴 행동력 예산 안에
- *  들어오는 카드만 앞에서부터 채워 넣는다 — 회복 카드는 비용이 0이라 항상 들어간다.
- *  무작위성을 추가로 쓰지 않으므로 시드 결정론에 영향이 없다.
+/**
+ * 카드 목록이 실제로 태우는 행동력. 리포트의 `avgApSpent`가 이 값을 쓴다 —
+ * 예산이 남아도는지(= 선택이 만들어지지 않는지)를 재는 자다.
  *
- *  등급은 core의 `gradeOfSlot`으로 읽는다. 슬롯 밖 id면 그 함수가 NOT_IN_SLOTS로
- *  **던진다** — 예전처럼 조용히 걸러내면 sim이 슬롯 밖에서 카드를 고르기 시작해도
- *  아무 데서도 터지지 않고 결과만 소리 없이 움직인다(리뷰 Minor 1: 카드 선택을
- *  loadCards() 전체로 되돌려도 통과했고 panic 중앙값만 32.9M→34.7M로 이동했다). */
-export function withinApBudget(state: GameState, cardIds: string[]): string[] {
-  const budget = actionPoints(state)
-  let spent = 0
-  const kept: string[] = []
-  for (const id of cardIds) {
-    const cost = cardApCost(id, gradeOfSlot(state, id))
-    if (spent + cost > budget) continue
-    spent += cost
-    kept.push(id)
-  }
-  return kept
-}
-
-/** `withinApBudget`가 남긴 카드가 실제로 태우는 행동력. 리포트의 avgApSpent가
- *  이 값을 쓴다 — 예산이 남아도는지(=선택이 만들어지지 않는지)를 재는 자다. */
+ * 등급은 core의 `gradeOfSlot`으로 읽는다. 슬롯 밖 id면 그 함수가 NOT_IN_SLOTS로
+ * **던진다** — 조용히 걸러내면 sim이 슬롯 밖에서 카드를 고르기 시작해도 아무 데서도
+ * 터지지 않고 결과만 소리 없이 움직인다(리뷰 Minor 1: 카드 선택을 loadCards() 전체로
+ * 되돌려도 통과했고 panic 중앙값만 32.9M→34.7M로 이동했다).
+ *
+ * **예산 판정은 여기 없다.** 예산은 `chooseCards` 한 곳에서만 건다(Fix Round 1
+ * Minor 5): 예전에는 `chooseCards`가 예산을 건 결과에 runner가 `withinApBudget`을
+ * 한 번 더 걸어 실질 no-op이었고, 판정이 두 군데 있으면 나중에 한쪽만 고쳐 어긋난다.
+ * 최종 방어선은 core의 `advanceTurn`이다 — 예산을 넘기면 NO_AP로 던진다.
+ */
 export function apCostOf(state: GameState, cardIds: string[]): number {
   return cardIds.reduce((sum, id) => sum + cardApCost(id, gradeOfSlot(state, id)), 0)
 }
@@ -94,12 +94,15 @@ export function apCostOf(state: GameState, cardIds: string[]): number {
  * 그렇다고 '매 턴 무조건'으로 두면 멘탈·컨디션이 늘 만렙이라 흔들림 시스템이 통째로
  * 죽는다(`멘탈 시스템이 살아 있다` 게이트가 그 붕괴를 잡는다). 그래서 임계를 둔다.
  *
- * 두 값 다 리터럴이 아니라 **BALANCE에서 유도**한다 — 문턱을 다시 튜닝해도 sim이 따라간다:
- * - 멘탈: 흔들림 문턱(`mental.shakenMax`)보다 15 위. 흔들림에 빠진 **뒤에** 반응하면
- *   이성 카드가 잠긴 채로 손실 감소분을 계속 맞아 회복이 한참 늦는다. 15는 한 턴
- *   최악의 낙폭(lossHold −3 + worsen + margin −8)을 한 턴 앞서 흡수할 만큼의 여유다.
- * - 컨디션: 강제 스킵 문턱(`condition.forcedSkipBelow`)의 두 배. 야근(−18 × 등급배율)과
- *   턴 드레인(−4)이 겹치면 한 턴에 20을 통째로 지나쳐 버리므로 두 배에서 미리 집는다.
+ * 두 값 다 리터럴이 아니라 **BALANCE에서 유도**한다 — 문턱을 다시 튜닝해도 sim이 따라간다.
+ * 아래 여유폭은 Task 8에서 실측으로 좁힌 값이다(처음에는 +15 / ×2였는데, 그러면 회복을
+ * 너무 일찍 집어 멘탈이 늘 만렙이 되고 흔들림 시스템이 통째로 죽었다 — buyhold 흔들림
+ * 6.0%로 '멘탈 시스템이 살아 있다' 게이트의 하한 10% 아래였다):
+ * - 멘탈: 흔들림 문턱(`mental.shakenMax` = 29)보다 **+6**. 신용을 쓰지 않는 판의 한 턴
+ *   낙폭은 `lossHold`(−5) × 노출 × 저항이 상한이므로 +6이면 한 턴 앞서 반응한다.
+ *   흔들림에 빠진 **뒤에** 반응하면 이성 카드가 잠긴 채로 손실 감소분을 계속 맞는다.
+ * - 컨디션: 강제 스킵 문턱(`condition.forcedSkipBelow` = 20) **+10**. 턴 드레인(−4)에
+ *   야근이 겹치지 않는 한 한 턴에 10을 넘겨 떨어지지 않는다.
  */
 export const RECOVERY_AT = {
   mental: BALANCE.mental.shakenMax + 6,
@@ -129,6 +132,9 @@ export const CARD_PREF = {
   buyhold:  ['overtime', 'analyze', 'report', 'study', 'news', 'forum', 'community'],
   momentum: ['news', 'report', 'analyze', 'overtime', 'forum', 'study', 'community'],
   panic:    ['overtime', 'community', 'forum', 'news', 'study', 'analyze', 'report'],
+  // 노동 특화. `cash`와 매매는 같고(하지 않는다) 야근이 1순위인 것만 다르다 —
+  // 그래서 `labor − cash`가 **순수한 노동 소득**이 된다.
+  labor:    ['overtime', 'study', 'analyze', 'news', 'report', 'forum', 'community'],
   random:   [],
 } as const satisfies Record<Strategy, readonly string[]>
 
@@ -252,6 +258,7 @@ export function act(
         break
       }
       case 'cash':
+      case 'labor':
         // 스스로는 아무 주문도 내지 않는다 — 월급만 받는 '거의 무매매' 기준선 (Ruling 52).
         // 카드·이벤트가 강제하는 매수까지는 막지 못한다(Ruling 72, 평균 노출 5%).
         break
