@@ -24,10 +24,15 @@ import { renderWithCodex } from '../testUtils'
 describe('CodexScreen — 엔딩 이름의 출처 (MU8)', () => {
   it('엔딩 이름은 매 렌더마다 core의 ENDINGS에서 읽는다 — app이 따로 복제해 두지 않는다', () => {
     renderWithCodex({ endings: ['bank'] })
-    // 이 테스트가 core의 ENDINGS 중 'bank'의 이름을 바꿔치기했다. 화면이 그 바뀐 값을
-    // 그대로 보여주면 실제로 core를 참조한다는 뜻이다 — app이 '은행 이자보단 낫지'를
-    // 자기 파일에 하드코딩해 뒀다면(1차 개발의 반복 결함) 이 mock은 아무 효과가 없고
-    // 원래 문자열이 그대로 떴을 것이다.
-    expect(screen.getByTestId('codex-ending-bank').textContent).toContain('__TEST_SENTINEL_은행이자__')
+    // 함정: 행 전체(row.textContent)로 검사하면 이 테스트가 아무것도 못 잡는다 —
+    // 수집한 엔딩 옆의 도장 그래픽(<Art id="ending.bank">)도 art/registry.tsx를 거쳐
+    // core의 ENDINGS를 읽어 svg 안에 같은 이름을 굽기 때문에, app이 이름 표시 로직을
+    // 자기 파일에 몰래 복제해 놓아도 도장 쪽 svg 텍스트에 sentinel이 섞여 들어와
+    // row.textContent.toContain(sentinel)이 우연히 참이 돼 버린다(실측: 도장이 sentinel을
+    // 보여줘도 이름 자리(<strong>)는 예전 하드코딩 값 그대로인 상태에서 이 함정에 걸려
+    // 이 테스트가 조용히 통과하는 걸 직접 확인했다). 그래서 이름을 표시하는 실제
+    // 엘리먼트(.codex-text strong) 하나로 좁혀 짚는다.
+    const nameEl = screen.getByTestId('codex-ending-bank').querySelector('.codex-text strong')
+    expect(nameEl?.textContent).toBe('__TEST_SENTINEL_은행이자__')
   })
 })
