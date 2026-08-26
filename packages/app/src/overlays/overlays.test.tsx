@@ -240,13 +240,26 @@ describe('EventModal VN (Task 18)', () => {
     it('loadEvents()의 모든 이벤트가 화자/배경/시황 슬롯을 깨짐 없이 그린다', () => {
       const events = loadEvents()
       expect(events.length).toBeGreaterThan(0)
-      // Fix Round 1(Minor 1) — 리뷰 지적: `events.length`만 단언하면 루프 소스를
-      // `events.slice(0, 1)`처럼 조용히 줄여도(전수 검사가 1개만 돌아도) 통과해버린다.
-      // 실제로 순회한 횟수를 별도로 세어 `loadEvents().length`(하드코딩 아님 — 콘텐츠가
-      // 늘면 이 값도 함께 늘어난다)와 정확히 같은지 끝에서 단언한다.
-      let visited = 0
+      // Fix Round 2 — Fix Round 1의 `visited` 카운터는 자기충족적이었다: 루프를
+      // `events.slice(0, 1)`로 줄이면서 동시에 `visited`를 `events.length`로 직접
+      // 대입하는 "결합 공격"을 리뷰가 실제로 적용해 515/515를 그대로 통과시켰다 —
+      // 숫자 하나는 루프가 실제로 무엇을 처리했는지와 손쉽게 분리될 수 있다.
+      // 카운터 대신 "루프 안에서 실제로 검사한 이벤트 id"를 Set으로 모아, 끝에서
+      // `loadEvents()`의 전체 id 집합과 정확히 같은지 비교한다 — id 하나라도
+      // 건너뛰면(또는 중복 검사로 다른 id가 통째로 빠지면) 두 집합이 달라져 잡힌다.
+      // 하드코딩한 76을 박지 않고 `events`에서 그대로 유도했으므로 콘텐츠가 늘어도
+      // 자동으로 따라간다.
+      const expectedIds = new Set(events.map(e => e.id))
+      // Fix Round 2(재리뷰) — Set만으로는 아직 뚫린다: `visitedIds`를 선언 시점에
+      // 전체 id로 미리 채워 넣고(padding) 루프를 `events.slice(0, 1)`로 줄이면,
+      // `Set.add`가 이미 있는 id를 다시 넣어도 크기가 그대로라 최종 비교가 우연히
+      // 통과해버린다(리뷰가 실측한 결합 공격). 배열(`push`)은 중복을 넣어도 항상
+      // 길이가 늘어나므로, 같은 방식으로 미리 채워 넣으면 길이가 어긋나 바로 잡힌다
+      // — 그래서 실제로 검사한 id는 배열에 기록하고, 개수(length)와 내용(Set으로
+      // 변환한 뒤 비교) 두 가지를 모두 `events`에서 그대로 유도한 값과 대조한다.
+      const visitedIds: string[] = []
       for (const ev of events) {
-        visited++
+        visitedIds.push(ev.id)
         const s = currentState()
         useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
         const { unmount } = render(<EventModal />)
@@ -269,7 +282,12 @@ describe('EventModal VN (Task 18)', () => {
 
         unmount()
       }
-      expect(visited).toBe(events.length)
+      // 길이 검사가 결합 공격(패딩 + slice)을 잡는 핵심이다 — 개수 자체가
+      // `loadEvents()`에서 유도한 값과 정확히 같아야 한다(하드코딩 없음).
+      expect(visitedIds.length).toBeGreaterThan(0)
+      expect(visitedIds.length).toBe(events.length)
+      // 내용도 실제로 맞는 id들인지 확인한다(순서 무관, 중복은 length 검사가 이미 배제).
+      expect(new Set(visitedIds)).toEqual(expectedIds)
     })
   })
 
@@ -310,6 +328,24 @@ describe('EventModal VN (Task 18)', () => {
       // 라벨(오른쪽 절반, 실측 x=150/160≈93.75%) 쪽으로 침범할 여지를 아예 없앤다 —
       // 정확한 텍스트 폭 대신 "50% 지점 자체를 넘지 않는다"는 더 강한 불변식을 쓴다.
       expect(rightEdgePct).toBeLessThanOrEqual(50)
+    })
+  })
+
+  // Fix Round 2(재리뷰) — object-fit이 어떤 테스트에도 안 걸리면 `contain`을 `fill`로
+  // 바꿔도 아무도 모른다. 지금은 폴백 SVG가 `width:auto`라 비율이 저절로 맞아 화면상
+  // 안 보이지만, Task 23이 실제 알파 이미지를 꽂고 max-width 클램프가 걸리면 그때
+  // 인물이 찌그러진 채 표면화된다 — 미리 고정해 둔다. Ruling 20이 말하는 "인라인
+  // 노출"은 var()처럼 jsdom이 못 읽는 값에 필요한 것이고, `contain`은 인스턴스마다
+  // 안 바뀌는 상수 리터럴이라 소스(index.css) 하나만 읽으면 된다 — 값을 컴포넌트
+  // 인라인 스타일에 다시 적어 두 곳에 두지 않는다(리뷰 지시).
+  describe('초상 슬롯은 알파 이미지가 찌그러지지 않도록 object-fit: contain을 쓴다 (Fix Round 2)', () => {
+    const cssPath4 = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+    const css4 = readFileSync(cssPath4, 'utf-8')
+    const portraitArtRule = css4.match(/(?:^|\n)\.speaker-portrait-art \.art-slot-content\s*\{[^}]*\}/)?.[0] ?? ''
+
+    it('.speaker-portrait-art .art-slot-content 규칙이 존재하고 object-fit: contain이다', () => {
+      expect(portraitArtRule, 'index.css에서 .speaker-portrait-art .art-slot-content 규칙을 못 찾았다').not.toBe('')
+      expect(portraitArtRule).toMatch(/object-fit:\s*contain/)
     })
   })
 })

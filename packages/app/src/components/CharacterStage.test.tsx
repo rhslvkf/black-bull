@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { screen } from '@testing-library/react'
 import { BALANCE } from '@bb/core'
@@ -112,5 +115,23 @@ describe('CharacterStage', () => {
   it('티어 이름을 배지로 보여준다', () => {
     renderWithState({ player: { tier: 0 } })
     expect(screen.getByTestId('char-tier').textContent).toBe('주린이')
+  })
+
+  // Fix Round 2(Task 18 재리뷰) — 인물 레이어의 object-fit이 어떤 테스트에도 안 걸리면
+  // `contain`을 `fill`(또는 `cover`)로 바꿔도 아무도 모른다. 지금은 폴백 SVG가
+  // `width:auto`라 비율이 저절로 맞아 화면상 안 보이지만, 실제 알파 이미지가 들어오고
+  // `max-width` 클램프가 걸리면 그때 인물이 찌그러진 채 표면화된다. jsdom은 외부
+  // CSS를 읽지 않으므로(Ruling 20) index.css 소스를 직접 읽어 고정한다 — `contain`은
+  // 인스턴스마다 안 바뀌는 상수라 소스 하나만 있으면 되고, 인라인 스타일에 값을
+  // 다시 적어 두 곳에 두지 않는다.
+  describe('인물 레이어는 알파 이미지가 찌그러지지 않도록 object-fit: contain을 쓴다 (Fix Round 2)', () => {
+    const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+    const css = readFileSync(cssPath, 'utf-8')
+    const charFgArtRule = css.match(/(?:^|\n)\.char-fg-layer \.art-slot-content\s*\{[^}]*\}/)?.[0] ?? ''
+
+    it('.char-fg-layer .art-slot-content 규칙이 존재하고 object-fit: contain이다', () => {
+      expect(charFgArtRule, 'index.css에서 .char-fg-layer .art-slot-content 규칙을 못 찾았다').not.toBe('')
+      expect(charFgArtRule).toMatch(/object-fit:\s*contain/)
+    })
   })
 })
