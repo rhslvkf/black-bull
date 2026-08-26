@@ -12,7 +12,7 @@ const byId = (id: string) => cards.find(c => c.id === id)!
 // 아래 목록은 satisfies로 오탈자를 컴파일 타임에 잡고, cards.json 데이터는 런타임 테스트로 직접 검증한다.
 const EFFECT_TYPES = [
   'stat', 'mental', 'condition', 'cash', 'flag', 'impact',
-  'buyStockPct', 'averageDown', 'retire', 'rivalMul', 'fundamentalMul',
+  'buyStockPct', 'retire', 'rivalMul', 'fundamentalMul',
 ] as const satisfies readonly Effect['type'][]
 
 const CONDITION_TYPES = [
@@ -24,13 +24,13 @@ const CONDITION_TYPES = [
 const STAT_KEYS = ['grit', 'stamina', 'info', 'analysis', 'network'] as const satisfies readonly StatKey[]
 
 describe('cards 데이터', () => {
-  it('12장이고 id가 유일하다', () => {
-    expect(cards).toHaveLength(12)
-    expect(new Set(cards.map(c => c.id)).size).toBe(12)
+  it('11장이고 id가 유일하다', () => {
+    expect(cards).toHaveLength(11)
+    expect(new Set(cards.map(c => c.id)).size).toBe(11)
   })
-  it('회복 카드가 3장 있고 전부 lockedWhenShaken이 아니다', () => {
+  it('회복 카드가 4장 있고 전부 lockedWhenShaken이 아니다', () => {
     const rec = cards.filter(c => c.isRecovery)
-    expect(rec).toHaveLength(3)
+    expect(rec).toHaveLength(4)
     rec.forEach(c => expect(c.lockedWhenShaken).toBeFalsy())
   })
   it('이성 카드 4장이 흔들림에 잠긴다', () => {
@@ -164,12 +164,12 @@ describe('playCard', () => {
  * 현금 4만원 미만일 때 잠기는 것이 발견됐다 — 문언이 지켜지지 않고 있었다.
  */
 describe('회복 카드는 어떤 상태에서도 잠기지 않는다 (스펙 §3.3 불변식)', () => {
-  const RECOVERY = ['rest', 'exercise', 'drink']
+  const RECOVERY = ['rest', 'exercise', 'drink', 'hodl']
 
-  it('회복 카드는 정확히 3종이고 이름이 스펙과 같다', () => {
+  it('회복 카드는 정확히 4종이고 이름이 스펙과 같다', () => {
     const rec = loadCards().filter(c => c.isRecovery)
     expect(rec.map(c => c.id).sort()).toEqual([...RECOVERY].sort())
-    expect(rec.map(c => c.name).sort()).toEqual(['운동', '최존버와 소주', '휴식'].sort())
+    expect(rec.map(c => c.name).sort()).toEqual(['운동', '존버', '최존버와 소주', '휴식'].sort())
   })
 
   it('현금 0 · 컨디션 0 · 멘탈 0 · 티어 0의 최악 상태에서도 3종 모두 통과한다', () => {

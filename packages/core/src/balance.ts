@@ -64,8 +64,6 @@ export const BALANCE = {
     { minInfo: 6, lead: 2, chance: 0.7 },
     { minInfo: 3, lead: 1, chance: 0.5 },
   ],
-  /** 물타기 카드가 한 번에 쓰는 현금 비율. turn/effects.ts에 박혀 있었다(최종 리뷰 M3). */
-  averageDownPct: 0.2,
   mental: {
     lossHold: -3, lossHoldUnemployed: -6, worsenFactor: 0.8,
     margin: -8,

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { makeState, makeStock, makeStockDef } from '../testkit'
-import { buy, sell, canSell, maxBuyQty } from './trade'
+import { buy, sell, canSell, maxBuyQty, canAverageDown, averageDown } from './trade'
 import { totalAssets, cashRatio, portfolioLossPct, positionLossPct, priceOf, fee, tax } from './accounting'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
+import { loadCards } from './cards'
 
 describe('accounting', () => {
   it('보유 없으면 총자산 = 현금', () => {
@@ -224,5 +225,65 @@ describe('큰손 체결충격은 매수·매도 양쪽에 걸린다 (최종 리�
     const before = s.stocks[0]!.price
     const after = buy(s, 's1', 5_000_000)
     expect(after.stocks[0]!.price).toBe(before)
+  })
+})
+
+describe('averageDown', () => {
+  it('보유하지 않은 종목은 물타기할 수 없다', () => {
+    const s = makeState({ player: { ...makeState().player, cash: 1_000_000, holdings: [] } })
+    expect(canAverageDown(s, 'sjc').ok).toBe(false)
+    // canAverageDown 판정만으로는 averageDown이 실제로 그 판정을 지키는지 고정하지 못한다
+    // (뮤테이션 검증 MU1: 가드 호출을 지워도 canAverageDown 자체는 여전히 false를 반환한다).
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
+  it('평단보다 현재가가 높으면 물타기할 수 없다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 12000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(canAverageDown(s, 'sjc').ok).toBe(false)
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
+  it('물타기하면 평단이 실제로 내려간다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    const after = averageDown(s, 'sjc', 500_000)
+    const h = after.player.holdings.find(x => x.stockId === 'sjc')!
+    expect(h.avgCost).toBeLessThan(10000)
+    expect(h.qty).toBeGreaterThan(10)
+  })
+
+  it('예산을 넘겨 쓰지 않는다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    const after = averageDown(s, 'sjc', 300_000)
+    expect(s.player.cash - after.player.cash).toBeLessThanOrEqual(300_000)
+  })
+
+  it('현금이 1주 값에 못 미치면 상태가 그대로다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 100, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(averageDown(s, 'sjc', 100)).toEqual(s)
+  })
+})
+
+describe('카드 풀 재편', () => {
+  it('물타기 카드가 사라졌다', () => {
+    expect(loadCards().find(c => c.id === 'avgdown')).toBeUndefined()
+  })
+  it('존버가 회복 카드가 됐다', () => {
+    expect(loadCards().find(c => c.id === 'hodl')!.isRecovery).toBe(true)
   })
 })

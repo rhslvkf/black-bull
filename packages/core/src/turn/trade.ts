@@ -59,6 +59,25 @@ export function buy(state: GameState, stockId: string, qty: number): GameState {
   return { ...state, stocks, player: { ...state.player, cash: state.player.cash - total, holdings } }
 }
 
+/** 물타기 — 이미 보유 중이고 손실 중인 종목을 예산 범위에서 추가 매수한다.
+ *  1차에서는 카드 효과였으나(가장 많이 물린 종목을 자동 선택), 순수한 매매 행위이므로
+ *  주간 행동을 소모하지 않는 종목 상세 화면의 버튼으로 옮겼다. */
+export function canAverageDown(state: GameState, stockId: string): { ok: boolean; reason?: string } {
+  const h = state.player.holdings.find(x => x.stockId === stockId)
+  if (!h) return { ok: false, reason: '보유하지 않은 종목이다' }
+  if (priceOf(state, stockId) >= h.avgCost) return { ok: false, reason: '평단보다 싸야 물탈 수 있다' }
+  if (maxBuyQty(state, stockId) < 1) return { ok: false, reason: '현금이 부족하다' }
+  return { ok: true }
+}
+
+export function averageDown(state: GameState, stockId: string, budget: number): GameState {
+  if (!canAverageDown(state, stockId).ok) return state
+  const capped = Math.min(budget, state.player.cash)
+  const qty = maxBuyQty({ ...state, player: { ...state.player, cash: capped } }, stockId)
+  if (qty < 1) return state
+  return buy(state, stockId, qty)
+}
+
 export function sell(state: GameState, stockId: string, qty: number): GameState {
   if (!Number.isInteger(qty) || qty <= 0) throw new GameError('BAD_QTY')
   const chk = canSell(state, stockId)

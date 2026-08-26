@@ -14,7 +14,7 @@ const SECTORS: Sector[] = ['반도체', '2차전지', '바이오', '조선', '�
 const CATEGORIES = ['news', 'company', 'personal', 'social', 'story'] as const satisfies readonly EventDef['category'][]
 const EFFECT_TYPES = [
   'stat', 'mental', 'condition', 'cash', 'flag', 'impact',
-  'buyStockPct', 'averageDown', 'retire', 'rivalMul', 'fundamentalMul',
+  'buyStockPct', 'retire', 'rivalMul', 'fundamentalMul',
 ] as const satisfies readonly Effect['type'][]
 const CONDITION_TYPES = [
   'tierMin', 'tierMax', 'turnMin', 'turnMax', 'regime', 'statMin',

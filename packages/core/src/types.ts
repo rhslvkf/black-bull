@@ -55,7 +55,6 @@ export type Effect =
   | { type: 'flag'; key: string; value: number | boolean | 'inc' }
   | { type: 'impact'; target: string; magnitude: number; delay: 0 | 1 | 2 | 3; title: string }
   | { type: 'buyStockPct'; stockId: string; pct: number }
-  | { type: 'averageDown' }
   | { type: 'retire' }
   | { type: 'rivalMul'; value: number }
   | { type: 'fundamentalMul'; stockId: string; value: number }

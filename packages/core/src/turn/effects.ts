@@ -1,5 +1,4 @@
 import type { Effect, GameState } from '../types'
-import { BALANCE } from '../balance'
 import { buy, maxBuyQty } from './trade'
 import { priceOf } from './accounting'
 import { GameError } from '../error'
@@ -51,13 +50,6 @@ export function applyEffects(state: GameState, effects: Effect[]): GameState {
         s = { ...s, stocks: s.stocks.map(x => x.id === e.stockId ? { ...x, fundamental: Math.round(x.fundamental * e.value) } : x) }
         break
       case 'buyStockPct': s = buyWithBudget(s, e.stockId, s.player.cash * e.pct); break
-      case 'averageDown': {
-        const losing = s.player.holdings
-          .filter(h => priceOf(s, h.stockId) < h.avgCost)
-          .sort((a, b) => priceOf(s, a.stockId) / a.avgCost - priceOf(s, b.stockId) / b.avgCost)[0]
-        if (losing) s = buyWithBudget(s, losing.stockId, s.player.cash * BALANCE.averageDownPct)
-        break
-      }
       default: {
         const _exhaustive: never = e
         return _exhaustive
