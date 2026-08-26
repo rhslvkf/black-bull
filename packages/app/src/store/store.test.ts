@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store'
 import { nextTurnWith } from '../testkit'
 import { advanceTurn, GRADES, type CardGrade } from '@bb/core'
-import { BALANCE } from '@bb/core'
+import { BALANCE, fee } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset() })
 
@@ -284,5 +284,82 @@ describe('togglePick — 행동력 예산 기준 게이팅', () => {
     expect(useGame.getState().picked).toEqual([recoveryId])
     useGame.getState().togglePick(recoveryId)
     expect(useGame.getState().picked).toEqual([])
+  })
+
+  describe('doAverageDown (Task 15)', () => {
+    /** 첫 종목을 사서 보유를 만든 뒤 가격을 깎아 손실 포지션으로 만든다. */
+    function seedLosingPosition() {
+      useGame.getState().newGame(1)
+      const id = useGame.getState().state!.stockDefs[0]!.id
+      useGame.getState().doBuy(id, 10)
+      const s = useGame.getState().state!
+      useGame.setState({ state: {
+        ...s, stocks: s.stocks.map(x => x.id === id ? { ...x, price: Math.round(x.price * 0.5) } : x),
+      } })
+      return id
+    }
+
+    it('core의 buy를 실제로 태워 평단이 내려가고 수수료가 정확히 빠진다', () => {
+      const id = seedLosingPosition()
+      const before = useGame.getState().state!
+      const price = before.stocks.find(x => x.id === id)!.price
+      const avgBefore = before.player.holdings.find(x => x.stockId === id)!.avgCost
+      const cashBefore = before.player.cash
+      const feesBefore = before.trackers.feesPaid
+
+      useGame.getState().doAverageDown(id, 200_000)
+
+      const after = useGame.getState().state!
+      const held = after.player.holdings.find(x => x.stockId === id)!
+      expect(held.avgCost).toBeLessThan(avgBefore)
+
+      const qtyBought = held.qty - 10
+      expect(qtyBought).toBeGreaterThan(0)
+      const gross = price * qtyBought
+      const expectedFee = fee(gross)
+      // 수수료가 실제로 빠졌는지 — buy()를 우회해 직접 cash/holdings만 손댔다면 이 델타가
+      // 0이 된다(리뷰가 지목한 "손으로 만든 상태만 검사" 함정).
+      expect(after.trackers.feesPaid - feesBefore).toBe(expectedFee)
+      expect(cashBefore - after.player.cash).toBe(gross + expectedFee)
+    })
+
+    it('예산을 넘겨 쓰지 않는다 (MU6 — budget 무시하면 여기서 잡힌다)', () => {
+      const id = seedLosingPosition()
+      const before = useGame.getState().state!
+      // 현금은 넉넉하지만(시드머니 기준 수천만원) 예산은 아주 작게 준다 — budget이 실제로
+      // 적용된다면 지출이 이 한도 안에 머물러야 한다. 무시하고 전액을 쓰면 넘긴다.
+      const budget = 50_000
+      expect(before.player.cash).toBeGreaterThan(budget * 10)
+
+      useGame.getState().doAverageDown(id, budget)
+
+      const spent = before.player.cash - useGame.getState().state!.player.cash
+      expect(spent).toBeGreaterThan(0)
+      expect(spent).toBeLessThanOrEqual(budget)
+    })
+
+    it('턴을 넘기지 않고 행동력·리롤·이번 턴 선택도 소모하지 않는다', () => {
+      const id = seedLosingPosition()
+      const before = useGame.getState().state!
+      const beforePicked = useGame.getState().picked
+
+      useGame.getState().doAverageDown(id, 200_000)
+
+      const after = useGame.getState().state!
+      expect(after.turn).toBe(before.turn)
+      expect(after.rerollsLeft).toBe(before.rerollsLeft)
+      // slots는 advanceTurn/doReroll만 새로 뽑는다 — 참조가 그대로면 행동 슬롯이
+      // 소모되거나 다시 뽑히지 않았다는 뜻이다(카운트가 아니라 정체성으로 못박는다).
+      expect(after.slots).toBe(before.slots)
+      expect(useGame.getState().picked).toEqual(beforePicked)
+    })
+
+    it('조건이 안 맞으면(보유하지 않은 종목) 던지지 않고 상태를 그대로 돌려준다', () => {
+      useGame.getState().newGame(1)
+      const before = useGame.getState().state!
+      const id = before.stockDefs[0]!.id // 방금 새 판이라 아직 아무것도 안 샀다
+      expect(() => useGame.getState().doAverageDown(id, 200_000)).not.toThrow()
+      expect(useGame.getState().state).toBe(before)
+    })
   })
 })

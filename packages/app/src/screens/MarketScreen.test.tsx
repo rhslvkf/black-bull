@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { MarketScreen } from './MarketScreen'
 import { StockDetail } from './StockDetail'
 import { AccountScreen } from './AccountScreen'
 import { PriceChart } from '../components/PriceChart'
 import { maxBuyQty } from '@bb/core'
 import { useGame } from '../store/store'
+import { renderDetail, currentState } from '../testUtils'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
 
@@ -78,6 +79,83 @@ describe('MarketScreen', () => {
     fireEvent.click(screen.getByTestId('filter-반도체'))
     expect(screen.getAllByTestId(/^stock-row-/)).toHaveLength(1)
   })
+
+  describe('시세 카드 스파크라인', () => {
+    it('종목마다 스파크라인 svg가 렌더된다', () => {
+      render(<MarketScreen />)
+      expect(screen.getByTestId('spark-sjc').querySelector('svg')).not.toBeNull()
+    })
+
+    it('1턴차(히스토리 1개)에도 빈 상자가 아니라 기준선이 보인다', () => {
+      // 1차 개발 사고 재발 방지(MU8) — history.length===1 처리가 빠지면 <polyline
+      // points="x,y">(좌표쌍 1개) 하나만 남아 화면엔 빈 상자로 보인다. element 존재만
+      // 보면 이 결함을 못 잡으므로 <line> 플레이스홀더 또는 실제 좌표쌍 2개 이상을 요구한다.
+      expect(currentState().turn).toBe(1)
+      render(<MarketScreen />)
+      const spark = screen.getByTestId('spark-sjc')
+      const line = spark.querySelector('line')
+      const poly = spark.querySelector('polyline')
+      const polyHasSegment = poly ? (poly.getAttribute('points') ?? '').trim().includes(' ') : false
+      expect(!!line || polyHasSegment).toBe(true)
+    })
+
+    it('종목마다 실제 history를 반영한다 — 상수 배열로 바꾸면(MU7) 전부 같아져 실패한다', () => {
+      const s = currentState()
+      useGame.setState({ state: {
+        ...s,
+        stocks: s.stocks.map(x => {
+          if (x.id === 'sjc') return { ...x, history: [100, 200, 150] }
+          if (x.id === 'def') return { ...x, history: [50, 60] }
+          return x
+        }),
+      } })
+      render(<MarketScreen />)
+      const sjcPoints = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('points')
+      const defPoints = screen.getByTestId('spark-def').querySelector('polyline')!.getAttribute('points')
+      expect(sjcPoints).not.toBe(defPoints)
+    })
+
+    it('턴이 지나 history가 늘어나면 같은 종목의 스파크라인도 바뀐다', () => {
+      const s = currentState()
+      useGame.setState({ state: {
+        ...s, stocks: s.stocks.map(x => x.id === 'sjc' ? { ...x, history: [100, 200, 150] } : x),
+      } })
+      render(<MarketScreen />)
+      const before = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('points')
+
+      act(() => {
+        const s2 = currentState()
+        useGame.setState({ state: {
+          ...s2, stocks: s2.stocks.map(x => x.id === 'sjc' ? { ...x, history: [...x.history, 400] } : x),
+        } })
+      })
+      const after = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('points')
+      expect(after).not.toBe(before)
+    })
+
+    it('상승은 빨강(#f0616d), 하락은 파랑(#4f8ff7)으로 그려진다 (한국 관례, MU9)', () => {
+      // 제약값(색)은 리터럴로 적는다 — tokens.css의 --bull/--down을 import해 자기 자신과
+      // 비교하면 뒤집혀도 통과한다.
+      const UP_RED = '#f0616d'
+      const DOWN_BLUE = '#4f8ff7'
+      const s = currentState()
+      useGame.setState({ state: {
+        ...s, stocks: s.stocks.map(x => x.id === 'sjc' ? { ...x, history: [100, 200] } : x),
+      } })
+      render(<MarketScreen />)
+      const upStroke = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('stroke')
+      expect(upStroke).toBe(UP_RED)
+
+      act(() => {
+        const s2 = currentState()
+        useGame.setState({ state: {
+          ...s2, stocks: s2.stocks.map(x => x.id === 'sjc' ? { ...x, history: [200, 100] } : x),
+        } })
+      })
+      const downStroke = screen.getByTestId('spark-sjc').querySelector('polyline')!.getAttribute('stroke')
+      expect(downStroke).toBe(DOWN_BLUE)
+    })
+  })
 })
 
 describe('StockDetail', () => {
@@ -139,6 +217,71 @@ describe('StockDetail', () => {
     const max = maxBuyQty(useGame.getState().state!, 'sjc')
     fireEvent.change(screen.getByTestId('qty'), { target: { value: String(max + 1) } })
     expect(screen.getByTestId('buy').hasAttribute('disabled')).toBe(true)
+  })
+})
+
+describe('물타기 버튼', () => {
+  it('보유하지 않은 종목에는 버튼이 없다 (MU1)', () => {
+    renderDetail({ stockId: 'sjc', holdings: [] })
+    expect(screen.queryByTestId('average-down')).toBeNull()
+  })
+
+  it('평단보다 비싸면 비활성이고 core가 주는 사유가 그대로 보인다 (MU2·MU3)', () => {
+    renderDetail({
+      stockId: 'sjc', price: 12000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    const btn = screen.getByTestId('average-down')
+    expect(btn.hasAttribute('disabled')).toBe(true)
+    // core의 canAverageDown이 실제로 주는 문구다 — app에서 다시 쓰지 않고 그대로 보인다.
+    expect(screen.getByTestId('average-down-reason').textContent).toContain('평단보다 싸야')
+  })
+
+  it('평단보다 싸면 활성이다', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    expect(screen.getByTestId('average-down').hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByTestId('average-down-reason')).toBeNull()
+  })
+
+  it('물타기 후 평단이 실제로 내려간다', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    const before = Number(screen.getByTestId('avg-cost').getAttribute('data-value'))
+    fireEvent.click(screen.getByTestId('average-down'))
+    expect(Number(screen.getByTestId('avg-cost').getAttribute('data-value'))).toBeLessThan(before)
+  })
+
+  it('물타기는 주간 행동이 아니다 — 턴·행동력·리롤을 소모하지 않는다 (MU5)', () => {
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    const beforeRerolls = currentState().rerollsLeft
+    const beforeSlots = currentState().slots
+    const beforePicked = useGame.getState().picked
+    fireEvent.click(screen.getByTestId('average-down'))
+    expect(currentState().turn).toBe(1) // 턴이 넘어가지 않는다
+    expect(currentState().rerollsLeft).toBe(beforeRerolls)
+    // 행동력 관련 상태 — slots는 advanceTurn/doReroll만 새로 뽑는다. 참조가 그대로면
+    // 행동 슬롯이 소모되거나 다시 뽑히지 않았다는 뜻이다.
+    expect(currentState().slots).toBe(beforeSlots)
+    expect(useGame.getState().picked).toEqual(beforePicked)
+  })
+
+  it('물타기 버튼의 터치 타깃이 44px 이상이다 (MU11, Global Constraints)', () => {
+    const MIN_TOUCH_TARGET_PX = 44
+    renderDetail({
+      stockId: 'sjc', price: 5000, cash: 1_000_000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 1 }],
+    })
+    const style = getComputedStyle(screen.getByTestId('average-down'))
+    expect(parseFloat(style.minWidth)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+    expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
   })
 })
 

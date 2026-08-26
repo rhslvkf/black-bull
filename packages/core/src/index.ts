@@ -3,10 +3,10 @@ export * from './types'
 export { BALANCE, TIER_NAMES } from './balance'
 export { GameError } from './error'
 export { initGame, advanceTurn } from './turn/advance'
-export { buy, sell, canBuy, canSell, maxBuyQty } from './turn/trade'
+export { buy, sell, canBuy, canSell, maxBuyQty, averageDown, canAverageDown } from './turn/trade'
 export {
   totalAssets, holdingValue, cashRatio, priceOf, portfolioLossPct, positionLossPct,
-  noTradeBaseline, investmentRoi,
+  noTradeBaseline, investmentRoi, fee, tax,
 } from './turn/accounting'
 export { maxLoan, takeLoan, repayLoan } from './turn/margin'
 // playCard는 sim이 **선택 미리보기**에 쓴다 — "이 카드를 내면 다음 카드가 잠기는가"를

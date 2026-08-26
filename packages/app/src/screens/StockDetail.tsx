@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { analyzeStock, canSell, maxBuyQty, priceOf } from '@bb/core'
+import { analyzeStock, canAverageDown, canSell, maxBuyQty, priceOf } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, pct } from '../format'
 import { PriceChart } from '../components/PriceChart'
 import { Art } from '../art/Art'
+import { TOUCH_TARGET_PX } from '../design/layout'
 import type { ArtKey } from '../art/keys'
 
 const REASON: Record<string, string> = {
@@ -22,6 +23,7 @@ export function StockDetail() {
   const selectStock = useGame(st => st.selectStock)
   const doBuy = useGame(st => st.doBuy)
   const doSell = useGame(st => st.doSell)
+  const doAverageDown = useGame(st => st.doAverageDown)
   const [qty, setQty] = useState(1)
   if (!s || !id) return null
 
@@ -30,6 +32,10 @@ export function StockDetail() {
   const a = analyzeStock(s, id)
   const held = s.player.holdings.find(h => h.stockId === id)
   const sellChk = canSell(s, id)
+  // 물타기는 보유 중일 때만 뜻이 있다 — 보유하지 않은 종목에는 버튼 자체를 렌더하지
+  // 않는다(canAverageDown도 held 없으면 reason을 주지만, 그 사유를 화면에 보일 필요가
+  // 없는 케이스라 아예 숨긴다).
+  const adChk = held ? canAverageDown(s, id) : null
   const price = priceOf(s, id)
   const max = maxBuyQty(s, id)
   const canAfford = qty > 0 && qty <= max
@@ -67,11 +73,29 @@ export function StockDetail() {
 
       {held && (
         <p className="held">
-          {held.qty}주 보유 · 평단 {won(held.avgCost)} ·{' '}
+          {held.qty}주 보유 · 평단{' '}
+          <span data-testid="avg-cost" data-value={held.avgCost}>{won(held.avgCost)}</span> ·{' '}
           <span className={price > held.avgCost ? 'up' : price < held.avgCost ? 'down' : 'neutral'}>
             {pct(held.avgCost === 0 ? 0 : ((price - held.avgCost) / held.avgCost) * 100)}
           </span>
         </p>
+      )}
+
+      {adChk && (
+        <div className="average-down">
+          <button
+            data-testid="average-down"
+            className="average-down-btn"
+            style={{ minWidth: TOUCH_TARGET_PX, minHeight: TOUCH_TARGET_PX }}
+            disabled={!adChk.ok}
+            onClick={() => doAverageDown(id, s.player.cash)}
+          >
+            물타기
+          </button>
+          {!adChk.ok && (
+            <p className="warn" data-testid="average-down-reason">{adChk.reason}</p>
+          )}
+        </div>
       )}
 
       <div className="trade">

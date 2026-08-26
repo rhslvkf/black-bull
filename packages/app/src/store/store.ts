@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import {
-  type GameState, initGame, advanceTurn, buy, sell, resolveChoice, loadEvents, totalAssets,
+  type GameState, initGame, advanceTurn, buy, sell, averageDown, resolveChoice, loadEvents, totalAssets,
   GameError, actionPoints, cardApCost, gradeOfSlot, rerollSlots,
 } from '@bb/core'
 
@@ -134,6 +134,11 @@ interface Store {
   next(cards: string[]): void
   doBuy(id: string, qty: number): void
   doSell(id: string, qty: number): void
+  /** 물타기 — 시세 탭·종목 상세에서 하는 순수한 매매다(2.4). core의 averageDown은
+   *  조건이 안 맞으면 던지지 않고 상태를 그대로 돌려주므로(GameError를 던지는 buy/sell과
+   *  다르다) guard()를 거쳐도 안전하다 — 던질 예외가 없을 뿐, commit(next)가 next===s를
+   *  받아도 무해하다. advanceTurn을 거치지 않으므로 턴·행동력·리롤을 소모하지 않는다. */
+  doAverageDown(stockId: string, budget: number): void
   choose(eventId: string, idx: number): void
   setTab(t: TabKey): void
   selectStock(id: string | null): void
@@ -216,6 +221,7 @@ export const useGame = create<Store>((set, get) => {
     next(cards) { guard(s => advanceTurn(s, cards)); set({ picked: [] }) },
     doBuy(id, qty) { guard(s => buy(s, id, qty)) },
     doSell(id, qty) { guard(s => sell(s, id, qty)) },
+    doAverageDown(stockId, budget) { guard(s => averageDown(s, stockId, budget)) },
     choose(eventId, idx) { guard(s => resolveChoice(s, eventId, idx, events)) },
     setTab(tab) { set({ tab }) },
     selectStock(selectedStock) { set({ selectedStock }) },
