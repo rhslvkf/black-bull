@@ -13,11 +13,7 @@ import { PrologueView } from './overlays/PrologueView'
 export default function App() {
   const state = useGame(s => s.state)
   const tab = useGame(s => s.tab)
-  const codex = useGame(s => s.codex)
   const newGame = useGame(s => s.newGame)
-  // 새로고침해도 프롤로그가 다시 뜨지 않도록 스토어(localStorage)가 들고 있다(최종 리뷰 Minor 9).
-  const prologueDone = useGame(s => s.prologueDone)
-  const finishPrologue = useGame(s => s.finishPrologue)
 
   if (!state) {
     return (
@@ -28,9 +24,6 @@ export default function App() {
       </main>
     )
   }
-
-  const needPrologue = codex.runs === 0 && state.turn === 1 && !prologueDone
-  if (needPrologue) return <PrologueView onDone={finishPrologue} />
 
   return (
     <main className="app">
@@ -45,6 +38,9 @@ export default function App() {
       <EventModal />
       <CutsceneView />
       <EndingView />
+      {/* PrologueView는 이제 스스로 "떠야 하는가"를 스토어에서 판단한다(Task 20) —
+          다른 오버레이(EventModal·CutsceneView·EndingView)와 같은 문법이다. */}
+      <PrologueView />
     </main>
   )
 }

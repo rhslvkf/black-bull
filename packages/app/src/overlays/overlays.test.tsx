@@ -10,11 +10,12 @@ import { PrologueView } from './PrologueView'
 import { CodexScreen } from '../screens/CodexScreen'
 import { HomeScreen } from '../screens/HomeScreen'
 import { useGame, SAVE_KEY, SAVE_VERSION } from '../store/store'
-import { loadEvents, ENDINGS, TITLES, type EventDef } from '@bb/core'
+import { loadEvents, ENDINGS, TITLES, TIER_NAMES, type EventDef } from '@bb/core'
 import { pinSlots } from '../testkit'
-import { renderEvent, currentState } from '../testUtils'
+import { renderEvent, renderWithState, currentState } from '../testUtils'
 import { matchMediaMock } from '../design/testUtils'
 import { ALL_ART_KEYS } from '../art/registry'
+import { PROMOTE_TIERS, DEMOTE_TIERS } from '../art/keys'
 
 // 카드 목록이 슬롯에서 나오므로(Task 6) 테스트가 클릭할 카드를 매 판 꽂아 둔다.
 beforeEach(() => {
@@ -449,22 +450,58 @@ describe('EventModal VN (Task 18)', () => {
   })
 })
 
+// Task 20 — 컷신을 VN 문법(DialogueBox 나레이션 + 아트 스테이지 + 제목 배너)으로 맞춘다.
+// 브리프 Step 1의 실패 테스트를 Ruling 18(jest-dom 없음 → 순수 DOM)에 맞춰 옮긴다.
+// 검사 내용 자체는 브리프와 동일하다.
 describe('CutsceneView', () => {
   it('cutscene이 없으면 안 뜬다', () => {
     expect(render(<CutsceneView />).container.firstChild).toBeNull()
   })
-  it('승급 컷신을 띄우고 닫는다', () => {
-    const s = useGame.getState().state!
-    useGame.setState({ state: { ...s, cutscene: 'cutscene.promote.1' } })
-    render(<CutsceneView />)
-    expect(screen.getByTestId('cutscene')).toBeDefined()
-    fireEvent.click(screen.getByTestId('cutscene-close'))
-    expect(useGame.getState().state!.cutscene).toBeNull()
+
+  it('승급 컷신이 새 티어 이름을 보여준다 (브리프 Step 1)', () => {
+    renderWithState({ cutscene: 'cutscene.promote.2', player: { tier: 2 } }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene-title').textContent).toBe('불개미')
   })
-  it('컷신을 닫으면 새로고침해도 다시 뜨지 않는다', () => {
-    // useGame.setState()로 직접 바꾸면 store의 액션(writeSave)을 건너뛰어 localStorage가
-    // 갱신되지 않으므로, 이 테스트가 실제로 지속성 경로를 검증하지 못하고 통과해버린다.
-    // 실제 저장 파일 포맷 그대로 localStorage에 써서 store가 그것을 읽어들이게 한다.
+
+  // MU1/MU2 — 브리프의 '불개미'는 하드코딩 문자열이지만, 여기서는 실제 core 상수
+  // (@bb/core의 TIER_NAMES, app이 복제할 수 없는 진짜 출처)와 직접 비교한다. app이
+  // 티어 이름을 로컬로 다시 적으면(1차 개발의 반복 결함) 값이 우연히 같지 않은 한 잡힌다.
+  it('제목은 app 로컬 문자열이 아니라 @bb/core의 TIER_NAMES에서 나온다 (MU1·MU2)', () => {
+    renderWithState({ cutscene: 'cutscene.demote.3', player: { tier: 3 } }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene-title').textContent).toBe(TIER_NAMES[3])
+  })
+
+  it('강등 컷신은 승급과 다른 톤이다 (브리프 Step 1)', () => {
+    const toneOf = (k: string): string | null => {
+      const { unmount } = renderWithState({ cutscene: k }, <CutsceneView />)
+      const t = screen.getByTestId('cutscene').getAttribute('data-tone')
+      unmount()
+      return t
+    }
+    expect(toneOf('cutscene.promote.2')).not.toBe(toneOf('cutscene.demote.1'))
+  })
+
+  // MU3/MU4 — "다르다"만 보면 톤이 통째로 뒤바뀌어도(승급에 강등 톤을 붙여도) 통과한다.
+  // 각 방향의 정확한 톤 값까지 고정해 스왑을 직접 잡는다.
+  it('승급 톤은 up, 강등 톤은 down으로 고정된다 (MU3·MU4)', () => {
+    const { unmount: u1 } = renderWithState({ cutscene: 'cutscene.promote.3' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').getAttribute('data-tone')).toBe('up')
+    u1()
+    const { unmount: u2 } = renderWithState({ cutscene: 'cutscene.demote.2' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').getAttribute('data-tone')).toBe('down')
+    u2()
+  })
+
+  it('닫으면 다시 뜨지 않는다 (브리프 Step 1)', () => {
+    renderWithState({ cutscene: 'cutscene.promote.2' }, <CutsceneView />)
+    fireEvent.click(screen.getByTestId('cutscene-close'))
+    expect(currentState().cutscene).toBeNull()
+  })
+
+  // MU5 — 닫기가 store의 clearCutscene(실제 저장 경로)을 거치지 않으면 새로고침마다
+  // 컷신이 다시 뜬다. useGame.setState()로 직접 바꾸면 writeSave를 건너뛰므로, 실제
+  // 저장 파일 포맷 그대로 localStorage에 써서 store가 그것을 읽어들이게 한다.
+  it('컷신을 닫으면 새로고침해도 다시 뜨지 않는다 (MU5)', () => {
     const s = useGame.getState().state!
     const withCutscene = { ...s, cutscene: 'cutscene.promote.1' }
     localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: withCutscene }))
@@ -477,6 +514,78 @@ describe('CutsceneView', () => {
     act(() => { useGame.getState().reset() })
     expect(useGame.getState().state!.cutscene).toBeNull()
     expect(render(<CutsceneView />).container.firstChild).toBeNull()
+  })
+
+  // MU12 — 전역 제약 "prefers-reduced-motion 존중"(§6). CutsceneView.tsx가 인라인
+  // style(animation)로 재생/생략을 결정하므로(ChoiceSheet.tsx와 같은 기법, Ruling 20)
+  // jsdom에서도 직접 실측할 수 있다.
+  it('prefers-reduced-motion이면 크로스페이드 애니메이션이 없다 (MU12)', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').style.animation).toBe('none')
+  })
+  it('모션을 허용하면 컷신 크로스페이드 애니메이션이 걸린다', () => {
+    renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').style.animation).toContain('cutscene-crossfade')
+  })
+
+  // MU13 — 전역 제약 "터치 타깃 44px 이상". 44는 계획서 요구값이지 구현 상수가 아니므로
+  // (ChoiceSheet.test.tsx·DialogueBox.test.tsx와 같은 방식으로) 테스트 안에 리터럴로 못박는다.
+  it('닫기 버튼의 터치 타깃이 44px 이상이다 (Global Constraints, MU13)', () => {
+    const MIN_TOUCH_TARGET_PX = 44
+    renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
+    const btn = screen.getByTestId('cutscene-close')
+    expect(parseFloat(btn.style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+    expect(parseFloat(btn.style.minWidth)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+  })
+
+  // 전수 검사(브리프 "추가로 확인할 것") — PROMOTE_TIERS(1..5) + DEMOTE_TIERS(0..4) 10키
+  // 전부를 렌더해 제목·톤·아트가 정상인지 확인한다. 수집은 `.map()` 반환값에서 유도한다
+  // (overlays.test.tsx의 "실제 콘텐츠 카탈로그 전수 검사"가 겪은 결합 공격을 피하는
+  // 같은 기법 — 사전 선언한 배열에 미리 채워 넣고 루프만 슬라이스하는 공격은 반환값
+  // 자체를 쓰면 성립하지 않는다).
+  describe('컷신 10키 전수 검사 (§5 PROMOTE_TIERS/DEMOTE_TIERS)', () => {
+    it('승급 5종 + 강등 5종 전부가 올바른 제목·톤·아트로 그려진다', () => {
+      const promoteKeys = PROMOTE_TIERS.map(t => `cutscene.promote.${t}`)
+      const demoteKeys = DEMOTE_TIERS.map(t => `cutscene.demote.${t}`)
+      const allKeys = [...promoteKeys, ...demoteKeys]
+      expect(allKeys.length).toBe(10)
+
+      const visited = allKeys.map(key => {
+        const [, kind, tierStr] = key.split('.')
+        const tier = Number(tierStr)
+        const { unmount } = renderWithState({ cutscene: key }, <CutsceneView />)
+
+        expect(screen.getByTestId('cutscene-title').textContent, `${key}: 제목이 틀렸다`).toBe(TIER_NAMES[tier])
+        expect(screen.getByTestId('cutscene').getAttribute('data-tone'), `${key}: 톤이 틀렸다`)
+          .toBe(kind === 'promote' ? 'up' : 'down')
+        const art = screen.getByTestId('cutscene-stage').querySelector('svg[role="img"], img')
+        expect(art, `${key}: 아트가 비어 있다`).not.toBeNull()
+        expect(art?.getAttribute('aria-label'), `${key}: 아트 라벨이 안 맞는다`)
+          .toBe(`${TIER_NAMES[tier]} ${kind === 'promote' ? '승급' : '강등'}`)
+
+        unmount()
+        return key
+      })
+
+      expect(visited.length).toBe(allKeys.length)
+      expect(new Set(visited)).toEqual(new Set(allKeys))
+    })
+
+    // MU11 — 아트 키가 실제 cutscene.* 카탈로그에 없는 값으로 바뀌면(오타·잘못된 계산),
+    // <Art>는 조용히 아무것도 그리지 않는다(존재하지 않는 id는 registry에 없다). 그
+    // "조용한 빈 화면"이 폴백처럼 보이며 넘어가지 않는지를 직접 확인한다.
+    it('존재하지 않는 컷신 키는 아트 없이 조용히 넘어가지 않고, 아트 자리가 비어 있다는 사실 자체를 관측할 수 있다 (MU11)', () => {
+      // economy.ts의 settleTier는 '주린이'(티어 0)로는 절대 promote.0을 만들지 않는다
+      // (PROMOTE_TIERS=[1..5]) — 그래서 registry.tsx에도 'cutscene.promote.0'이 없다.
+      // 제목·톤은 정규식 파싱만으로 유도되므로 이 키에도 여전히 그려진다(방어적 표시) —
+      // 하지만 아트는 registry에 없는 키라 비어 있어야 한다. "제목은 있는데 아트가
+      // 없다"는 상태 자체가 관측 가능해야, 실제 구현이 유효하지 않은 키를 <Art>에 그대로
+      // 흘려보내는 버그(=화면이 통째로 비어 아무것도 관측 못 하는 경우)와 구별된다.
+      renderWithState({ cutscene: 'cutscene.promote.0' }, <CutsceneView />)
+      expect(screen.getByTestId('cutscene-title').textContent).toBe(TIER_NAMES[0])
+      expect(screen.getByTestId('cutscene-stage').querySelector('svg[role="img"], img')).toBeNull()
+    })
   })
 })
 
@@ -502,18 +611,79 @@ describe('EndingView', () => {
   })
 })
 
+// Task 20 — 프롤로그를 VN 문법(화자 초상 + DialogueBox)으로 맞춘다. 더 이상 `onDone` prop을
+// 받지 않는다 — CutsceneView·EventModal과 같은 방식으로 스스로 스토어를 읽어 "지금
+// 떠야 하는가"를 판단하고 스스로 닫는다(App.test.tsx의 goHome() 계약도 그대로 유지된다).
+// 브리프 Step 1의 실패 테스트를 Ruling 18(jest-dom 없음 → 순수 DOM)에 맞춰 옮긴다.
 describe('PrologueView', () => {
-  it('끝까지 넘기면 onDone이 불린다', () => {
-    let done = false
-    render(<PrologueView onDone={() => { done = true }} />)
-    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByTestId('prologue-next'))
-    expect(done).toBe(true)
+  it('화자 초상화와 대화창을 함께 그린다 (브리프 Step 1)', () => {
+    renderWithState({}, <PrologueView />)
+    expect(screen.getByTestId('speaker-portrait')).toBeDefined()
+    expect(screen.getByTestId('dialogue-box')).toBeDefined()
   })
-  it('건너뛰기가 있다', () => {
-    let done = false
-    render(<PrologueView onDone={() => { done = true }} />)
+
+  it('건너뛰면 즉시 게임이 시작된다 (브리프 Step 1)', () => {
+    renderWithState({}, <PrologueView />)
     fireEvent.click(screen.getByTestId('prologue-skip'))
-    expect(done).toBe(true)
+    expect(screen.queryByTestId('prologue')).toBeNull()
+  })
+
+  // MU9 — 건너뛰기가 prologueDone을 세우지 않으면 새로고침(reset, App.test.tsx와 같은
+  // 시뮬레이션)마다 프롤로그가 다시 뜬다. 브리프는 "화면에서 사라지는 것"만 보므로
+  // (바로 위 테스트), 지속성 자체를 별도로 고정한다.
+  it('건너뛰면 prologueDone이 스토어(localStorage)에 저장되어 새로고침해도 다시 뜨지 않는다 (MU9)', () => {
+    renderWithState({}, <PrologueView />)
+    fireEvent.click(screen.getByTestId('prologue-skip'))
+    expect(useGame.getState().prologueDone).toBe(true)
+
+    act(() => { useGame.getState().reset() }) // 새로고침 시뮬레이션: localStorage에서 다시 읽는다
+    expect(useGame.getState().prologueDone).toBe(true)
+    render(<PrologueView />)
+    expect(screen.queryByTestId('prologue')).toBeNull()
+  })
+
+  // 프롤로그 조건이 아니면(이미 봤거나, 첫 판이 아니거나) 오버레이 자체가 없다 — App.tsx가
+  // 더 이상 조건부로 마운트/언마운트하지 않고 항상 <PrologueView />를 렌더하므로, 이
+  // 자기 판단 로직 자체를 직접 고정해야 한다.
+  it('이미 본 판에서는(prologueDone) 아무것도 안 뜬다', () => {
+    renderWithState({}, <PrologueView />, { prologueDone: true })
+    expect(screen.queryByTestId('prologue')).toBeNull()
+  })
+
+  // MU10 — Task 17 리뷰가 지목한 함정과 동일: 화자가 있는 장면에서 speakerDisplayName을
+  // 거치지 않고 npc id('daebak')를 그대로 넘기면, 이름표는 크래시 없이 영문 id 또는
+  // 회색 '???'로 조용히 깨진다. 이름표에 실제로 변환된 한국어 표시 이름이 뜨는지 고정한다.
+  it('화자가 있는 장면은 이름표에 npc id가 아니라 변환된 한국어 표시 이름이 뜬다 (MU10)', () => {
+    renderWithState({}, <PrologueView />)
+    expect(screen.getByTestId('speaker-tag').textContent).toBe('박대박')
+  })
+
+  // 나레이션 장면(화자 없음)은 이름표를 그리지 않는다 — DialogueBox의 speaker=null 규약
+  // (design/speakers.ts 주석 "나레이션에 그대로 쓸 수 있다")을 실제로 쓰고 있는지 고정한다.
+  it('나레이션 장면으로 넘어가면 이름표가 사라진다', () => {
+    renderWithState({}, <PrologueView />)
+    fireEvent.click(screen.getByTestId('prologue-next')) // 1번째(화자 있음) → 2번째(나레이션)
+    expect(screen.queryByTestId('speaker-tag')).toBeNull()
+  })
+
+  it('마지막 장면까지 다음을 누르면 프롤로그가 사라지고 게임이 시작된다', () => {
+    renderWithState({}, <PrologueView />)
+    // 장면 개수를 이 테스트에 다시 하드코딩하지 않는다 — "prologue-next가 사라질 때까지"
+    // 반복한다(무한 루프 방지용 상한만 넉넉히 둔다).
+    for (let i = 0; i < 20 && screen.queryByTestId('prologue-next'); i++) {
+      fireEvent.click(screen.getByTestId('prologue-next'))
+    }
+    expect(screen.queryByTestId('prologue')).toBeNull()
+    expect(useGame.getState().prologueDone).toBe(true)
+  })
+
+  // MU13 — 전역 제약 "터치 타깃 44px 이상". 44는 계획서 요구값이지 구현 상수가 아니므로
+  // 테스트 안에 리터럴로 못박는다.
+  it('건너뛰기·다음 버튼의 터치 타깃이 44px 이상이다 (Global Constraints, MU13)', () => {
+    const MIN_TOUCH_TARGET_PX = 44
+    renderWithState({}, <PrologueView />)
+    expect(parseFloat(screen.getByTestId('prologue-skip').style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+    expect(parseFloat(screen.getByTestId('prologue-next').style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
   })
 })
 

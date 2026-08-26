@@ -425,7 +425,6 @@ ul { list-style: none; padding: 0; margin: 0; }
   min-height: 44px; padding: 12px 28px; border: 0; border-radius: 10px;
   background: var(--good); color: #fff; font-size: 15px; font-weight: 700;
 }
-.cut-text { white-space: pre-line; font-size: 15px; line-height: 1.7; max-width: 320px; color: var(--text); }
 .event-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 340px; }
 .event-body { white-space: pre-line; font-size: 14px; color: var(--muted); line-height: 1.6; }
 .titles { color: var(--gold); font-size: 13px; }
@@ -472,6 +471,32 @@ ul { list-style: none; padding: 0; margin: 0; }
   border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
   background: var(--panel);
 }
+
+/* ---------- 컷신 (overlays/CutsceneView.tsx, §4.3) ----------
+   "배경이 바뀌는 연출로 간다" — 승급/강등마다 오버레이 전체 배경을 다른 톤으로
+   물들인다. 톤 자체은 CutsceneView.tsx가 `data-tone`("up"/"down")으로 내려주고,
+   여기서는 그 값에 대응하는 그라디언트만 정의한다(--good/--danger, 기존 15색 재사용 —
+   새 색 토큰을 추가하지 않는다). */
+/* Fix Round 1(스크린샷 육안 검수) — 처음 값(top stop alpha .16)은 84%가 그대로
+   비쳐 보여, 밑에 깔린 홈 화면의 캐릭터 스테이지(같은 티어 이름 라벨)가 컷신
+   제목 위에 그대로 겹쳐 보였다(가독성 사고). .overlay 기본값(rgba(11,14,19,.96))과
+   같은 급의 불투명도를 양쪽 stop 모두에 유지하면서 톤 색만 섞는다. */
+.overlay.cutscene[data-tone="up"] {
+  background: linear-gradient(180deg, rgba(31, 84, 56, .96), rgba(11, 14, 19, .97) 60%);
+}
+.overlay.cutscene[data-tone="down"] {
+  background: linear-gradient(180deg, rgba(96, 40, 40, .96), rgba(11, 14, 19, .97) 60%);
+}
+.cutscene-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--text); }
+.cutscene-stage { display: flex; justify-content: center; }
+/* 애니메이션 값 자체는 CutsceneView.tsx가 인라인 style(animation)로 재생/생략을
+   결정한다(prefers-reduced-motion, Ruling 20 — ChoiceSheet.tsx와 같은 기법). 여기서는
+   그 값이 가리키는 키프레임만 정의한다. */
+@keyframes cutscene-crossfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 프롤로그 (overlays/PrologueView.tsx, §0) ---------- */
+.prologue-stage { width: 55%; max-width: 220px; }
+.prologue-stage-art { border-radius: 12px; }
 
 /* ---------- 대화창 (overlays/DialogueBox.tsx, §4.1) ---------- */
 .dialogue-box {
