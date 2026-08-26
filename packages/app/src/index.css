@@ -1,21 +1,5 @@
-:root {
-  color-scheme: dark;
-  --bg: #0b0e13;
-  --panel: #151a22;
-  --panel-2: #1a212b;
-  --border: #262e3a;
-  --text: #e9edf3;
-  --muted: #8892a0;
-  --accent: #4f8ff7;
-  --accent-soft: #1c2a40;
-  --gold: #e6b45a;
-  --bull: #f0616d;
-  --bear: #4f8ff7;
-  --danger: #e05252;
-  --danger-soft: #2a1518;
-  --good: #3fb950;
-  --rumor: #c893ff;
-}
+/* 색·간격·타이포·모션 토큰은 design/tokens.css가 정의한다(Task 9). */
+@import './design/tokens.css';
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
