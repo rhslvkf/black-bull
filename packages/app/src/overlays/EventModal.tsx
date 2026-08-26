@@ -118,7 +118,7 @@ export function EventModal({ events = DEFAULT_EVENTS }: EventModalProps = {}) {
 
           {npcId && (
             <div className="speaker-portrait" data-testid="speaker-portrait" data-art-id={`npc.${npcId}.normal`}>
-              <ArtSlot kind="portrait" id={`npc.${npcId}.normal`} />
+              <ArtSlot kind="portrait" id={`npc.${npcId}.normal`} className="speaker-portrait-art" />
             </div>
           )}
 

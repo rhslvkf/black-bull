@@ -240,7 +240,13 @@ describe('EventModal VN (Task 18)', () => {
     it('loadEvents()의 모든 이벤트가 화자/배경/시황 슬롯을 깨짐 없이 그린다', () => {
       const events = loadEvents()
       expect(events.length).toBeGreaterThan(0)
+      // Fix Round 1(Minor 1) — 리뷰 지적: `events.length`만 단언하면 루프 소스를
+      // `events.slice(0, 1)`처럼 조용히 줄여도(전수 검사가 1개만 돌아도) 통과해버린다.
+      // 실제로 순회한 횟수를 별도로 세어 `loadEvents().length`(하드코딩 아님 — 콘텐츠가
+      // 늘면 이 값도 함께 늘어난다)와 정확히 같은지 끝에서 단언한다.
+      let visited = 0
       for (const ev of events) {
+        visited++
         const s = currentState()
         useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
         const { unmount } = render(<EventModal />)
@@ -263,6 +269,47 @@ describe('EventModal VN (Task 18)', () => {
 
         unmount()
       }
+      expect(visited).toBe(events.length)
+    })
+  })
+
+  // Fix Round 1(Major) — 화자 초상이 배경 SVG의 지명 라벨(우하단)을 가리는 문제이 리뷰
+  // 스크린샷으로 확인됐다("거리"→"ㅣ리"로 잘림). jsdom은 실제 CSS 레이아웃을 계산하지
+  // 않으므로, index.css의 .speaker-portrait 좌표와 Backgrounds.tsx의 라벨 좌표를 소스
+  // 그대로 읽어(인라인 좌표를 계산으로 확인하라는 리뷰 지시) 겹침이 구조적으로 불가능한지
+  // 고정한다. 정확한 텍스트 폭은 잴 수 없으므로 "라벨은 오른쪽 절반에 있다"·"인물은
+  // 왼쪽 절반을 벗어나지 않는다"는 더 보수적인 불변식으로 겹침을 원천 차단한다.
+  describe('화자 초상이 배경 지명 라벨을 가리지 않는다 (Fix Round 1 Major)', () => {
+    const cssPath3 = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+    const css3 = readFileSync(cssPath3, 'utf-8')
+    const portraitRule = css3.match(/(?:^|\n)\.speaker-portrait\s*\{[^}]*\}/)?.[0] ?? ''
+
+    const bgSrcPath = join(dirname(fileURLToPath(import.meta.url)), '../art/parts/Backgrounds.tsx')
+    const bgSrc = readFileSync(bgSrcPath, 'utf-8')
+
+    it('배경 라벨은 뷰박스 오른쪽 절반에 있다 (전제 확인)', () => {
+      const viewBoxM = bgSrc.match(/viewBox="0 0 (\d+) (\d+)"/)
+      const labelM = bgSrc.match(/data-role="label" x="(\d+)"/)
+      expect(viewBoxM, 'Backgrounds.tsx의 viewBox를 못 찾았다').not.toBeNull()
+      expect(labelM, 'Backgrounds.tsx의 라벨 x 좌표를 못 찾았다').not.toBeNull()
+      const viewBoxWidth = Number(viewBoxM![1])
+      const labelX = Number(labelM![1])
+      const labelXPct = (labelX / viewBoxWidth) * 100
+      expect(labelXPct).toBeGreaterThan(50)
+    })
+
+    it('.speaker-portrait의 오른쪽 경계는 무대 왼쪽 절반을 벗어나지 않는다', () => {
+      expect(portraitRule).not.toBe('')
+      const leftM = portraitRule.match(/left:\s*([\d.]+)%/)
+      const widthM = portraitRule.match(/width:\s*([\d.]+)%/)
+      expect(leftM, `.speaker-portrait에 left(%)가 없다: "${portraitRule}"`).not.toBeNull()
+      expect(widthM, `.speaker-portrait에 width(%)가 없다: "${portraitRule}"`).not.toBeNull()
+      const left = Number(leftM![1])
+      const width = Number(widthM![1])
+      const rightEdgePct = left + width
+      // 라벨(오른쪽 절반, 실측 x=150/160≈93.75%) 쪽으로 침범할 여지를 아예 없앤다 —
+      // 정확한 텍스트 폭 대신 "50% 지점 자체를 넘지 않는다"는 더 강한 불변식을 쓴다.
+      expect(rightEdgePct).toBeLessThanOrEqual(50)
     })
   })
 })
