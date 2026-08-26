@@ -1,7 +1,7 @@
 import { afterEach } from 'vitest'
 import { act, render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import type { EventChoice, EventDef, GameState, Holding, PlayerState, Stats, Trackers } from '@bb/core'
+import { resolveChoice, type EventChoice, type EventDef, type GameState, type Holding, type PlayerState, type Stats, type Trackers } from '@bb/core'
 import { useGame, type Codex, type TabKey } from './store/store'
 import { HomeScreen } from './screens/HomeScreen'
 import { StockDetail } from './screens/StockDetail'
@@ -219,6 +219,79 @@ export function renderEvent(opts: RenderEventOptions): RenderResult {
     impact: opts.impact,
   }
   return renderWithState({ pendingChoices: [{ eventId: def.id }] }, <EventModal events={[def]} />)
+}
+
+/**
+ * Task 19 — `ChoiceSheet`(선택지 하단 시트) 테스트용 편의 헬퍼. 브리프가 쓰는 세 옵션
+ * (`text`·`pending`·`choiceCashDelta`)만 지원한다.
+ */
+export interface RenderEventWithChoicesOptions {
+  /** 대화창에 보일 본문. 기본값은 짧은 더미 문장. */
+  text?: string
+  /** 함께 대기시킬 합성 이벤트 개수(기본 1). 2 이상이면 서로 다른 이벤트를 순서대로
+   *  `pendingChoices`에 쌓는다 — "여러 선택지가 대기 중이면 순서대로 해소된다"(§4.2)
+   *  검증용. 첫 이벤트에만 `text`·`choiceCashDelta`가 반영된다 — 실제로 클릭할 대상은
+   *  항상 `pendingChoices[0]`이므로 나머지는 이 헬퍼를 쓰는 테스트의 관심사가 아니다. */
+  pending?: number
+  /** 첫 이벤트의 choice-0(`cash` 효과) delta(원). 지정하지 않으면 choice-0은 효과가
+   *  없다. choice-1은 항상 다른 고정값(-1원)의 `cash` 효과를 갖는다 — 두 선택지의
+   *  효과를 서로 다르게 둬야, 선택지 인덱스가 뒤집히는 버그(MU7 — choice-0을 눌렀는데
+   *  choice-1의 효과가 적용됨)를 자산 변화량 비교만으로도 잡을 수 있다. */
+  choiceCashDelta?: number
+}
+
+const DEFAULT_CHOICE_EVENT_TEXT = { title: '선택 테스트 이벤트', body: '테스트 본문' }
+
+/**
+ * `EventModal`을 선택지 있는 이벤트가 대기 중인 상태로 렌더한다. `renderWithState`를
+ * 그대로 재사용한다(Ruling 19 — 헬퍼마다 각자 상태를 만들면 사본이 갈린다). `renderEvent`
+ * (위)는 이벤트를 한 번에 하나만 주입하므로 `pending`이 2 이상인 경우를 표현할 수 없어,
+ * 이 헬퍼는 `renderWithState`를 직접 거친다 — 그래도 상태 조립 규칙(`pendingChoices` +
+ * `EventModal`의 `events` prop 조합)은 `renderEvent`와 동일하다.
+ *
+ * 실제 콘텐츠(§4.2, Task 18 리뷰가 확인한 사실)에는 선택지가 1개인 이벤트가 없다 —
+ * 선택지가 있으면 항상 2개다. 그래서 여기서 만드는 합성 이벤트도 항상 choices 2개를
+ * 갖는다.
+ */
+export function renderEventWithChoices(opts: RenderEventWithChoicesOptions = {}): RenderResult {
+  const { text = DEFAULT_CHOICE_EVENT_TEXT.body, pending = 1, choiceCashDelta } = opts
+
+  const makeChoices = (cashDelta: number | undefined): EventChoice[] => [
+    { label: '선택 A', effects: cashDelta === undefined ? [] : [{ type: 'cash', delta: cashDelta }] },
+    { label: '선택 B', effects: [{ type: 'cash', delta: -1 }] },
+  ]
+
+  const defs: EventDef[] = Array.from({ length: Math.max(1, pending) }, (_, i) => ({
+    id: i === 0 ? 'choice-test-0' : `choice-test-${i}`,
+    category: 'news',
+    weight: 1,
+    text: { title: DEFAULT_CHOICE_EVENT_TEXT.title, body: i === 0 ? text : `본문 ${i}` },
+    choices: i === 0 ? makeChoices(choiceCashDelta) : makeChoices(undefined),
+  }))
+
+  const result = renderWithState(
+    { pendingChoices: defs.map(d => ({ eventId: d.id })) },
+    <EventModal events={defs} />,
+  )
+
+  // store.ts의 choose()는 모듈 스코프에 캐시된 실제 loadEvents() 카탈로그만
+  // resolveChoice의 pool로 쓴다(`const events = loadEvents()`) — EventModal의 `events`
+  // prop(렌더링 전용 주입 지점)과는 완전히 별개다. 그래서 이 헬퍼가 만든 합성 이벤트로
+  // "선택 효과가 실제로 적용된다"를 검증하려면 choose() 자체가 그 합성 pool을 봐야
+  // 한다. `renderEvent`(Task 18)의 "실제 카탈로그를 몽키패치하거나 vi.mock으로
+  // 가로채지 않는다"는 렌더링(제목·화자)만 확인하면 충분했던 그 헬퍼의 범위 얘기고,
+  // 이 헬퍼는 브리프가 요구하는 효과 적용 자체를 검증해야 한다 — 그래서 모듈
+  // 몽키패치(vi.mock) 대신 이 렌더 세션의 스토어 액션 하나만(zustand state의 함수)
+  // 합성 pool을 쓰도록 교체한다. 다른 테스트 파일·다른 렌더에는 전혀 영향이 없다.
+  useGame.setState({
+    choose(eventId, idx) {
+      const s = useGame.getState().state
+      if (!s) return
+      useGame.setState({ state: resolveChoice(s, eventId, idx, defs) })
+    },
+  })
+
+  return result
 }
 
 /** 지금 스토어가 들고 있는 게임 상태. `renderWithState` 호출 뒤 core 함수(예: `actionPoints`)를

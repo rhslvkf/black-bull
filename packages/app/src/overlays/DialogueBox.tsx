@@ -29,6 +29,15 @@ export interface DialogueBoxProps {
   text: string
   /** 전문이 다 보인 뒤 탭하면 호출된다 — 다음 줄로 넘어가라는 신호. */
   onAdvance?: () => void
+  /**
+   * 전문이 다 드러나는 순간(자연 완료 또는 탭-투-스킵 둘 다) 호출된다. Task 19 추가 —
+   * `onAdvance`와 달리 "완료 뒤 한 번 더 탭"을 요구하지 않는다. §4.2 선택지 시트는
+   * "대사를 다 읽었는가" 하나만으로 열려야 한다(브리프 `renderEventWithChoices({text:'짧다'})`가
+   * 단 한 번의 탭만으로 시트가 뜨길 기대한다 — 그 탭은 스킵일 뿐, onAdvance 경로가 아니다).
+   * `done`이 true가 될 때마다 호출되므로(자연 완료·스킵·reduced-motion 즉시완료 전부 포함)
+   * 호출하는 쪽에서 멱등하게 다뤄야 한다.
+   */
+  onDone?: () => void
 }
 
 /**
@@ -45,7 +54,7 @@ export interface DialogueBoxProps {
  * 부르지 않는다 — 한 번의 탭으로 대사를 통째로 건너뛰는 사고를 막는다. 전문이 이미
  * 보인 상태에서 탭해야 비로소 onAdvance가 불린다.
  */
-export function DialogueBox({ speaker, text, onAdvance }: DialogueBoxProps) {
+export function DialogueBox({ speaker, text, onAdvance, onDone }: DialogueBoxProps) {
   const { shown, done, skip } = useTypewriter(text)
   const [logOpen, setLogOpen] = useState(false)
   const [log, setLog] = useState<DialogueLine[]>([])
@@ -59,6 +68,15 @@ export function DialogueBox({ speaker, text, onAdvance }: DialogueBoxProps) {
     }
     prevRef.current = { speaker, text }
   }, [speaker, text])
+
+  // Task 19 — onDone은 done이 "바뀌어 true가 됐을 때"만이 아니라 마운트 시점에 이미
+  // true(reduced-motion, 빈 문자열 등)여도 불려야 한다 — 의존 배열이 [done] 하나뿐이라
+  // effect는 매 렌더마다가 아니라 done 값이 실제로 바뀔 때만(마운트 최초 1회 포함)
+  // 재실행된다.
+  useEffect(() => {
+    if (done) onDone?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done])
 
   function handleAdvance(): void {
     if (!done) {

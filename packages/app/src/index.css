@@ -428,11 +428,6 @@ ul { list-style: none; padding: 0; margin: 0; }
 .cut-text { white-space: pre-line; font-size: 15px; line-height: 1.7; max-width: 320px; color: var(--text); }
 .event-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 340px; }
 .event-body { white-space: pre-line; font-size: 14px; color: var(--muted); line-height: 1.6; }
-.choices { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-.choices button {
-  min-height: 44px; padding: 11px; border-radius: 9px; border: 1px solid var(--border);
-  background: var(--panel-2); color: var(--text); font-size: 14px;
-}
 .titles { color: var(--gold); font-size: 13px; }
 .ending-desc { color: var(--muted); font-size: 13px; max-width: 320px; }
 .final-assets { font-size: 24px; font-weight: 700; color: var(--text); }
@@ -507,6 +502,31 @@ ul { list-style: none; padding: 0; margin: 0; }
 .dialogue-log-entry:last-child { border-bottom: 0; padding-bottom: 0; }
 .dialogue-log-speaker { font-size: 11.5px; font-weight: 700; color: var(--accent); }
 .dialogue-log-text { font-size: 12.5px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+
+/* ---------- 선택지 하단 시트 (overlays/ChoiceSheet.tsx, §4.2) ----------
+   "결정하는 순간을 대사와 분리"하기 위해 대화창과 별개로 화면 하단에 붙는다. .overlay
+   (위)는 position:fixed만 쓰고 transform 등으로 새 containing block을 만들지 않으므로,
+   자손의 position:fixed는 그대로 실제 뷰포트 바닥에 붙는다 — 엄지 도달 범위(전역 제약)에
+   선택 버튼을 두는 것이 이 태스크의 목적이다. */
+.choice-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; margin: 0 auto; width: 100%;
+  max-width: 480px; box-sizing: border-box; z-index: 21;
+  background: var(--panel); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.choice-sheet-title { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.choice-sheet-list { display: flex; flex-direction: column; gap: 8px; }
+.choice-sheet-list button {
+  min-height: 44px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); font-size: 14.5px; font-weight: 600;
+  text-align: left; white-space: normal; word-break: keep-all;
+}
+.choice-sheet-list button:disabled { opacity: .6; }
+/* 애니메이션 자체는 ChoiceSheet.tsx가 인라인 style(animation)로 재생/생략을 결정한다
+   (prefers-reduced-motion, jsdom이 외부 CSS를 읽지 않는다는 Ruling 20과 같은 이유) —
+   여기서는 그 값이 가리키는 키프레임만 정의한다. */
+@keyframes choice-sheet-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 /* ---------- 아트 슬롯 (art/slots.tsx) ---------- */
 /* 슬롯 컨테이너는 aspect-ratio로 종류별 비율을 고정하고, 안의 svg 폴백/<img> 둘 다

@@ -44,56 +44,67 @@ describe('EventModal', () => {
     const { container } = render(<EventModal />)
     expect(container.firstChild).toBeNull()
   })
+  // Task 19 — 선택지가 하단 시트로 옮겨간 뒤로는 대사를 다 읽어야만(§4.2) choice-*
+  // 버튼이 뜬다. 아래 EventModal 기본 스위트는 "선택 자체가 대기열을 정확히 비우는지"
+  // 만 보는 테스트라 대화창 타이핑 자체는 관심사가 아니므로, reduced-motion으로 매
+  // 이벤트가 마운트 즉시 다 읽힌 것으로 만들어 시트를 곧장 연다 — MU9(하단 시트의
+  // reduced-motion 존중) 자체의 고정은 별도로 ChoiceSheet.test.tsx가 맡는다.
+  // 정규식도 `choice-sheet`(시트 컨테이너 자신의 testid)까지 잘못 걸리지 않도록
+  // `\d+$`로 좁힌다 — choice-N 버튼만 골라야 한다.
   it('선택지를 렌더하고 고르면 대기열이 빈다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
     const ev = loadEvents().find(e => (e.choices?.length ?? 0) >= 2)!
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
     render(<EventModal />)
     expect(screen.getByText(ev.text.title)).toBeDefined()
-    expect(screen.getAllByTestId(/^choice-/)).toHaveLength(ev.choices!.length)
-    fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
+    expect(screen.getByTestId('choice-sheet')).toBeDefined()
+    expect(screen.getAllByTestId(/^choice-\d+$/)).toHaveLength(ev.choices!.length)
+    fireEvent.click(screen.getAllByTestId(/^choice-\d+$/)[0]!)
     expect(useGame.getState().state!.pendingChoices).toHaveLength(0)
   })
   it('여러 선택지가 대기 중이면 순서대로 전부 해소된다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
     const evs = loadEvents().filter(e => (e.choices?.length ?? 0) >= 2).slice(0, 2)
     expect(evs).toHaveLength(2)
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: evs.map(e => ({ eventId: e.id })) } })
     render(<EventModal />)
     expect(screen.getByText(evs[0]!.text.title)).toBeDefined()
-    fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
+    fireEvent.click(screen.getAllByTestId(/^choice-\d+$/)[0]!)
     expect(useGame.getState().state!.pendingChoices).toHaveLength(1)
     expect(useGame.getState().state!.pendingChoices[0]!.eventId).toBe(evs[1]!.id)
     expect(screen.getByText(evs[1]!.text.title)).toBeDefined()
-    fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
+    fireEvent.click(screen.getAllByTestId(/^choice-\d+$/)[0]!)
     expect(useGame.getState().state!.pendingChoices).toHaveLength(0)
   })
   it('선택지를 고르면 홈 화면의 한 주 넘기기가 다시 활성화된다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
     const ev = loadEvents().find(e => (e.choices?.length ?? 0) >= 2)!
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
     render(<><HomeScreen /><EventModal /></>)
     fireEvent.click(screen.getByTestId('slot-card-hodl'))
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getAllByTestId(/^choice-/)[0]!)
+    fireEvent.click(screen.getAllByTestId(/^choice-\d+$/)[0]!)
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)
   })
-  it('선택지가 없는 이벤트는 "확인" 버튼 하나만 뜨고, 누르면 대기열이 빈다 (리뷰 M-4)', () => {
-    // drawEvents(engine.ts)는 choices가 있는 이벤트만 pendingChoices에 넣으므로 정상
-    // 플레이에서는 선택지 없는 이벤트가 여기까지 오지 않는다. 그래도 EventModal의
-    // `(def.choices ?? [{ label: '확인', effects: [] }])` 폴백은 방어 코드로 존재하고,
-    // 실제 콘텐츠 데이터에 choices 필드가 없는 이벤트가 있으므로(p_alone_dinner 등)
-    // 그 데이터로 폴백 경로를 직접 고정한다.
+  // Task 19 재검토 — 이전(리뷰 M-4)에는 선택지가 없는 이벤트에 EventModal이 방어적으로
+  // "확인" 버튼 하나짜리 폴백 목록을 그렸다. 이제 그 폴백을 없앴다: 선택지가 없는
+  // 이벤트는 애초에 ChoiceSheet를 전혀 렌더하지 않고, 대화창 탭 자체가 유일한 진행
+  // 수단이다(Task 18이 넘긴 분기 — "선택지 없음 vs 있음" 둘로 충분하다는 재검토 결론,
+  // EventModal.tsx의 handleDialogueAdvance 주석 참고). 그 새 계약을 여기서 고정한다.
+  it('선택지가 없는 이벤트는 시트가 전혀 뜨지 않고, 대화창 탭이 대기열을 비운다 (Task 19 재검토, 구 리뷰 M-4)', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
     const ev = loadEvents().find(e => !e.choices)!
     expect(ev).toBeDefined()
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
     render(<EventModal />)
     expect(screen.getByText(ev.text.title)).toBeDefined()
-    const buttons = screen.getAllByTestId(/^choice-/)
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0]!.textContent).toBe('확인')
-    fireEvent.click(buttons[0]!)
+    expect(screen.queryByTestId('choice-sheet')).toBeNull()
+    expect(screen.queryAllByTestId(/^choice-\d+$/)).toHaveLength(0)
+    fireEvent.click(screen.getByTestId('dialogue-box'))
     expect(useGame.getState().state!.pendingChoices).toHaveLength(0)
   })
 })
@@ -181,14 +192,30 @@ describe('EventModal VN (Task 18)', () => {
   // MU9-보강 — 실제 선택지가 있는 이벤트는 대화창 탭이 아무 선택도 대신 확정하면 안
   // 된다(사용자가 아래 선택지에서 직접 골라야 한다). 5번 확인 항목 — "선택지가 떠
   // 있을 때 대화창 탭이 무슨 일을 하는지": 스킵/포커스 이동 외에는 아무 일도 안
-  // 한다(대기열 그대로, 선택지도 그대로 남는다) — Task 19가 하단 시트로 분리하기
-  // 전까지는 안전하다.
+  // 한다(대기열 그대로, 선택지도 그대로 남는다) — Task 19가 실제로 하단 시트로
+  // 분리했고, 이 테스트가 그 계약을 고정한다.
   it('선택지가 있는 이벤트는 대화창을 탭해도 자동으로 닫히지 않는다', () => {
     matchMediaMock('(prefers-reduced-motion: reduce)', true)
     renderEvent({ id: 'ev_multi', choices: [{ label: 'A', effects: [] }, { label: 'B', effects: [] }] })
     fireEvent.click(screen.getByTestId('dialogue-box'))
     expect(currentState().pendingChoices).toHaveLength(1)
-    expect(screen.getAllByTestId(/^choice-/)).toHaveLength(2)
+    expect(screen.getAllByTestId(/^choice-\d+$/)).toHaveLength(2)
+  })
+
+  // MU11(브리프) — Task 17이 넘긴 방어("선택지 대기 중 대화창 탭 비활성화"). reduced-motion
+  // 이라 마운트 즉시 대사가 끝나 시트가 이미 열려 있는 상태에서, 대화창을 한 번 더
+  // 탭해도(=시트가 열려 있는 동안의 탭) 대기열도 시트도 그대로여야 한다 — 탭이 실수로
+  // choose를 대신 확정하면 사용자가 고른 적 없는 선택이 적용되는 최악의 버그다.
+  it('시트가 열려 있는 동안 대화창을 또 탭해도 대기열이 바뀌지 않는다 (MU11)', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    renderEvent({ id: 'ev_multi_open', choices: [{ label: 'A', effects: [{ type: 'cash', delta: -1 }] }, { label: 'B', effects: [] }] })
+    expect(screen.getByTestId('choice-sheet')).toBeDefined() // 전제 확인 — 이미 열려 있다.
+    const before = currentState().player.cash
+    fireEvent.click(screen.getByTestId('dialogue-box'))
+    fireEvent.click(screen.getByTestId('dialogue-box'))
+    expect(currentState().pendingChoices).toHaveLength(1)
+    expect(currentState().player.cash).toBe(before)
+    expect(screen.getByTestId('choice-sheet')).toBeDefined()
   })
 
   // MU10 — 타이핑이 끝나기 전의 첫 탭은 스킵만 해야 한다. 곧장 이벤트가 닫히면
@@ -215,19 +242,21 @@ describe('EventModal VN (Task 18)', () => {
 
   // MU12 — 전역 제약 "터치 타깃 44px 이상". 44는 계획서 요구값이지 구현 상수가 아니므로
   // (DialogueBox.test.tsx의 로그 토글 검증과 같은 방식으로) 테스트 안에 리터럴로 못박는다.
-  // 선택지 버튼은 index.css의 .choices button 규칙(외부 스타일시트)에서 오므로, jsdom이
-  // 실제로 계산하지 않는 레이아웃 대신 오버레이 max-width 테스트(파일 상단)와 같은 방식
-  // 으로 소스를 직접 파싱한다.
+  // Task 19부터 선택지 버튼은 index.css의 .choice-sheet-list button 규칙(외부
+  // 스타일시트)에서 온다 — jsdom이 실제로 계산하지 않는 레이아웃 대신 오버레이
+  // max-width 테스트(파일 상단)와 같은 방식으로 소스를 직접 파싱한다. (ChoiceSheet.tsx
+  // 자신도 같은 값을 인라인 style로 내려 컴포넌트 테스트에서 직접 실측한다 —
+  // ChoiceSheet.test.tsx. 이 CSS 파싱은 그 값을 스타일시트에서도 이중으로 고정한다.)
   describe('선택지 버튼의 터치 타깃이 44px 이상이다 (Global Constraints, MU12)', () => {
     const cssPath2 = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
     const css2 = readFileSync(cssPath2, 'utf-8')
-    const choicesButtonRule = css2.match(/(?:^|\n)\.choices button\s*\{[^}]*\}/)?.[0] ?? ''
+    const choicesButtonRule = css2.match(/(?:^|\n)\.choice-sheet-list button\s*\{[^}]*\}/)?.[0] ?? ''
 
-    it('.choices button 규칙의 min-height가 44px 이상이다', () => {
+    it('.choice-sheet-list button 규칙의 min-height가 44px 이상이다', () => {
       const MIN_TOUCH_TARGET_PX = 44
       expect(choicesButtonRule).not.toBe('')
       const m = choicesButtonRule.match(/min-height:\s*([\d.]+)px/)
-      expect(m, `.choices button 규칙에 min-height가 없다: "${choicesButtonRule}"`).not.toBeNull()
+      expect(m, `.choice-sheet-list button 규칙에 min-height가 없다: "${choicesButtonRule}"`).not.toBeNull()
       expect(parseFloat(m![1]!)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
     })
   })
@@ -287,6 +316,54 @@ describe('EventModal VN (Task 18)', () => {
       expect(visitedIds.length).toBeGreaterThan(0)
       expect(visitedIds.length).toBe(events.length)
       // 내용도 실제로 맞는 id들인지 확인한다(순서 무관, 중복은 length 검사가 이미 배제).
+      expect(new Set(visitedIds)).toEqual(expectedIds)
+    })
+  })
+
+  // Task 19 전수 검사 — loadEvents()의 선택지 있는 이벤트(26종) 전부를 대기시켜 시트가
+  // 정상적으로 열리고, 버튼 개수·라벨이 실제 choices 배열과 정확히 같은 순서로
+  // 대응하는지 확인한다. Task 18과 같은 방식(visitedIds 배열을 loadEvents()에서
+  // 유도한 전체 목록과 길이·내용으로 대조)을 따른다 — 카운터 하나만 세면 결합
+  // 공격(패딩+slice)에 뚫린다는 게 이 리포의 반복 결함이었다.
+  describe('선택지 하단 시트 전수 검사 (Task 19)', () => {
+    it('선택지가 있는 모든 이벤트가 시트를 열고, 라벨이 인덱스 순서대로 정확히 대응하며, 각 인덱스를 골라도 대기열이 빈다', () => {
+      matchMediaMock('(prefers-reduced-motion: reduce)', true) // 탭 없이 즉시 done → 매 이벤트 시트가 바로 뜨도록
+      const eventsWithChoices = loadEvents().filter(e => (e.choices?.length ?? 0) > 0)
+      expect(eventsWithChoices.length).toBeGreaterThan(0)
+      const expectedIds = new Set(eventsWithChoices.map(e => e.id))
+      const visitedIds: string[] = []
+
+      for (const ev of eventsWithChoices) {
+        visitedIds.push(ev.id)
+        const choices = ev.choices!
+
+        // 라벨·개수가 실제 choices와 인덱스별로 정확히 대응하는지(MU7·MU8 방어).
+        {
+          const s = useGame.getState().state!
+          useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
+          const { unmount } = render(<EventModal />)
+          expect(screen.getByTestId('choice-sheet'), `${ev.id}: 시트가 안 열렸다`).toBeDefined()
+          const buttons = screen.getAllByTestId(/^choice-\d+$/)
+          expect(buttons.length, `${ev.id}: 선택지 개수가 안 맞는다`).toBe(choices.length)
+          buttons.forEach((btn, i) => {
+            expect(btn.textContent, `${ev.id}: choice-${i} 라벨이 choices[${i}]와 다르다`).toBe(choices[i]!.label)
+          })
+          unmount()
+        }
+
+        // 각 인덱스를 실제로 골라도 대기열이 정확히 비는지(마지막 인덱스까지 — 경계값도 확인).
+        for (const idx of [0, choices.length - 1]) {
+          const s = useGame.getState().state!
+          useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
+          const { unmount } = render(<EventModal />)
+          fireEvent.click(screen.getByTestId(`choice-${idx}`))
+          expect(useGame.getState().state!.pendingChoices, `${ev.id}: choice-${idx} 선택 후 대기열이 안 비었다`).toHaveLength(0)
+          unmount()
+        }
+      }
+
+      expect(visitedIds.length).toBeGreaterThan(0)
+      expect(visitedIds.length).toBe(eventsWithChoices.length)
       expect(new Set(visitedIds)).toEqual(expectedIds)
     })
   })

@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { loadEvents, SECTORS, type EventDef, type StockDef, type Sector } from '@bb/core'
 import { useGame } from '../store/store'
 import { ArtSlot } from '../art/slots'
 import { NPCS, type ArtKey } from '../art/keys'
 import { speakerDisplayName } from '../design/speakers'
 import { DialogueBox } from './DialogueBox'
+import { ChoiceSheet } from './ChoiceSheet'
 
 const NPC_SET: ReadonlySet<string> = new Set(NPCS)
 /** 이벤트 데이터의 speaker는 @bb/core에서 평범한 string으로 온다(타입으로 NPCS와 좁혀지지
@@ -81,11 +83,21 @@ export function EventModal({ events = DEFAULT_EVENTS }: EventModalProps = {}) {
   const s = useGame(st => st.state)
   const choose = useGame(st => st.choose)
   const pending = s?.pendingChoices[0]
-  if (!s || !pending) return null
+  const def = pending ? events.find(e => e.id === pending.eventId) : undefined
 
-  const def = events.find(e => e.id === pending.eventId)
-  if (!def) return null
+  /**
+   * "대사를 다 읽었다"고 확인된 가장 최근 이벤트 id(Task 19). boolean 하나 대신
+   * 이벤트 id 자체를 들고 있으면, 다음 pending 이벤트로 넘어갈 때 별도의 "리셋"
+   * effect가 필요 없다 — `doneEventId === def.id` 비교 자체가 이벤트마다 자동으로
+   * "아직 안 읽음"으로 돌아간다. (리셋 effect를 따로 뒀다면 그 effect와 DialogueBox의
+   * onDone effect가 같은 렌더에서 서로 다른 순서로 doneEventId를 건드릴 수 있어
+   * 경합의 여지가 있었다 — id 비교로 파생시키면 그 경합 자체가 성립하지 않는다.)
+   */
+  const [doneEventId, setDoneEventId] = useState<string | null>(null)
 
+  if (!s || !pending || !def) return null
+
+  const dialogueDone = doneEventId === def.id
   const rawSpeaker = def.text.speaker
   const hasSpeaker = typeof rawSpeaker === 'string' && rawSpeaker.length > 0
   const npcId = hasSpeaker && isNpcName(rawSpeaker) ? rawSpeaker : null
@@ -94,16 +106,28 @@ export function EventModal({ events = DEFAULT_EVENTS }: EventModalProps = {}) {
   // 반드시 거친다. id든 이름이든 받아 멱등하게 처리하고, 알 수 없는 값은 '???'다.
   const dialogueSpeaker = hasSpeaker ? speakerDisplayName(rawSpeaker) : null
   const bgKey = CATEGORY_BG[def.category]
-  const choices = def.choices ?? [{ label: '확인', effects: [] }]
+  // 실제 콘텐츠는 선택지가 아예 없거나(뉴스 속보류) 항상 2개다(Task 18 리뷰가 확인한
+  // 사실 — "선택지가 1개인 이벤트는 데이터에 존재하지 않는다", core content.test.ts가
+  // ≥2를 강제한다). 그래서 이 분기는 "선택지 없음" vs "있음(항상 2개 이상)" 둘로 충분하다.
+  const hasChoices = (def.choices?.length ?? 0) > 0
 
-  /** 대사를 끝까지 읽은 뒤 대화창을 탭했을 때. 이 이벤트에 실제 선택지가 없으면
-   *  (원래 "확인" 버튼 하나만 있던 자리) 탭 자체가 그 유일한 선택을 확정한다 —
-   *  그렇지 않으면 대화창만 있고 아무도 닫을 방법이 없어 진행이 멈춘다. 실제
-   *  선택지가 있는 이벤트는 사용자가 아래 선택지에서 직접 골라야 하므로 여기서는
-   *  아무 일도 하지 않는다(하단 시트로 분리하는 것은 Task 19 — 지금은 선택지가
-   *  대화창과 함께 이미 보이므로 무시해도 안전하다). */
+  /**
+   * 대사를 끝까지 읽은 뒤 대화창을 탭했을 때(Task 19 재검토 — Task 17 리뷰·Task 18
+   * 구현자 보고가 이 태스크로 넘긴 분기 로직).
+   *
+   * - 실제 선택지가 있는 이벤트(`hasChoices`)는 대화창 탭이 **절대** 아무 일도 하지
+   *   않는다. 대사가 아직 타이핑 중이든(스킵만 하고 끝), 다 읽었지만 시트가 아직
+   *   안 열렸든, 시트가 이미 열려 있든(MU11 — 시트가 열려 있는 동안의 탭도 포함)
+   *   전부 no-op이다. 결정은 반드시 아래 ChoiceSheet에서 사용자가 직접 골라야
+   *   한다(§4.2 "결정하는 순간을 대사와 분리"). 이 함수가 hasChoices를 다시 확인하지
+   *   않고 매 호출마다 조건을 그대로 물어보는 이유는, 시트가 열렸다고 해서 이 콜백의
+   *   계약이 달라지지 않는다는 것을 코드로도 드러내기 위해서다.
+   * - 선택지가 아예 없는 이벤트는 탭 자체가 그 유일한 진행 수단이다 — 그렇지 않으면
+   *   대화창만 뜬 채 아무도 닫을 방법이 없어 진행이 멈춘다(Task 18이 겪은 문제).
+   *   이 경로는 시트를 전혀 쓰지 않는다.
+   */
   const handleDialogueAdvance = (): void => {
-    if (!def.choices) choose(def.id, 0)
+    if (!hasChoices) choose(def.id, 0)
   }
 
   return (
@@ -129,13 +153,22 @@ export function EventModal({ events = DEFAULT_EVENTS }: EventModalProps = {}) {
           )}
         </div>
 
-        <DialogueBox key={def.id} speaker={dialogueSpeaker} text={def.text.body} onAdvance={handleDialogueAdvance} />
+        <DialogueBox
+          key={def.id}
+          speaker={dialogueSpeaker}
+          text={def.text.body}
+          onAdvance={handleDialogueAdvance}
+          onDone={() => setDoneEventId(def.id)}
+        />
 
-        <div className="choices">
-          {choices.map((c, i) => (
-            <button key={i} data-testid={`choice-${i}`} onClick={() => choose(def.id, i)}>{c.label}</button>
-          ))}
-        </div>
+        {def.choices && def.choices.length > 0 && (
+          <ChoiceSheet
+            eventId={def.id}
+            choices={def.choices}
+            open={dialogueDone}
+            onChoose={i => choose(def.id, i)}
+          />
+        )}
       </div>
     </div>
   )

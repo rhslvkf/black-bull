@@ -73,6 +73,40 @@ describe('DialogueBox', () => {
   })
 })
 
+// Task 19 — onDone은 "대사를 다 읽었는가" 하나만으로 선택지 시트를 열어야 하는
+// ChoiceSheet의 유일한 신호다. onAdvance(탭-이후-탭)와 달리 완료 자체가 신호이므로,
+// 그 계약을 onAdvance와 분리해 직접 고정한다.
+describe('onDone (Task 19 — 선택지 시트 오픈 신호)', () => {
+  it('타이핑 도중에는 onDone이 불리지 않는다', () => {
+    const onDone = vi.fn()
+    const longText = '형님, 이번 건은 진짜 확실합니다. 제가 아는 라인에서 직접 나온 정보라니까요.'
+    render(<DialogueBox speaker="김실장" text={longText} onDone={onDone} />)
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it('탭 한 번으로 스킵되어 전문이 다 보이면 그 즉시(추가 탭 없이) onDone이 불린다', () => {
+    const onDone = vi.fn()
+    render(<DialogueBox speaker={null} text="짧다" onDone={onDone} />)
+    fireEvent.click(screen.getByTestId('dialogue-box')) // 스킵 한 번뿐 — onAdvance 경로가 아니다
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('reduced-motion이면 탭 없이 마운트만으로도 onDone이 불린다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    const onDone = vi.fn()
+    render(<DialogueBox speaker={null} text="바로 다 보인다" onDone={onDone} />)
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('전문이 이미 보인 뒤 다시 탭해도(=onAdvance 경로) onDone이 중복 호출되지 않는다', () => {
+    const onDone = vi.fn()
+    render(<DialogueBox speaker={null} text="짧다" onDone={onDone} />)
+    fireEvent.click(screen.getByTestId('dialogue-box')) // 스킵 → done: false→true
+    fireEvent.click(screen.getByTestId('dialogue-box')) // 다음(onAdvance) — done은 계속 true
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+})
+
 // MU8 대비 — VN에서 흔한 버그: 한 번의 탭으로 스킵이 아니라 곧장 다음 줄로 넘어가버리면
 // 플레이어가 대사를 통째로 놓친다. 타이핑 "도중"의 탭은 절대 onAdvance를 부르면 안 된다.
 describe('타이핑 도중 탭은 스킵만 한다 (MU8)', () => {
