@@ -164,6 +164,21 @@ describe('playCard', () => {
  * cards.json에서 cost를 가진 카드는 '주식 스터디'(cost.money 30,000)뿐이라,
  * cost.condition 경로는 데이터가 없어 여기서 관측할 수단이 없다(보고서 참고).
  */
+/**
+ * 현금이 오가는 카드 전부 — 비용(cost.money)이든 효과(cash)든.
+ * Fix Round 1 Major 1: 예전 정수성 단언은 `study`(30,000원) 하나만 돌렸는데, 30,000은
+ * 여섯 배율 전부에서 곱이 정확히 정수라 `Math.round`를 통째로 지워도 그린이었다.
+ */
+const CASH_CARDS = loadCards().filter(c =>
+  (c.cost?.money ?? 0) > 0 || c.effects.some(e => e.type === 'cash'))
+
+/**
+ * 정수성을 잴 때 쓸 **최소 잔고**. 잔고가 크면 부동소수 오차가 덧셈에서 반올림돼
+ * 사라진다(`10_000_000 + 125999.99999999999 === 10126000`) — 오차가 살아남는 저잔고에서
+ * 재야 정수화가 실제로 고정된다. 비용이 있는 카드는 그 비용만큼은 있어야 잠기지 않는다.
+ */
+const minCashFor = (c: ActionCardDef): number => c.cost?.money ?? 0
+
 describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
   const paid = loadCards().find(c => (c.cost?.money ?? 0) > 0)!
   const rich = () => makeState({ player: { cash: 10_000_000 } })
@@ -191,11 +206,30 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
     }
   })
 
-  it('배율을 곱한 뒤에도 현금은 정수 KRW다', () => {
-    for (const g of GRADES) {
-      const after = playCard(rich(), paid.id, g)
-      expect(Number.isInteger(after.player.cash), `등급 ${g}`).toBe(true)
+  /**
+   * Fix Round 1 Major 1 — 예전에는 이 단언이 `study`(30,000원) 하나만 돌렸다.
+   * 30,000은 여섯 배율 **전부**에서 부동소수 결과가 정확히 정수라, `Math.round`를 통째로
+   * 지워도 433개가 그대로 그린이었다(리뷰어 실측). 실제 위반 사례는 야근(180,000)이다:
+   * `180000 * 0.7 === 125999.99999999999`, `180000 * 2.2 === 396000.00000000006`.
+   * 그래서 현금이 오가는 카드를 **데이터에서 전수로** 뽑아 여섯 등급 전부를 돌린다 —
+   * 새 카드가 추가돼도 자동으로 덮인다.
+   */
+  it('현금이 오가는 모든 카드 × 모든 등급에서 현금이 정수 KRW다 (데이터 전수)', () => {
+    for (const c of CASH_CARDS) {
+      for (const g of GRADES) {
+        const after = playCard(makeState({ player: { cash: minCashFor(c) } }), c.id, g)
+        expect(Number.isInteger(after.player.cash), `${c.name} / 등급 ${g}: ${after.player.cash}`).toBe(true)
+      }
     }
+  })
+
+  it('야근의 D·A등급은 반올림이 없으면 실제로 소수점이 남는다 (위 테스트가 겨냥하는 지점)', () => {
+    // 위 테스트가 무엇을 잡는지 데이터로 못박아 둔다 — 이 곱셈이 정수가 되어버리면
+    // (예: 야근 금액이 바뀌면) 위 테스트는 통과해도 아무것도 고정하지 못하게 된다.
+    const overtime = loadCards().find(c => c.id === 'overtime')!
+    const cash = overtime.effects.find(e => e.type === 'cash')!
+    expect(cash.type === 'cash' && Number.isInteger(cash.delta * gradeMul('D'))).toBe(false)
+    expect(cash.type === 'cash' && Number.isInteger(cash.delta * gradeMul('A'))).toBe(false)
   })
 })
 

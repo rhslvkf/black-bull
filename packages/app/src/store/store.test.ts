@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGame, SAVE_KEY, SAVE_VERSION, CODEX_KEY } from './store'
 import { nextTurnWith } from '../testkit'
+import { advanceTurn, GRADES, type CardGrade } from '@bb/core'
 import { BALANCE } from '@bb/core'
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset() })
@@ -96,6 +97,45 @@ describe('store', () => {
     expect(codex.runs).toBe(1)
     expect(codex.bestAssets).toBe(999_999_999)
     expect(JSON.parse(localStorage.getItem(CODEX_KEY)!).bestAssets).toBe(999_999_999)
+  })
+
+  // 리뷰 Minor 3 — 테스트 헬퍼가 매 턴 슬롯을 갈아끼우면(예전 nextTurnWith는 행동 칸을
+  // 비우고 회복 칸에 카드를 꽂았다) 완주 테스트가 뽑힌 슬롯을 한 번도 쓰지 않는다.
+  // 헬퍼가 상태를 손대지 않는다는 것을, "core에 그대로 넘긴 결과와 바이트 단위로 같은가"로
+  // 못박는다 — 꽂아 넣으면 회복 카드의 **등급**이 C로 바뀌어 결과가 달라진다.
+  it('nextTurnWith는 슬롯을 조작하지 않고 뽑힌 회복 카드를 그대로 쓴다', () => {
+    const grades: CardGrade[] = []
+    for (const seed of [1, 2, 3, 4, 5]) {
+      useGame.getState().newGame(seed)
+      const before = useGame.getState().state!
+      grades.push(before.slots.recovery.grade)
+      nextTurnWith()
+      expect(useGame.getState().state, `seed ${seed}`)
+        .toEqual(advanceTurn(before, [before.slots.recovery.cardId]))
+    }
+    // 다섯 시드가 전부 C였다면 위 비교는 아무것도 구분하지 못한다(공회전 방지).
+    expect(grades.some(g => g !== 'C'), `등급 ${grades.join(',')}`).toBe(true)
+    expect(GRADES).toContain(grades[0]!)
+  })
+
+  // 리뷰 Minor 2 — slots/rerollsLeft 형상 검사를 지워도 아무 테스트가 안 잡았다.
+  // 구버전 세이브(둘 다 없음)가 살아 들어오면 카드가 한 장도 안 뜨고 턴 루프가 터진다.
+  it.each(['slots', 'rerollsLeft'])('%s가 없는 세이브는 무시된다 (구버전 형상)', field => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    const broken: Record<string, unknown> = { ...s }
+    delete broken[field]
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: broken }))
+    useGame.getState().reset()
+    expect(useGame.getState().state).toBeNull()
+  })
+
+  it('두 필드가 다 있는 같은 세이브는 정상적으로 읽힌다 (위 테스트가 공회전이 아님)', () => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: s }))
+    useGame.getState().reset()
+    expect(useGame.getState().state).not.toBeNull()
   })
 
   it('버전은 맞지만 구조가 깨진(필드 오염) 세이브는 무시된다', () => {

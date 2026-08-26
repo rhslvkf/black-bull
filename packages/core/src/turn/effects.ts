@@ -29,8 +29,10 @@ function buyWithBudget(state: GameState, stockId: string, budget: number): GameS
  * 보상만이 아니라 **대가도 함께 커진다** — 음수 델타(야근의 컨디션 −18, 소주의 현금
  * −40,000)에도 같은 배율이 곱해진다. 이것이 등급 규칙 그 자체다(BALANCE.grade 주석).
  *
- * 돈은 정수 KRW이므로 곱한 뒤 반드시 반올림한다(−40,000 × 2.2가 부동소수점에서
- * −88,000.00000000001이 된다).
+ * 돈은 정수 KRW이므로 곱한 뒤 반드시 반올림한다 — 실제 위반 사례:
+ * 야근(+180,000)의 D등급이 `180000 * 0.7 === 125999.99999999999`,
+ * A등급이 `180000 * 2.2 === 396000.00000000006`이다.
+ * (−40,000 × 2.2는 정확히 −88,000이라 예시가 되지 못한다 — 리뷰 Fix Round 1에서 정정.)
  */
 export function applyEffects(state: GameState, effects: Effect[], mul = 1): GameState {
   let s = state

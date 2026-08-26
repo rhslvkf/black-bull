@@ -20,10 +20,20 @@ export function pinSlots(action: string[], recovery = 'hodl', grade: CardGrade =
   } } })
 }
 
-/** 원하는 카드를 그 턴 회복 슬롯에 꽂고 한 주 넘긴다. 턴이 넘어갈 때마다 슬롯이 새로
- *  뽑히므로 여러 턴을 도는 테스트는 매 턴 다시 꽂아야 한다 — 그 반복을 여기 가둔다.
- *  회복 카드는 행동력을 쓰지 않아 어떤 상태에서도 턴을 넘길 수 있다(교착 방지 불변식). */
-export function nextTurnWith(cardId = 'hodl'): void {
-  pinSlots([], cardId)
-  useGame.getState().next([cardId])
+/**
+ * **이번 턴에 실제로 뽑힌** 슬롯에서 카드 한 장을 골라 한 주 넘긴다.
+ *
+ * 기본값은 회복 슬롯 카드다 — 회복 슬롯은 항상 하나 열려 있고 행동력을 쓰지 않아
+ * 어떤 상태에서도 턴을 넘길 수 있다(교착 방지 불변식). 카드 id를 넘기면 그 카드를 쓰되,
+ * **슬롯을 조작하지 않는다** — 슬롯 밖 카드면 core가 NOT_IN_SLOTS로 거부하고 스토어가
+ * 그걸 삼켜 턴이 안 넘어간다(그게 정상 동작이다).
+ *
+ * (예전 구현은 매 턴 `pinSlots([], cardId)`로 **행동 슬롯을 비워** 카드를 꽂았다.
+ *  그러면 156턴 통합 테스트가 뽑힌 슬롯을 한 번도 보지 않고 완주해 존재 이유가 반쯤
+ *  사라진다 — 리뷰 Minor 3.)
+ */
+export function nextTurnWith(cardId?: string): void {
+  const s = useGame.getState().state
+  if (!s) throw new Error('nextTurnWith: 게임 상태가 없다 (newGame 먼저)')
+  useGame.getState().next([cardId ?? s.slots.recovery.cardId])
 }

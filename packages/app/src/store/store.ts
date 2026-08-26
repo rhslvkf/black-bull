@@ -45,11 +45,14 @@ function isValidGameState(x: unknown): x is GameState {
   if (!s.trackers || typeof s.trackers !== 'object') return false
   if (typeof (s.trackers as Record<string, unknown>).netPayroll !== 'number') return false
   // CardGrid가 렌더 즉시 읽는다(슬롯 4칸이 곧 카드 목록이다). 빠져 있으면 카드가 한 장도
-  // 안 뜨고 턴을 넘길 수 없다 — 다른 렌더 필드와 같은 급으로 검사한다. v2 저장에는 이
-  // 필드가 없어 여기서 걸러지고, SAVE_KEY도 v3으로 바뀌어 이중으로 막힌다.
+  // 안 뜨고 턴을 넘길 수 없다 — 다른 렌더 필드와 같은 급으로 검사한다. rerollsLeft도
+  // 턴 루프가 매 턴 리셋하는 필드라 함께 본다. v2 저장에는 둘 다 없어 여기서 걸러지고,
+  // SAVE_KEY도 v3으로 바뀌어 이중으로 막힌다. (리뷰 Minor 2 — 이 검사를 지우면 실제로
+  // 잡히는지 store.test.ts의 두 테스트가 고정한다.)
   if (!s.slots || typeof s.slots !== 'object') return false
   if (!('action' in s.slots) || !Array.isArray(s.slots.action)) return false
   if (!('recovery' in s.slots) || !s.slots.recovery || typeof s.slots.recovery !== 'object') return false
+  if (typeof s.rerollsLeft !== 'number') return false
   return true
 }
 function readSave(): GameState | null {

@@ -53,6 +53,12 @@ function takePending(s: GameState, key: string): [number, GameState] {
 export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   if (state.status !== 'playing') throw new GameError('NOT_PLAYING')
   if (state.pendingChoices.length > 0) throw new GameError('CHOICE_PENDING')
+  // Ruling 15 — 같은 카드를 한 턴에 두 번 낼 수 없다. drawSlots가 행동 슬롯 안의
+  // 중복을 이미 막고 회복 카드와 행동 카드는 집합이 겹치지 않으므로, 슬롯 안 어떤
+  // 카드도 두 번 나타날 수 없다 — 따라서 cardIds의 중복은 언제나 부정한 입력이다.
+  // (막지 않으면 행동력 0인 회복 카드를 무제한으로 낼 수 있다: ['rest'] × 10으로
+  //  한 턴에 멘탈·컨디션이 30에서 100까지 찬다.)
+  if (new Set(cardIds).size !== cardIds.length) throw new GameError('DUPLICATE_CARD')
   // 슬롯 밖 카드는 여기서 gradeOfSlot이 NOT_IN_SLOTS로 거부한다 — "이번 턴에 뽑힌
   // 카드만 낼 수 있다"가 이 게임의 규칙이므로, 등급을 모르면 비용도 효과도 정할 수 없다.
   // (Task 4의 임시 관대 조회 gradeOfSlotOrDefault를 이 태스크가 걷어냈다.)

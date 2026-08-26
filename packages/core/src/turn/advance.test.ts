@@ -419,9 +419,57 @@ describe('턴 루프와 슬롯 (Task 6)', () => {
     const spent = (g: CardGrade) => at(g).player.cash - advanceTurn(at(g), [paid.id]).player.cash
     expect(spent('A') - spent('C'))
       .toBe(Math.round(paid.cost!.money! * gradeMul('A')) - Math.round(paid.cost!.money! * gradeMul('C')))
-    for (const g of GRADES) {
-      expect(Number.isInteger(advanceTurn(at(g), [paid.id]).player.cash), `등급 ${g}`).toBe(true)
+    // 정수성은 턴 루프를 통과한 뒤에도 유지돼야 한다. 현금이 오가는 카드 전부 × 등급
+    // 전부를 돈다 — 한 카드(30,000원)만 돌리면 여섯 배율 모두 우연히 정수가 나와 아무것도
+    // 고정하지 못한다(Fix Round 1 Major 1). 잔고는 **낮게** 잡는다: 큰 잔고에 더하면
+    // 부동소수 오차가 덧셈에서 반올림돼 사라진다(10,000,000 + 125999.99999999999 = 10126000).
+    const cashCards = loadCards().filter(c =>
+      (c.cost?.money ?? 0) > 0 || c.effects.some(e => e.type === 'cash'))
+    expect(cashCards.map(c => c.id)).toContain('overtime')   // 오차가 실제로 나는 카드
+    for (const c of cashCards) {
+      for (const g of GRADES) {
+        const st = makeState({
+          slots: slotsWith(c.id, g),
+          player: { cash: c.cost?.money ?? 0, stats: { stamina: 9 }, condition: 100 },
+        })
+        const cash = advanceTurn(st, [c.id]).player.cash
+        expect(Number.isInteger(cash), `${c.name} / 등급 ${g}: ${cash}`).toBe(true)
+      }
     }
+  })
+
+  // Ruling 15 — 같은 카드를 한 턴에 두 번 낼 수 없다. 회복 카드는 행동력이 0이라
+  // 막지 않으면 무제한이었다(리뷰어 실측: ['rest'] × 10으로 멘탈·컨디션 30 → 100).
+  describe('같은 카드를 한 턴에 두 번 낼 수 없다 (Ruling 15)', () => {
+    const recovery = () => makeState({
+      slots: slotsOf([], ['rest', 'C']), player: { mental: 30, condition: 30 },
+    })
+
+    it('같은 회복 카드를 두 번 넣으면 DUPLICATE_CARD다', () => {
+      expect(() => advanceTurn(recovery(), ['rest', 'rest'])).toThrow(/DUPLICATE_CARD/)
+    })
+
+    it('회복 카드를 10장 쌓아도 한 턴에 통과하지 않는다 (행동력 0의 무제한 회복 봉인)', () => {
+      const s = recovery()
+      expect(() => advanceTurn(s, Array<string>(10).fill('rest'))).toThrow(/DUPLICATE_CARD/)
+      // 던지기만 하고 상태를 바꾸지 않는다 — 회복이 몰래 적용되지 않았다.
+      expect(s.player.mental).toBe(30)
+    })
+
+    it('같은 행동 카드를 두 번 넣으면 예산이 남아도 DUPLICATE_CARD다', () => {
+      // analyze E는 ⚡1이라 두 장(⚡2)이 예산 5 안에 들어간다 — NO_AP가 아니라
+      // DUPLICATE_CARD로 막혀야 한다는 뜻이다.
+      const s = makeState({ slots: slotsWith('analyze', 'E'), player: { stats: { stamina: 9 } } })
+      expect(actionPoints(s)).toBeGreaterThan(2 * gradeAp('E'))
+      expect(() => advanceTurn(s, ['analyze', 'analyze'])).toThrow(/DUPLICATE_CARD/)
+    })
+
+    it('서로 다른 두 카드는 정상이다 (위 단언이 두 장 자체를 막는 게 아님을 보증)', () => {
+      const s = makeState({
+        slots: slotsOf([['analyze', 'E']], ['rest', 'C']), player: { stats: { stamina: 9 } },
+      })
+      expect(() => advanceTurn(s, ['analyze', 'rest'])).not.toThrow()
+    })
   })
 
   // Ruling 11 — 회복 카드는 등급과 무관하게 행동력 0이라 등급이 관측되지 않았다.

@@ -1,6 +1,6 @@
 import {
   type GameState, type SlotCard, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
-  loadCards, isCardAvailable, Rand, createRng, priceOf, actionPoints, cardApCost,
+  loadCards, isCardAvailable, Rand, createRng, priceOf, actionPoints, cardApCost, gradeOfSlot,
 } from '@bb/core'
 
 /**
@@ -62,17 +62,18 @@ function usableSlotCards(s: GameState): SlotCard[] {
 
 /** 1차의 `cards.slice(0, cardsPerTurn(state))`를 대신한다. 이번 턴 행동력 예산 안에
  *  들어오는 카드만 앞에서부터 채워 넣는다 — 회복 카드는 비용이 0이라 항상 들어간다.
- *  슬롯 밖 카드는 core가 거부하므로 여기서 미리 떨군다(중립 등급으로 메우지 않는다).
- *  무작위성을 추가로 쓰지 않으므로 시드 결정론에 영향이 없다. */
+ *  무작위성을 추가로 쓰지 않으므로 시드 결정론에 영향이 없다.
+ *
+ *  등급은 core의 `gradeOfSlot`으로 읽는다. 슬롯 밖 id면 그 함수가 NOT_IN_SLOTS로
+ *  **던진다** — 예전처럼 조용히 걸러내면 sim이 슬롯 밖에서 카드를 고르기 시작해도
+ *  아무 데서도 터지지 않고 결과만 소리 없이 움직인다(리뷰 Minor 1: 카드 선택을
+ *  loadCards() 전체로 되돌려도 통과했고 panic 중앙값만 32.9M→34.7M로 이동했다). */
 export function withinApBudget(state: GameState, cardIds: string[]): string[] {
   const budget = actionPoints(state)
-  const slots = slotCards(state)
   let spent = 0
   const kept: string[] = []
   for (const id of cardIds) {
-    const slot = slots.find(sl => sl.cardId === id)
-    if (!slot) continue
-    const cost = cardApCost(id, slot.grade)
+    const cost = cardApCost(id, gradeOfSlot(state, id))
     if (spent + cost > budget) continue
     spent += cost
     kept.push(id)

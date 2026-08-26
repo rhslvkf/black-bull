@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
 import { act, withinApBudget } from './strategies'
 import {
-  BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, Rand, createRng,
+  BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
 } from '@bb/core'
+import type { Strategy } from './strategies'
 
 /**
  * 2턴차에 sjc를 `qtyOf(state)`만큼 사고 156턴 존버한다. 매 턴 '존버' 카드만 쓴다.
@@ -94,6 +95,45 @@ describe('playOne', () => {
       expect(state.player.holdings).toEqual([])
       s = advanceTurn(state, withinApBudget(state, cards))
     }
+  })
+})
+
+/**
+ * 리뷰 Minor 1 — sim이 "슬롯에서만 고른다"가 어떤 테스트로도 고정돼 있지 않았다.
+ * `withinApBudget`가 슬롯 밖 id를 조용히 걸러냈기 때문에, 카드 선택을 `loadCards()`
+ * 전체로 되돌려도 예외 없이 통과하고 결과만 소리 없이 움직였다(panic 32.9M → 34.7M).
+ */
+describe('전략은 이번 턴 슬롯에서만 카드를 고른다 (리뷰 Minor 1)', () => {
+  const ALL = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+
+  it('여섯 전략 × 여러 시드에서 고른 카드가 항상 슬롯 안에 있다', () => {
+    const events = loadEvents()
+    for (const strategy of ALL) {
+      for (const seed of [1, 2, 3]) {
+        let s = initGame(seed)
+        const rand = new Rand(createRng(seed ^ 0xabcdef))
+        for (let i = 0; i < 30 && s.status === 'playing'; i++) {
+          while (s.pendingChoices.length > 0) {
+            const c = s.pendingChoices[0]!
+            const n = events.find(e => e.id === c.eventId)?.choices?.length ?? 0
+            s = n > 0 ? resolveChoice(s, c.eventId, rand.int(0, n - 1), events)
+                      : { ...s, pendingChoices: s.pendingChoices.slice(1) }
+          }
+          const { state, cards } = act(s, strategy, rand)
+          const inSlots = [...state.slots.action.map(a => a.cardId), state.slots.recovery.cardId]
+          for (const id of cards) expect(inSlots, `${strategy} / seed ${seed} / turn ${state.turn}`).toContain(id)
+          s = advanceTurn(state, withinApBudget(state, cards))
+        }
+      }
+    }
+  })
+
+  it('슬롯 밖 카드를 넘기면 조용히 떨구지 않고 NOT_IN_SLOTS로 터진다', () => {
+    const s = initGame(1)
+    const inSlots = [...s.slots.action.map(a => a.cardId), s.slots.recovery.cardId]
+    const outside = loadCards().map(c => c.id).find(id => !inSlots.includes(id))!
+    expect(outside).toBeDefined()
+    expect(() => withinApBudget(s, [outside])).toThrow(/NOT_IN_SLOTS/)
   })
 })
 

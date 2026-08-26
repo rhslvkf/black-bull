@@ -18,6 +18,10 @@ function playToEnd(seed: number) {
       if (n > 0) useGame.getState().choose(c.eventId, 0)
       else break
     }
+    // 매 턴 새 슬롯이 실제로 뽑혔는지 본다 — 헬퍼가 슬롯을 비우고 카드를 꽂아버리면
+    // 이 통합 테스트가 뽑힌 슬롯을 한 번도 보지 않고 156턴을 완주한다(리뷰 Minor 3).
+    const cur = useGame.getState().state!
+    expect(cur.slots.action, `seed ${seed} turn ${cur.turn}`).toHaveLength(BALANCE.slots.action)
     nextTurnWith()
   }
   return useGame.getState().state!
