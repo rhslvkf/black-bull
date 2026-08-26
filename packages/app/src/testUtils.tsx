@@ -1,20 +1,57 @@
 import { afterEach } from 'vitest'
 import { act, render, type RenderResult } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import type { GameState, Holding, PlayerState, Stats } from '@bb/core'
-import { useGame } from './store/store'
+import type { GameState, Holding, PlayerState, Stats, Trackers } from '@bb/core'
+import { useGame, type Codex, type TabKey } from './store/store'
 import { HomeScreen } from './screens/HomeScreen'
 import { StockDetail } from './screens/StockDetail'
+import { CodexScreen } from './screens/CodexScreen'
 
 /**
  * Task 11 Ruling 19 — 뒤따르는 모든 화면 태스크(Task 12~22)가 이 헬퍼를 쓴다.
  *
  * `GameState`의 부분 객체를 받아 실제 새 판(고정 시드) 위에 병합한다. `player`와 그 안의
- * `stats`는 중첩까지 부분 객체로 받는다 — core의 `testkit.makeState`가 쓰는 것과 같은
- * 확장 규칙이다(그쪽은 core 전용이라 여기서 재사용할 수 없어 같은 규칙을 그대로 옮겼다).
+ * `stats`, 그리고 `trackers`는 중첩까지 부분 객체로 받는다 — core의 `testkit.makeState`가
+ * 쓰는 것과 같은 확장 규칙이다(그쪽은 core 전용이라 여기서 재사용할 수 없어 같은 규칙을
+ * 그대로 옮겼다). 앞으로 다른 최상위 필드도 중첩 부분 객체가 필요해지면, `player`·
+ * `trackers`처럼 여기 분해해 각자의 작은 병합 함수(`mergePlayer`류)를 하나 추가하면 된다 —
+ * 얕은 스프레드(`{ ...base, ...rest }`)만으로는 `trackers.feesPaid` 하나만 override해도
+ * 나머지 트래커 필드가 통째로 날아간다(Task 16이 겪은 문제).
  */
-export type GameStateOverride = Partial<Omit<GameState, 'player'>> & {
+export type GameStateOverride = Partial<Omit<GameState, 'player' | 'trackers'>> & {
   player?: Partial<Omit<PlayerState, 'stats'>> & { stats?: Partial<Stats> }
+  trackers?: Partial<Trackers>
+}
+
+/** `player`(및 중첩 `stats`) 부분 override를 실제 `base.player` 위에 병합한다. */
+function mergePlayer(base: PlayerState, patch: GameStateOverride['player']): PlayerState {
+  if (!patch) return base
+  const { stats, ...rest } = patch
+  return { ...base, ...rest, stats: stats ? { ...base.stats, ...stats } : base.stats }
+}
+
+/** `trackers` 부분 override를 실제 `base.trackers` 위에 병합한다. */
+function mergeTrackers(base: Trackers, patch: Partial<Trackers> | undefined): Trackers {
+  return patch ? { ...base, ...patch } : base
+}
+
+/**
+ * `GameState` 최상위 필드가 아닌 스토어(zustand) 전용 필드 override.
+ *
+ * Task 11 리뷰에서 확인된 한계 — `GameStateOverride`(위)는 `GameState`의 필드만 다룰 수
+ * 있는데, `tab`·`selectedStock`·`codex`·`prologueDone`은 `GameState`가 아니라 스토어
+ * 자체의 필드다(store.ts의 `Store` 인터페이스 참조). `renderDetail`이 `selectedStock` 하나를
+ * 위해 렌더 뒤 `act()`로 따로 얹던 것과 같은 이유로, `reset()`·`newGame()`이 이 필드들을
+ * 매번 기본값으로 되돌리기 때문에 override는 그 두 호출 **뒤에** 적용해야 한다.
+ *
+ * `codex`는 부분 객체로 받는다 — `Codex`의 네 필드(`endings`·`titles`·`bestAssets`·`runs`)
+ * 중 테스트가 관심 있는 것만 얹고 나머지는 기본값(`readCodex()`가 준 빈 도감)을 유지한다.
+ */
+export interface StoreOverride {
+  tab?: TabKey
+  selectedStock?: string | null
+  codex?: Partial<Codex>
+  prologueDone?: boolean
 }
 
 /**
@@ -26,24 +63,55 @@ export type GameStateOverride = Partial<Omit<GameState, 'player'>> & {
  * `slots`는 `GameState`의 최상위 필드라 override에 그대로 넣으면 명시적으로 주입된다
  * (Ruling 2) — 등급은 매 턴 새로 굴려지므로, 특정 카드가 특정 등급으로 뜬다고 가정하는
  * 테스트는 core가 export하는 `slotsWith(cardId, grade)`로 슬롯을 직접 박아야 한다.
+ *
+ * `storeOverride`(세 번째 인자, Task 16 추가)는 `GameState`가 아닌 스토어 전용 필드를
+ * 심는다 — `renderWithCodex`가 이 인자 하나만 재사용해 도감 override를 구현한다. 두
+ * 헬퍼가 각자 상태를 만들면(예: `renderWithCodex`가 별도로 `useGame.setState`를 부르면)
+ * 사본이 갈릴 수 있어, `renderWithCodex`는 반드시 이 함수를 거친다.
  */
 export function renderWithState(
   override: GameStateOverride = {},
   ui: ReactElement = <HomeScreen />,
+  storeOverride: StoreOverride = {},
 ): RenderResult {
   useGame.getState().reset()
   useGame.getState().newGame(1)
   const base = useGame.getState().state
   if (!base) throw new Error('renderWithState: newGame(1) 이후에도 상태가 비어 있다')
 
-  const { player: playerOver, ...rest } = override
-  const player: PlayerState = playerOver
-    ? { ...base.player, ...playerOver, stats: { ...base.player.stats, ...(playerOver.stats ?? {}) } }
-    : base.player
-  const state: GameState = { ...base, ...rest, player }
+  const { player: playerOver, trackers: trackersOver, ...rest } = override
+  const player = mergePlayer(base.player, playerOver)
+  const trackers = mergeTrackers(base.trackers, trackersOver)
+  const state: GameState = { ...base, ...rest, player, trackers }
 
   useGame.setState({ state })
+
+  if (storeOverride.tab !== undefined) useGame.setState({ tab: storeOverride.tab })
+  if (storeOverride.selectedStock !== undefined) useGame.setState({ selectedStock: storeOverride.selectedStock })
+  if (storeOverride.prologueDone !== undefined) useGame.setState({ prologueDone: storeOverride.prologueDone })
+  if (storeOverride.codex) {
+    const baseCodex = useGame.getState().codex
+    useGame.setState({ codex: { ...baseCodex, ...storeOverride.codex } })
+  }
+
   return render(ui)
+}
+
+/**
+ * Task 16 — 도감 화면(및 그와 같은 모양의 화면)을 위한 렌더 헬퍼.
+ *
+ * `codexOverride`는 스토어의 `codex` 필드(`GameState`가 아니다) 부분 객체다. `gameOverride`는
+ * 나머지 `GameState` override(확장 지점, 보통 도감 화면은 쓰지 않는다). 내부적으로
+ * `renderWithState`의 세 번째 인자(`storeOverride`)를 그대로 재사용하므로 — 이 헬퍼가
+ * 독자적으로 `useGame.setState`를 부르지 않는다 — `renderWithState`가 심은 상태와 항상
+ * 같은 스토어 인스턴스 위에서 동작한다(사본이 갈리지 않는다).
+ */
+export function renderWithCodex(
+  codexOverride: Partial<Codex> = {},
+  gameOverride: GameStateOverride = {},
+  ui: ReactElement = <CodexScreen />,
+): RenderResult {
+  return renderWithState(gameOverride, ui, { codex: codexOverride })
 }
 
 /**

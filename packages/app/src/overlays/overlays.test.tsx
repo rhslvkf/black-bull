@@ -176,7 +176,14 @@ describe('CodexScreen', () => {
   it('수집한 엔딩은 이름이 보인다', () => {
     useGame.setState({ codex: { endings: ['super'], titles: ['박대박을 이긴'], bestAssets: 700_000_000, runs: 1 } })
     render(<CodexScreen />)
-    expect(screen.getByText('슈퍼개미')).toBeDefined()
+    // Task 16 — 수집한 엔딩의 도장 그래픽(<Art id="ending.*">, §5.1)이 svg 안에도 같은
+    // 한국어 이름을 그린다(EndingView와 같은 이유, art/parts/Scenes.tsx의
+    // data-role="label"). 그 svg 텍스트와 목록 항목의 이름 텍스트가 한 행 안에 함께
+    // 있어 getByText로는 행으로 좁혀도 여전히 모호하므로(둘 다 걸린다), EndingView
+    // 테스트가 h2로 좁힌 것과 같은 취지로 이름을 표시하는 실제 엘리먼트(strong)를
+    // 직접 짚어 "이름이 보인다"는 원래 취지를 유지한다.
+    const row = screen.getByTestId('codex-ending-super')
+    expect(row.querySelector('strong')?.textContent).toBe('슈퍼개미')
     expect(screen.getByText(/1회/)).toBeDefined()
   })
 })
