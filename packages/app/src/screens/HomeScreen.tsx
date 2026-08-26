@@ -1,5 +1,5 @@
 import { useGame } from '../store/store'
-import { NewsFeed } from '../components/NewsFeed'
+import { NewsTicker } from '../components/NewsTicker'
 import { CardGrid } from '../components/CardGrid'
 import { TopBar } from '../components/TopBar'
 import { TurnProgress } from '../components/TurnProgress'
@@ -38,7 +38,7 @@ export function HomeScreen() {
       <TurnProgress />
       <CharacterStage />
       {skipNotice && <p className="turn-skipped" data-testid="turn-skipped">{skipNotice}</p>}
-      <NewsFeed />
+      <NewsTicker />
       <StatChips />
       <ActionMeter picked={picked} />
       <h2 className="section-title">이번 주에 뭘 할까</h2>
