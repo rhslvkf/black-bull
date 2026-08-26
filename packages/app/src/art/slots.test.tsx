@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ArtSlot, registerImage, hasImage, resetImages } from './slots'
+import { ALL_ART_KEYS } from './registry'
 
 // registerImage는 registry.tsx의 공유 ART 레지스트리를 직접 변형한다(전역 상태). 한 테스트가
 // 등록한 이미지가 다음 테스트로 새어나가지 않도록, design/testUtils.ts의 matchMediaMock과
@@ -87,5 +88,57 @@ describe('테스트 간 아트 등록 격리 (MU7)', () => {
     expect(hasImage('npc.kim.normal')).toBe(false)
     const { container } = render(<ArtSlot kind="character" id="char.tier0.normal" />)
     expect(container.firstElementChild!.getAttribute('data-fallback')).toBe('true')
+  })
+})
+
+
+// 리뷰 Fix Round 1 (Major 4): data-fallback이 항상 'true'로 고정돼도 브리프 테스트는
+// 안 잡는다 — 브리프는 "이미지가 없을 때 'true'"만 보고, registerImage 뒤 'false'로
+// 바뀌는지는 아무도 안 본다.
+describe('ArtSlot — 폴백 해제 (Major 4)', () => {
+  it('registerImage 뒤에는 data-fallback이 false로 바뀐다', () => {
+    registerImage('char.tier4.normal', '/art/c4.webp')
+    const { container } = render(<ArtSlot kind="character" id="char.tier4.normal" />)
+    expect(container.firstElementChild!.getAttribute('data-fallback')).toBe('false')
+  })
+})
+
+// 리뷰 Fix Round 1 (Major 4 연장): hasImage와 ArtSlot의 <img> 렌더링이 서로 다른 경로로
+// 어긋날 수 있다는 지적 — registry.tsx의 isImageSource 하나로 통일했으니(Art.tsx/slots.tsx
+// 둘 다 그것만 호출), 모든 키에서 "hasImage(id) === (ArtSlot이 img를 그리는가)"가 항상
+// 성립함을 등록 전/후 양쪽 다 고정한다.
+describe('hasImage와 ArtSlot의 렌더 결과가 항상 일치한다 (Major 4 연장)', () => {
+  function rendersImg(id: (typeof ALL_ART_KEYS)[number]): boolean {
+    const { container } = render(<ArtSlot kind="scene" id={id} />)
+    return container.querySelector('img') !== null
+  }
+
+  it('등록 전: 모든 키에서 hasImage와 실제 렌더 결과가 같다 (전부 false)', () => {
+    ALL_ART_KEYS.forEach(id => {
+      expect(rendersImg(id), id).toBe(hasImage(id))
+    })
+  })
+
+  it('등록 후: 표본 키들에서 hasImage와 실제 렌더 결과가 같다 (전부 true)', () => {
+    const sample = ['char.tier0.normal', 'bg.office', 'npc.kim.alt', 'ending.legend', 'sector.게임'] as const
+    sample.forEach(id => registerImage(id, `/art/${id}.webp`))
+    sample.forEach(id => {
+      expect(rendersImg(id), id).toBe(hasImage(id))
+      expect(hasImage(id), id).toBe(true)
+    })
+  })
+})
+
+// 리뷰 Fix Round 1 (Minor 1): Task 23이 56개 컷을 손으로 꽂는다 — 오타 키를 조용히
+// 삼키면 그 컷만 영영 폴백으로 남고 아무도 모른다. ALL_ART_KEYS에 없는 키는 던져야 한다.
+describe('registerImage — 존재하지 않는 키 (Minor 1)', () => {
+  it('ArtKey가 아닌 문자열을 주면 던진다', () => {
+    // @ts-expect-error 런타임 방어를 검증하려고 일부러 타입 밖의(오타) 문자열을 넘긴다.
+    expect(() => registerImage('char.tier0.oops', '/art/x.webp')).toThrow()
+  })
+  it('던진 뒤에는 ART가 변경되지 않는다 (부분 등록 방지)', () => {
+    // @ts-expect-error 위와 같은 이유로 의도적으로 잘못된 키를 넘긴다.
+    expect(() => registerImage('bg.mars', '/art/x.webp')).toThrow()
+    expect(hasImage('char.tier0.normal')).toBe(false)
   })
 })

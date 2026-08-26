@@ -91,3 +91,17 @@ export const ART = Object.fromEntries(entries) as Record<ArtKey, ArtSource>
 export const ALL_ART_KEYS = entries.map(([k]) => k) as ArtKey[]
 /** Minor #2: 이미지로 교체된 아트 키의 <img alt>에 쓰는 한국어 설명. */
 export const ART_ALT = Object.fromEntries(altEntries) as Record<ArtKey, string>
+
+// 리뷰 Fix Round 1 (Major 4 연장): "이미지로 교체됐는가"를 Art.tsx와 slots.tsx가 각자
+// `kind === 'image'`를 따로 비교하면, 둘 중 하나만 고쳐질 때 조용히 어긋날 수 있는 구조가
+// 생긴다. 이 타입가드 하나로 판정을 통일한다 — Art.tsx의 렌더 분기와 slots.tsx의
+// `hasImage` 둘 다 이 함수를 호출하므로, 어긋나는 두 번째 구현 자체가 존재하지 않는다.
+export function isImageSource(src: ArtSource | undefined): src is Extract<ArtSource, { kind: 'image' }> {
+  return src?.kind === 'image'
+}
+
+/** id가 실제 이미지로 교체됐는지 여부. Art.tsx의 <img>/<svg> 분기와 항상 같은 답을
+ *  낸다 — 둘 다 isImageSource 하나만 호출하기 때문이다. */
+export function hasImage(id: ArtKey): boolean {
+  return isImageSource(ART[id])
+}
