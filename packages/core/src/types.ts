@@ -97,6 +97,18 @@ export interface Trackers {
    *  현금 부족 클램프 때문에 `floor(turn/payPeriod) × employedNet`이 실제와 어긋나기
    *  때문이다. accounting.ts의 noTradeBaseline이 유일한 소비자다. */
   netPayroll: number
+  /** buy/sell이 이미 계산한 수수료·세금(accounting.ts의 fee/tax)을 그대로 누적한 값.
+   *  엔딩 화면(잔고증명서)에만 쓰이므로 여기서 다시 계산하지 않는다 — 두 번 계산하면
+   *  두 사본이 어긋날 수 있다. */
+  feesPaid: number; taxPaid: number
+  /** 지금까지 한 번이라도 도달했던 총자산의 최고치. advanceTurn 8단계에서 매 턴
+   *  Math.max로만 갱신되므로 내려가지 않는다. */
+  peakAssets: number
+  /** peakAssets 대비 낙폭의 역대 최고치(%, 0~100). 회복해도 줄어들지 않는다. */
+  maxDrawdownPct: number
+  /** buy/sell 호출 횟수(물타기 averageDown도 내부적으로 buy를 부르므로 포함된다).
+   *  이중 계상을 막기 위해 buy/sell에서만 늘리고 averageDown 자체는 늘리지 않는다. */
+  tradeCount: number
 }
 
 export interface EndingResult { endingId: EndingId; endingName: string; titles: string[]; finalAssets: number }

@@ -31,7 +31,8 @@ export function initGame(seed: number): GameState {
     },
     pendingImpacts: [], news: [], firedOneShots: [], flags: {},
     pendingChoices: [], rivalAssets: BALANCE.rival.start,
-    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0 },
+    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0,
+      feesPaid: 0, taxPaid: 0, peakAssets: 0, maxDrawdownPct: 0, tradeCount: 0 },
     prevLossPct: 0, cutscene: null, lastTurnSkip: null, status: 'playing', ending: null,
     slots: { action: [], recovery: { cardId: 'rest', grade: 'C' } },
     rerollsLeft: 0,
@@ -106,11 +107,19 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   // 8. 보유 기간·트래커
   const holdings = s.player.holdings.map(h => ({ ...h, heldTurns: h.heldTurns + 1 }))
   s = { ...s, player: { ...s.player, holdings } }
+  // 최고 자산·최대 낙폭 — peak 갱신이 반드시 drawdown 계산보다 먼저다. 순서를 뒤바꾸면
+  // 그 턴에 신고점을 찍었는데도 낙폭이 잡히는 모순이 생긴다. peak > 0 가드는 파산으로
+  // 총자산이 0이 되는 경로에서 0으로 나누어 NaN이 트래커에 눌어붙는 것을 막는다.
+  const assets = totalAssets(s)
+  const peak = Math.max(s.trackers.peakAssets, assets)
+  const dd = peak > 0 ? ((peak - assets) / peak) * 100 : 0
   s = { ...s, trackers: {
     ...s.trackers,
     cashRatioSum: s.trackers.cashRatioSum + cashRatio(s),
     turnsCounted: s.trackers.turnsCounted + 1,
     maxHeldTurns: Math.max(s.trackers.maxHeldTurns, ...holdings.map(h => h.heldTurns), 0),
+    peakAssets: peak,
+    maxDrawdownPct: Math.max(s.trackers.maxDrawdownPct, dd),
   } }
 
   // 8.5 다음 턴 슬롯 — 게이지 정산(6) 이후, 종료 판정(9) 이전이다. 여기 두면 이번 턴에

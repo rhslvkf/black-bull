@@ -40,7 +40,8 @@ export function buy(state: GameState, stockId: string, qty: number): GameState {
 
   const price = priceOf(state, stockId)
   const gross = price * qty
-  const total = gross + fee(gross)
+  const feeAmt = fee(gross)
+  const total = gross + feeAmt
   if (total > state.player.cash) throw new GameError('NO_CASH')
 
   const prev = state.player.holdings.find(h => h.stockId === stockId)
@@ -56,7 +57,15 @@ export function buy(state: GameState, stockId: string, qty: number): GameState {
     const np = applyWhaleImpact(price, gross, 'buy')
     stocks = stocks.map(s => s.id === stockId ? { ...s, price: np } : s)
   }
-  return { ...state, stocks, player: { ...state.player, cash: state.player.cash - total, holdings } }
+  return {
+    ...state, stocks,
+    player: { ...state.player, cash: state.player.cash - total, holdings },
+    trackers: {
+      ...state.trackers,
+      feesPaid: state.trackers.feesPaid + feeAmt,
+      tradeCount: state.trackers.tradeCount + 1,
+    },
+  }
 }
 
 /** 물타기 — 이미 보유 중이고 손실 중인 종목을 예산 범위에서 추가 매수한다.
@@ -87,7 +96,9 @@ export function sell(state: GameState, stockId: string, qty: number): GameState 
 
   const price = priceOf(state, stockId)
   const gross = price * qty
-  const net = gross - fee(gross) - tax(gross)
+  const feeAmt = fee(gross)
+  const taxAmt = tax(gross)
+  const net = gross - feeAmt - taxAmt
   const isLossCut = price < held.avgCost
 
   const holdings = held.qty === qty
@@ -102,6 +113,12 @@ export function sell(state: GameState, stockId: string, qty: number): GameState 
   return {
     ...state, stocks,
     player: { ...state.player, cash: state.player.cash + net, holdings },
-    trackers: { ...state.trackers, lossCuts: state.trackers.lossCuts + (isLossCut ? 1 : 0) },
+    trackers: {
+      ...state.trackers,
+      lossCuts: state.trackers.lossCuts + (isLossCut ? 1 : 0),
+      feesPaid: state.trackers.feesPaid + feeAmt,
+      taxPaid: state.trackers.taxPaid + taxAmt,
+      tradeCount: state.trackers.tradeCount + 1,
+    },
   }
 }

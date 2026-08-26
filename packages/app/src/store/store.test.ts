@@ -130,6 +130,32 @@ describe('store', () => {
     expect(useGame.getState().state).toBeNull()
   })
 
+  // Task 7 — trackers에 5개 필드(feesPaid/taxPaid/peakAssets/maxDrawdownPct/tradeCount)가
+  // 늘었다. 구버전(v3) 저장에는 이 필드들이 없어 undefined로 로드되면 Math.max(undefined, x)가
+  // NaN이 되어 최대 낙폭이 영구히 오염된다 — 이 형상 검사가 실제로 구버전을 거부하는지
+  // 고정한다(Task 6에서 같은 종류의 미고정 검사가 결함으로 잡혔다, 리뷰 Minor 2).
+  it.each(['feesPaid', 'taxPaid', 'peakAssets', 'maxDrawdownPct', 'tradeCount'])(
+    'trackers.%s가 없는 세이브는 무시된다 (v3 이전 구버전 형상)',
+    field => {
+      useGame.getState().newGame(1)
+      const s = useGame.getState().state!
+      const trackers: Record<string, unknown> = { ...s.trackers }
+      delete trackers[field]
+      const broken = { ...s, trackers }
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: broken }))
+      useGame.getState().reset()
+      expect(useGame.getState().state).toBeNull()
+    },
+  )
+
+  it('트래커 5개 필드가 다 있는 같은 세이브는 정상적으로 읽힌다 (위 테스트가 공회전이 아님)', () => {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: s }))
+    useGame.getState().reset()
+    expect(useGame.getState().state).not.toBeNull()
+  })
+
   it('두 필드가 다 있는 같은 세이브는 정상적으로 읽힌다 (위 테스트가 공회전이 아님)', () => {
     useGame.getState().newGame(1)
     const s = useGame.getState().state!
