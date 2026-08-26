@@ -13,6 +13,25 @@ import { matchMediaMock } from '../design/testUtils'
 // Ruling 19 — renderEventWithChoices·currentState는 testUtils.tsx에 추가했다(브리프의
 // text·pending·choiceCashDelta 옵션 지원, renderEvent/renderWithState 재사용).
 
+// 아래 "가드 단독 고정" 테스트 전용 헬퍼 — React가 커밋한 DOM 노드에 직접 붙여 두는
+// 내부 props(`__reactProps$...`)에서 현재 렌더의 onClick을 꺼낸다. `as` 단언 없이
+// unknown에서 타입 가드로 좁힌다.
+function hasOnClick(value: unknown): value is { onClick: unknown } {
+  return typeof value === 'object' && value !== null && 'onClick' in value
+}
+
+function isFunction(value: unknown): value is () => void {
+  return typeof value === 'function'
+}
+
+function findReactOnClick(el: Element): (() => void) | undefined {
+  const entry = Object.entries(el).find(([key]) => key.startsWith('__reactProps$'))
+  if (entry === undefined) return undefined
+  const [, props] = entry
+  if (!hasOnClick(props)) return undefined
+  return isFunction(props.onClick) ? props.onClick : undefined
+}
+
 describe('ChoiceSheet — 브리프 Step 1', () => {
   it('대사를 다 읽기 전에는 시트가 열리지 않는다', () => {
     renderEventWithChoices({ text: '긴 대사가 아직 타이핑 중이다' })
@@ -116,6 +135,31 @@ describe('ChoiceSheet — 컴포넌트 단위 방어 (Task 19 뮤테이션 대�
     fireEvent.click(btn)
     fireEvent.click(btn)
     expect(onChoose).toHaveBeenCalledTimes(1)
+  })
+
+  // ChoiceSheet.tsx 최상단 주석의 3번(handleChoose의 `if (resolving) return`)을 직접
+  // 겨눈다. 위 테스트는 disabled 속성이 두 번째 클릭을 막아버려서, 이 가드 줄 하나만
+  // 지워도 통과해버린다(뮤테이션 테스트로 실측 확인) — React 자체가 클릭을 합성
+  // 이벤트로 넘기기 전에 커밋된 fiber의 `props.disabled`를 보고 걸러내므로, 두 번째
+  // fireEvent.click은 애초에 onClick까지 도달하지 못한다. 그래서 disabled와 무관하게
+  // "핸들러가 실제로 두 번 불렸을 때" 가드가 막는지를 봐야 한다 — React가 DOM 노드에
+  // 붙여 두는 내부 props(`__reactProps$...`)에서 현재 커밋된 onClick을 직접 꺼내 호출해,
+  // 브라우저의 disabled 판정(이벤트 시스템 단)을 완전히 우회한다. 첫 클릭 이후 이
+  // 핸들러는 이미 resolving=true인 렌더에서 다시 잡아온 것이므로, 가드가 있으면 즉시
+  // 반환해 onChoose가 두 번째로 불리지 않는다 — 가드만 지우면 이 테스트가 곧바로
+  // 깨진다(disabled는 그대로 둔 채로).
+  it('disabled와 별개로, handleChoose 내부 가드가 두 번째 적용을 막는다 (가드 단독 고정)', () => {
+    const onChoose = vi.fn()
+    render(<ChoiceSheet eventId="e1" choices={choices} open onChoose={onChoose} />)
+    const btn = screen.getByTestId('choice-0')
+    fireEvent.click(btn)
+    expect(onChoose).toHaveBeenCalledTimes(1)
+
+    const onClick = findReactOnClick(btn)
+    expect(onClick, '테스트 환경에서 React onClick을 못 찾았다').toBeDefined()
+    onClick?.()
+
+    expect(onChoose, 'disabled 우회 후에도 가드가 두 번째 호출을 막아야 한다').toHaveBeenCalledTimes(1)
   })
 
   it('고른 뒤에는 두 버튼 모두 잠긴다(disabled)', () => {

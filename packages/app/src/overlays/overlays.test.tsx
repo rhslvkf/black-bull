@@ -286,9 +286,18 @@ describe('EventModal VN (Task 18)', () => {
       // 길이가 늘어나므로, 같은 방식으로 미리 채워 넣으면 길이가 어긋나 바로 잡힌다
       // — 그래서 실제로 검사한 id는 배열에 기록하고, 개수(length)와 내용(Set으로
       // 변환한 뒤 비교) 두 가지를 모두 `events`에서 그대로 유도한 값과 대조한다.
-      const visitedIds: string[] = []
-      for (const ev of events) {
-        visitedIds.push(ev.id)
+      // Fix Round 3(재재리뷰) — 배열 push도 완전히 안전하진 않았다: `visitedIds`를
+      // 루프 "밖"에 별도로 선언해 두는 한, `events.slice(1)`(첫 번째만 뺀 나머지)로
+      // 정교하게 미리 채우고 루프를 `events.slice(0, 1)`로 줄이면 push가 첫 번째 id
+      // 하나만 더해도 length·Set 내용 둘 다 우연히 원본과 똑같아진다(실측: 여전히
+      // green — "패딩 전체"가 아니라 "루프가 뺄 만큼만 정교하게 패딩"하는 결합
+      // 공격에는 length 비교만으론 못 잡는다). 근본 원인은 "루프가 채우는 배열"이
+      // 루프 진입 전에 독립적으로 선언·초기화될 수 있다는 데 있다 — 초기값을 건드릴
+      // 자리가 존재하는 한 루프의 실제 실행 범위와 최종 배열 내용이 분리될 수 있다.
+      // `events.map(...)`의 반환값 자체를 visitedIds로 쓰면 이 구멍이 구조적으로
+      // 사라진다: 별도로 선언·미리 채워 넣을 자리가 아예 없고, 루프 범위를 줄이면
+      // (`events.slice(0, 1).map(...)`) 결과 배열 길이도 그 자리에서 함께 줄어든다.
+      const visitedIds = events.map(ev => {
         const s = currentState()
         useGame.setState({ state: { ...s, pendingChoices: [{ eventId: ev.id }] } })
         const { unmount } = render(<EventModal />)
@@ -310,9 +319,11 @@ describe('EventModal VN (Task 18)', () => {
         }
 
         unmount()
-      }
-      // 길이 검사가 결합 공격(패딩 + slice)을 잡는 핵심이다 — 개수 자체가
-      // `loadEvents()`에서 유도한 값과 정확히 같아야 한다(하드코딩 없음).
+        return ev.id
+      })
+      // 길이 검사가 슬라이스 공격을 잡는 핵심이다 — 개수 자체가 `loadEvents()`에서
+      // 유도한 값과 정확히 같아야 한다(하드코딩 없음). visitedIds가 map의 반환값
+      // 자체이므로 별도로 미리 채워 넣을 자리가 없다(Fix Round 3).
       expect(visitedIds.length).toBeGreaterThan(0)
       expect(visitedIds.length).toBe(events.length)
       // 내용도 실제로 맞는 id들인지 확인한다(순서 무관, 중복은 length 검사가 이미 배제).
@@ -331,10 +342,19 @@ describe('EventModal VN (Task 18)', () => {
       const eventsWithChoices = loadEvents().filter(e => (e.choices?.length ?? 0) > 0)
       expect(eventsWithChoices.length).toBeGreaterThan(0)
       const expectedIds = new Set(eventsWithChoices.map(e => e.id))
-      const visitedIds: string[] = []
 
-      for (const ev of eventsWithChoices) {
-        visitedIds.push(ev.id)
+      // Fix Round 1(Minor 1, 재리뷰) — 배열 push도 "루프 밖에 별도로 선언된 변수"라는
+      // 자리가 있는 한 완전히 안전하지 않다: `visitedIds`를 `eventsWithChoices.slice(1)`
+      // (첫 번째만 뺀 나머지)로 정교하게 미리 채우고 루프를 `eventsWithChoices.slice(0, 1)`
+      // 로 줄이면, push가 첫 번째 id 하나만 더해도 length·Set 내용 둘 다 원본과 우연히
+      // 같아진다(실측: 540/540 green — 26개 중 1개만 실제로 검사됐는데도 안 잡힘).
+      // Task 18(overlays.test.tsx "실제 콘텐츠 카탈로그 전수 검사")도 동일 구조라 똑같이
+      // 뚫린다는 걸 같은 방식으로 실측 확인했다 — "Task 18은 이미 안전하다"는 재리뷰
+      // 추정은 틀렸다. 두 테스트 모두 `events.map(...)`의 반환값 자체를 visitedIds로
+      // 쓰는 방식으로 고쳤다 — 별도로 선언·미리 채워 넣을 자리가 아예 없어지므로, 루프
+      // 범위를 줄이면(`eventsWithChoices.slice(0, 1).map(...)`) 결과 배열 길이도 그
+      // 자리에서 함께 줄어든다.
+      const visitedIds = eventsWithChoices.map(ev => {
         const choices = ev.choices!
 
         // 라벨·개수가 실제 choices와 인덱스별로 정확히 대응하는지(MU7·MU8 방어).
@@ -360,7 +380,9 @@ describe('EventModal VN (Task 18)', () => {
           expect(useGame.getState().state!.pendingChoices, `${ev.id}: choice-${idx} 선택 후 대기열이 안 비었다`).toHaveLength(0)
           unmount()
         }
-      }
+
+        return ev.id
+      })
 
       expect(visitedIds.length).toBeGreaterThan(0)
       expect(visitedIds.length).toBe(eventsWithChoices.length)
