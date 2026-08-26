@@ -3,8 +3,13 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { HomeScreen } from './HomeScreen'
 import { Hud } from '../components/Hud'
 import { useGame } from '../store/store'
-import { BALANCE } from '@bb/core'
+import { BALANCE, loadCards } from '@bb/core'
 import { won, pct, yearWeek } from '../format'
+
+// 회복 카드 목록을 하드코딩하면 카드 풀이 바뀔 때마다 손으로 맞춰야 한다(재발 이력 있음 —
+// hodl이 회복 카드로 편입되면서 3개짜리 리터럴이 낡았다). loadCards()에서 유도해 이 파일의
+// 세 테스트가 항상 실제 데이터를 따라가게 한다.
+const RECOVERY_TESTIDS = loadCards().filter(c => c.isRecovery).map(c => `card-${c.id}`)
 
 beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
 
@@ -51,15 +56,20 @@ describe('HomeScreen', () => {
     render(<HomeScreen />)
     expect(screen.getByTestId('card-analyze').hasAttribute('disabled')).toBe(true)
   })
+  it('회복 카드 유도 목록이 비어있지 않다 (loadCards() 기준 4개)', () => {
+    // 아래 세 테스트가 RECOVERY_TESTIDS로 toContain/not.toContain을 검사하므로, 이 목록이
+    // 비면 toContain은 항상 실패하고 not.toContain은 항상 통과해 전부 무의미해진다.
+    expect(RECOVERY_TESTIDS.length).toBe(4)
+  })
   it('흔들림에서도 회복 카드는 열려 있고 최상단에 온다 (스펙 §3.3)', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 5 } } })
     render(<HomeScreen />)
-    for (const id of ['rest', 'exercise', 'drink']) {
-      expect(screen.getByTestId(`card-${id}`).hasAttribute('disabled')).toBe(false)
+    for (const id of RECOVERY_TESTIDS) {
+      expect(screen.getByTestId(id).hasAttribute('disabled')).toBe(false)
     }
     const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).toContain(first.getAttribute('data-testid'))
+    expect(RECOVERY_TESTIDS).toContain(first.getAttribute('data-testid'))
   })
   it('퇴사 상태면 카드 2장을 고를 수 있다', () => {
     const s = useGame.getState().state!
@@ -95,14 +105,14 @@ describe('CardGrid 정렬 — 흔들림 여부에 따라 실제로 순서가 달
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 30 } } })
     render(<HomeScreen />)
     const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).not.toContain(first.getAttribute('data-testid'))
+    expect(RECOVERY_TESTIDS).not.toContain(first.getAttribute('data-testid'))
   })
   it('멘탈 29(경계, 흔들림)에서는 회복 카드가 최상단으로 온다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 29 } } })
     render(<HomeScreen />)
     const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).toContain(first.getAttribute('data-testid'))
+    expect(RECOVERY_TESTIDS).toContain(first.getAttribute('data-testid'))
   })
 })
 
