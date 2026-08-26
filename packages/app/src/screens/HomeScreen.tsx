@@ -1,9 +1,9 @@
-import { actionPoints, isShaken, moodOf } from '@bb/core'
+import { actionPoints } from '@bb/core'
 import { useGame } from '../store/store'
-import { Art } from '../art/Art'
 import { NewsFeed } from '../components/NewsFeed'
 import { CardGrid } from '../components/CardGrid'
-import type { ArtKey } from '../art/keys'
+import { TopBar } from '../components/TopBar'
+import { CharacterStage } from '../components/CharacterStage'
 
 export function HomeScreen() {
   const s = useGame(st => st.state)
@@ -15,12 +15,6 @@ export function HomeScreen() {
   if (!s) return null
 
   const limit = actionPoints(s)
-  const shaken = isShaken(s)
-  // 표정 구간 판정은 core(moodOf)가 갖는다. 예전에는 여기서 '시드머니 대비 ROI ≥ 20%'로
-  // 갈랐는데, 월급 입금만으로 턴 4에 48%가 되어 normal 6종이 사실상 죽어 있었다
-  // (최종 리뷰 C1 부작용).
-  const mood = moodOf(s)
-  const charKey = `char.tier${s.player.tier}.${mood}` as ArtKey
 
   // 선택지 대기 중에는 next()가 CHOICE_PENDING을 조용히 삼키므로, 버튼을 눌러도
   // 아무 일도 안 일어나는 화면이 되지 않도록 여기서 먼저 막고 안내한다.
@@ -40,9 +34,8 @@ export function HomeScreen() {
 
   return (
     <section className="screen home">
-      <div className={`portrait${shaken ? ' portrait-shaken' : ''}`}>
-        <Art id={charKey} size={128} />
-      </div>
+      <TopBar />
+      <CharacterStage />
       {skipNotice && <p className="turn-skipped" data-testid="turn-skipped">{skipNotice}</p>}
       <NewsFeed />
       <h2 className="section-title">
