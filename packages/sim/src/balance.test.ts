@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
-import { act, withinApBudget } from './strategies'
+import { act, withinApBudget, CARD_PREF, RECOVERY_AT } from './strategies'
 import {
   BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
@@ -38,6 +38,22 @@ function ladder(seeds: number, qtyOf: (s: GameState) => number) {
     shakenTurns += s.trackers.shakenTurns
   }
   return { shakenRate: shakenRuns / seeds, avgShakenTurns: shakenTurns / seeds }
+}
+
+/**
+ * `runBatch`는 (runs, strategy, seed0)의 **순수 함수**다 — 같은 인자는 같은 리포트를
+ * 바이트 단위로 낸다. 이 파일에서만 같은 배치를 여러 게이트가 다시 돌리고 있어
+ * (buyhold 200판이 네 번) 스위트 시간의 절반이 중복 계산이었다. 메모는 결과를 바꾸지
+ * 않고 시간만 줄인다 — 표본을 키운 게이트의 비용을 여기서 되산다.
+ */
+const cache = new Map<string, ReturnType<typeof runBatch>>()
+function batch(runs: number, strategy: Strategy, seed0 = 1) {
+  const key = `${runs}/${strategy}/${seed0}`
+  const hit = cache.get(key)
+  if (hit) return hit
+  const r = runBatch(runs, strategy, seed0)
+  cache.set(key, r)
+  return r
 }
 
 describe('playOne', () => {
@@ -139,7 +155,7 @@ describe('전략은 이번 턴 슬롯에서만 카드를 고른다 (리뷰 Minor
 
 describe('runBatch', () => {
   it('리포트 필드가 채워진다', () => {
-    const r = runBatch(60, 'seedhold')
+    const r = batch(60, 'seedhold')
     expect(r.runs).toBe(60)
     expect(Object.values(r.endingCounts).reduce((a, b) => a + b, 0)).toBe(60)
     expect(r.assetsP10).toBeLessThanOrEqual(r.assetsMedian)
@@ -151,7 +167,7 @@ describe('runBatch', () => {
   // "실제 플레이 156턴에서 세 표정이 다 나오는가"로만 잡힌다.
   it('캐릭터 표정 3종이 실제 플레이에서 모두 나타난다', () => {
     // buyhold: 노출이 짙어 손실·회복을 다 겪는 전형적인 판.
-    const r = runBatch(40, 'buyhold')
+    const r = batch(40, 'buyhold')
     for (const m of ['normal', 'joy', 'shaken'] as const) {
       expect(r.moodShare[m], `${m} 점유율`).toBeGreaterThan(0.02)
       expect(r.moodReach[m], `${m} 도달 판 비율`).toBeGreaterThan(0.2)
@@ -166,17 +182,27 @@ describe('runBatch', () => {
   it('두 존버 전략 모두 파산율이 15% 미만이다', () => {
     // seedhold: 시드의 90%만 넣고 방치 (얇은 노출) / buyhold: 매 턴 현금 90% 투입 (짙은 노출).
     // 노출이 10배 넘게 차이 나므로 둘 다 재야 "사놓고 버티면 망하지 않는다"가 성립한다.
-    expect(runBatch(200, 'seedhold').bankruptRate, 'seedhold').toBeLessThan(0.15)
-    expect(runBatch(200, 'buyhold').bankruptRate, 'buyhold').toBeLessThan(0.15)
+    expect(batch(200, 'seedhold').bankruptRate, 'seedhold').toBeLessThan(0.15)
+    expect(batch(200, 'buyhold').bankruptRate, 'buyhold').toBeLessThan(0.15)
   })
   it('panic이 buyhold(노출을 맞춘 존버)보다 확실히 나쁘다', () => {
     // 재리뷰 §5: panic은 매 턴 자본의 95%를 굴리므로 시장 노출이 buyhold(진짜 존버)와
     // 거의 같다. 옛 buyhold(=seedhold, 노출 40%)와 비교하면 "뇌동매매는 손해다"가 -1%로
     // 재어졌지만, 노출을 맞춘 buyhold와 비교하면 **중앙값 -28%**다. 처벌의 크기를
     // 제대로 재려면 비교 대상이 노출을 맞춘 벤치마크여야 한다.
-    const panic = runBatch(200, 'panic')
-    const hold = runBatch(200, 'buyhold')
-    expect(panic.assetsMedian).toBeLessThan(hold.assetsMedian * 0.85)
+    //
+    // **표본을 200 → 500으로 키웠다(Task 8).** 통과선(×0.85)은 그대로다. Task 7 끝에
+    // 이 게이트가 0.854로 red였을 때 원인은 버그가 아니라 **검정력 부족**이었다:
+    // 시드창 5개를 훑으면 0.854 / 0.808 / 0.741 / 0.790 / 0.886으로 창마다 ±7%p씩
+    // 흔들렸고, 카드를 한 장도 쓰지 않는 변형에서도 0.8555가 나왔다(격차를 만드는 건
+    // 카드가 아니라 매매다). 통과선을 내리면 "뇌동매매의 처벌이 얼마나 커야 하는가"라는
+    // 이 게이트의 문언이 훼손되므로, 문언을 그대로 두고 표본을 키웠다.
+    // 재측정(시드창 6개, n=500): 0.726 / 0.750 / 0.755 / 0.763 / 0.785 / 0.795 —
+    // 폭이 0.102 → 0.069로 좁아졌고 모든 창이 통과선 아래다.
+    const panic = batch(500, 'panic')
+    const hold = batch(500, 'buyhold')
+    expect(panic.assetsMedian, `panic/buyhold ${(panic.assetsMedian / hold.assetsMedian).toFixed(4)}`)
+      .toBeLessThan(hold.assetsMedian * 0.85)
   })
   it('seedhold가 무매매(cash)를 마진 이상으로 이긴다 — 투자할 이유가 있는 시장인가', () => {
     // Task 24의 핵심 게이트. 시장 기대수익률이 0 이하면 아무것도 안 한 사람(cash)이
@@ -190,16 +216,26 @@ describe('runBatch', () => {
     // (29,022,906 vs 29,020,000 = +0.01%, 2,906원 차이 — 동전던지기).
     // 상대 마진은 '기준선 리터럴'이 아니라 두 배치의 관계라 밸런싱을 해도 유효하다.
     // 현재 실측 +10.8%. (뮤테이션 검증: 보고서 Fix Round 1 §뮤테이션)
-    const bh = runBatch(200, 'seedhold')
-    const cash = runBatch(200, 'cash')
-    expect(bh.assetsMedian).toBeGreaterThan(cash.assetsMedian * 1.03)
+    //
+    // 표본을 200 → 500으로 키웠다(Task 8). 이 게이트는 마진이 원래 얇고(+3%) Task 6~7의
+    // 성장 구조 변경으로 실측 마진이 +10.8% → +4.7%까지 줄었다 — 창 하나로 재면
+    // 동전던지기가 된다. 500판 시드창 6개 재측정: 1.045 / 1.052 / 1.055 / 1.058 /
+    // 1.062 / 1.066 (전부 통과, 최악의 창도 +1.5%p 여유).
+    //
+    // `cash`와 `seedhold`는 **카드 정책이 같다**(strategies.ts의 CARD_PREF). 한쪽만
+    // 야근을 하면 이 게이트가 재는 것이 "시장이 투자를 보상하는가"가 아니라 "누가 더
+    // 일했는가"가 된다 — 아래 '대조쌍은 카드 정책이 같다' 테스트가 그 전제를 고정한다.
+    const bh = batch(500, 'seedhold')
+    const cash = batch(500, 'cash')
+    expect(bh.assetsMedian, `seedhold/cash ${(bh.assetsMedian / cash.assetsMedian).toFixed(4)}`)
+      .toBeGreaterThan(cash.assetsMedian * 1.03)
   })
   it('어떤 종목도 시드와 무관하게 확정 승리·확정 패배가 아니다', () => {
     // Fix Round 1의 핵심 게이트. 이전에는 청람소재(ecp)가 300시드 전부에서 초기가 아래로
     // 끝났고(상승률 0%), 10종 중 5종이 상승률 6% 이하였다 — 플레이어가 배우는 것이
     // "위험을 어떻게 다룰까"가 아니라 "어떤 티커를 피할까"라는 정답표가 된다.
     // 자산 분위수로는 안 보이는 결함이라 리포트에 종목별 최종가 배율을 추가했다.
-    const r = runBatch(200, 'random')
+    const r = batch(200, 'random')
     const ids = Object.keys(r.priceUpRate)
     expect(ids.length).toBeGreaterThanOrEqual(10)
     const bad = ids
@@ -213,7 +249,7 @@ describe('runBatch', () => {
     // 되돌려도 그 게이트는 통과한다(FM1: 1.064). 시장은 직접 재야 한다.
     // 지수 ETF는 파생이라 제외하고, 실제 종목들의 최종가 배율 중앙값의 중앙값을 본다.
     // 현재 1.24 / 시장 튜닝을 되돌리면 0.78. (뮤테이션 검증: 보고서 Fix Round 1)
-    const r = runBatch(200, 'random')
+    const r = batch(200, 'random')
     const muls = Object.entries(r.priceMulMedian)
       .filter(([id]) => id !== 'lev' && id !== 'inv')
       .map(([, m]) => m)
@@ -228,7 +264,7 @@ describe('runBatch', () => {
     // 반대로 늘 발동하면 게임이 안 굴러가므로 위쪽도 막는다.
     // 노출도 가중(재리뷰 N1) 이후로는 **노출이 짙은** buyhold로 잰다 — 얇은 seedhold로
     // 재면 "토큰 포지션 하나로 게이트가 만족되는" 문제가 그대로 남는다.
-    const r = runBatch(200, 'buyhold')
+    const r = batch(200, 'buyhold')
     expect(r.shakenRate).toBeGreaterThan(0.1)
     expect(r.shakenRate).toBeLessThan(0.9)
   })
@@ -242,6 +278,47 @@ describe('runBatch', () => {
     expect(heavy.shakenRate, `몰빵 ${(heavy.shakenRate * 100).toFixed(0)}%`).toBeGreaterThan(0.15)
     expect(heavy.shakenRate).toBeGreaterThan(tiny.shakenRate * 3)
   })
+  // ── Task 8이 추가한 게이트 3개 ──────────────────────────────────────────────
+  // 슬롯·행동력·등급이 들어온 뒤에도 "선택이 실제로 존재하는가 / 성장이 체감되는가 /
+  // 교착이 나는가"를 재는 자가 하나도 없었다. 셋 다 단위 테스트로는 안 보이고
+  // 156턴 실제 플레이에서만 보인다.
+
+  it('행동력이 대부분의 턴에서 실제로 소모된다', () => {
+    // 예산이 남아도는 설계는 선택을 만들지 못한다 — 슬롯 3칸 중 무엇을 낼지가 고민이
+    // 되려면 예산이 실제로 빡빡해야 한다.
+    // 통과선을 `BALANCE.action.base`에서 유도하는 것이 이 게이트의 핵심이다: 예산을
+    // 부풀리는 뮤테이션(base 2 → 20)은 **통과선도 같이 올라가** 잡힌다. 행동 슬롯이
+    // 3칸이고 한 장의 최대 비용이 3AP라 한 턴에 태울 수 있는 상한이 9AP이므로,
+    // 예산을 20으로 늘리면 통과선 12AP는 원리적으로 도달 불가능하다(보고서 §뮤테이션).
+    const r = batch(200, 'buyhold')
+    expect(r.avgApSpent, `턴당 행동력 ${r.avgApSpent.toFixed(2)} / 기본 ${BALANCE.action.base}`)
+      .toBeGreaterThan(BALANCE.action.base * 0.6)
+  })
+
+  it('등급 분포가 후반에 상위로 이동한다', () => {
+    // 스탯이 등급 확률을 민다(BALANCE.grade.statShift)는 설계가 **실제 플레이에서**
+    // 성립하는가. 단위 테스트는 "스탯 10이면 상위 등급이 많다"까지만 보이고, 156턴
+    // 동안 스탯이 실제로 그만큼 자라는지는 못 본다.
+    // 재는 대상은 낸 카드가 아니라 **뽑힌 슬롯 4칸 전부**다 — 낸 카드만 세면 전략
+    // 취향이 등급 분포에 섞여 들어와 설계가 아니라 취향을 재게 된다.
+    const r = batch(200, 'buyhold')
+    expect(r.avgGradeIdxLate, `초반 ${r.avgGradeIdxEarly.toFixed(2)} → 후반 ${r.avgGradeIdxLate.toFixed(2)}`)
+      .toBeGreaterThan(r.avgGradeIdxEarly + 0.5)
+  })
+
+  it('회복 슬롯이 멘탈 교착을 막는다', () => {
+    // 흔들림에 들어간 판이 전부 흔들림으로 끝나지는 않는다 — 회복 슬롯이 항상 열려 있고
+    // 행동력을 쓰지 않는다는 불변식(스펙 §3.3, BALANCE.action)이 실제로 탈출구인가.
+    // panic으로 재는 이유: 커뮤니티 눈팅(멘탈 −6)과 뇌동매매 손실이 겹쳐 흔들림에
+    // 가장 자주 빠지는 전략이다.
+    const r = batch(300, 'panic')
+    // 분모 방어. stuckInShakenRate는 **흔들림을 겪은 판**을 분모로 쓰므로, 아무도
+    // 흔들리지 않으면 0으로 공허하게 통과한다(그건 회복이 일했다는 증거가 아니라
+    // 멘탈 시스템이 죽었다는 증거다). 분모가 유의미한지를 먼저 못박는다.
+    expect(r.shakenRate, `panic 흔들림 겪은 판 ${(r.shakenRate * 100).toFixed(0)}%`).toBeGreaterThan(0.2)
+    expect(r.stuckInShakenRate, `교착률 ${(r.stuckInShakenRate * 100).toFixed(1)}%`).toBeLessThan(0.2)
+  })
+
   it('엔딩이 한 종류로 쏠리지 않는다', () => {
     // Ruling 53 — 브리프 기본값(seed0=1, runs=300) 그대로. 이전 라운드에서 seed0=5000으로
     // 옮겨 3종 이상을 억지로 만들었으나, 13개 seed0 창을 훑어보면 3종이 뜨는 창도 3번째
@@ -251,8 +328,64 @@ describe('runBatch', () => {
     // Task 24에서 원인(시장 기대수익률 음수 + 엔딩 경계가 3년치 월급을 무시한 시드머니
     // 기준)을 고친 뒤 단언을 원래 값인 4종으로 되돌렸다. 현재 실측: savings/breakeven/
     // bank/wise/kimheir 5종, 최다 33%.
-    const r = runBatch(300, 'random')
+    const r = batch(300, 'random')
     expect(Object.keys(r.endingCounts).length).toBeGreaterThanOrEqual(4)
     expect(Math.max(...Object.values(r.endingCounts)) / r.runs).toBeLessThan(0.7)
+  })
+})
+
+/**
+ * Task 8 — "전략이 행동력을 어떻게 쓰는가"가 전략마다 실제로 다른지 실측으로 고정한다.
+ * 여섯 전략이 전부 같은 카드를 고르면 위의 전략 비교 게이트들은 전략 차이가 아니라
+ * 매매 차이만 재게 되고, `CARD_PREF` 표는 있으나 마나 한 장식이 된다.
+ */
+describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
+  const ALL = ['cash', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+  const use = () => Object.fromEntries(ALL.map(s => [s, batch(60, s).cardUse]))
+  /** 두 카드 사용 분포의 거리(L1). 0이면 완전히 같고 2면 겹치는 카드가 하나도 없다. */
+  function l1(a: Record<string, number>, b: Record<string, number>): number {
+    const ids = new Set([...Object.keys(a), ...Object.keys(b)])
+    let d = 0
+    for (const id of ids) d += Math.abs((a[id] ?? 0) - (b[id] ?? 0))
+    return d
+  }
+
+  it('CARD_PREF는 실제 행동 카드 전부를 빠짐없이 담는다', () => {
+    // 오타 난 id는 조용히 '취향 없음'(맨 뒤)이 되어 그 전략의 성격만 사라진다 —
+    // 어떤 게이트도 그걸 잡지 못한다. 표를 데이터와 직접 맞춰 둔다.
+    const actionIds = loadCards().filter(c => !c.isRecovery).map(c => c.id).sort()
+    expect(actionIds.length).toBeGreaterThan(0)
+    for (const s of ALL) {
+      if (s === 'random') { expect(CARD_PREF[s]).toEqual([]); continue }   // 취향 없음이 성격이다
+      expect([...CARD_PREF[s]].sort(), `${s}의 취향 표`).toEqual(actionIds)
+    }
+  })
+
+  it('대조쌍(cash·seedhold)은 카드 정책이 같다 — 매매만 다르다', () => {
+    // `seedhold > cash × 1.03` 게이트의 전제다. 한쪽 취향 표만 바꾸면 그 게이트가
+    // 시장이 아니라 노동을 재기 시작하는데, 그 순간을 잡을 자가 여기 말고는 없다.
+    const u = use()
+    expect(l1(u['cash']!, u['seedhold']!), '카드 사용 분포 L1 거리').toBeLessThan(0.05)
+  })
+
+  it('나머지 전략 쌍은 카드 사용 분포가 뚜렷이 다르다', () => {
+    const u = use()
+    const pairs: string[] = []
+    for (let i = 0; i < ALL.length; i++) {
+      for (let j = i + 1; j < ALL.length; j++) {
+        const a = ALL[i]!, b = ALL[j]!
+        if (a === 'cash' && b === 'seedhold') continue          // 위에서 '같아야 한다'로 고정
+        const d = l1(u[a]!, u[b]!)
+        if (d < 0.2) pairs.push(`${a} vs ${b}: L1 ${d.toFixed(3)}`)
+      }
+    }
+    // 실측 최소 거리는 buyhold vs panic의 0.31이다(둘 다 야근이 1순위라 가장 가깝다).
+    expect(pairs).toEqual([])
+  })
+
+  it('회복 임계는 리터럴이 아니라 BALANCE에서 유도된다', () => {
+    // 문턱을 다시 튜닝했을 때 sim이 따라오지 않으면 게이트가 옛 문턱을 재게 된다.
+    expect(RECOVERY_AT.mental).toBeGreaterThan(BALANCE.mental.shakenMax)
+    expect(RECOVERY_AT.condition).toBeGreaterThan(BALANCE.condition.forcedSkipBelow)
   })
 })

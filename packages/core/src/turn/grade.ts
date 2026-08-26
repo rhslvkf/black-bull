@@ -5,6 +5,9 @@ import { type RngState, rngNext } from '../rng/rng'
 export const GRADES = ['E', 'D', 'C', 'B', 'A', 'S'] as const satisfies readonly CardGrade[]
 
 export const gradeMul = (g: CardGrade): number => BALANCE.grade.mul[g]
+/** **현금 델타에만** 쓰는 등급 배율. gradeMul과 분리한 근거는 BALANCE.grade.cashMul 주석에
+ *  있다 — 한 줄로는: 야근 S가 월급의 3.16배가 되어 무위험 노동이 투자를 이겼다. */
+export const gradeCashMul = (g: CardGrade): number => BALANCE.grade.cashMul[g]
 export const gradeAp = (g: CardGrade): number => BALANCE.grade.ap[g]
 
 const CARD_STAT: Record<string, keyof Stats> = {

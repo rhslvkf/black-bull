@@ -1,3 +1,4 @@
+import { BALANCE } from '@bb/core'
 import { runBatch } from './runner'
 import type { Strategy } from './strategies'
 
@@ -35,6 +36,11 @@ console.log(`  자산 중앙값   ${won(r.assetsMedian)}`)
 console.log(`  P10 / P90     ${won(r.assetsP10)} / ${won(r.assetsP90)}`)
 console.log(`  평균 흔들림   ${r.avgShakenTurns.toFixed(1)}턴`)
 console.log(`  흔들림 겪은 판 ${(r.shakenRate * 100).toFixed(1)}%`)
+// 흔들림에 들어간 판 중 못 빠져나온 비율 — 회복 슬롯이 일하고 있는지를 보는 자다.
+console.log(`  멘탈 교착률   ${(r.stuckInShakenRate * 100).toFixed(1)}% (흔들림 겪은 판 기준)`)
+console.log(`  턴당 행동력   ${r.avgApSpent.toFixed(2)} / 기본 ${BALANCE.action.base}`)
+console.log(`  턴당 리롤     ${r.rerollUse.toFixed(2)} / 기본 ${BALANCE.reroll.base}`)
+console.log(`  슬롯 등급(E=0..S=5)  초반 ${r.avgGradeIdxEarly.toFixed(2)} → 후반 ${r.avgGradeIdxLate.toFixed(2)} (Δ${(r.avgGradeIdxLate - r.avgGradeIdxEarly).toFixed(2)})`)
 console.log('  엔딩 분포')
 Object.entries(r.endingCounts).sort((a, b) => b[1] - a[1])
   .forEach(([id, n]) => console.log(`    ${id.padEnd(12)} ${n} (${((n / r.runs) * 100).toFixed(1)}%)`))
@@ -45,8 +51,16 @@ Object.entries(r.priceMulMedian).sort((a, b) => b[1] - a[1]).forEach(([id, m]) =
   console.log(`    ${id.padEnd(5)} x${m.toFixed(2).padStart(6)}   ${((r.priceUpRate[id] ?? 0) * 100).toFixed(0).padStart(3)}%`))
 
 console.log('  캐릭터 표정 (턴 점유율 / 한 번이라도 본 판)')
-Object.entries(r.moodShare).forEach(([m, share]) =>
-  console.log(`    ${m.padEnd(7)} ${(share * 100).toFixed(1).padStart(5)}%   ${((r.moodReach[m as 'normal'] ?? 0) * 100).toFixed(0).padStart(3)}%`))
+// `as` 없이 Mood 키를 도는 방법 — 리터럴 배열을 돌면 인덱싱이 그대로 타입 안전하다.
+for (const m of ['normal', 'shaken', 'joy'] as const) {
+  console.log(`    ${m.padEnd(7)} ${(r.moodShare[m] * 100).toFixed(1).padStart(5)}%   ${(r.moodReach[m] * 100).toFixed(0).padStart(3)}%`)
+}
+
+// 전략별 카드 선택이 실제로 다른지는 이 분포로만 보인다 — 전부 같은 카드를 고르면
+// 전략 게이트가 전략 차이를 재지 못한다.
+console.log('  카드 사용 점유율')
+Object.entries(r.cardUse).sort((a, b) => b[1] - a[1]).forEach(([id, p]) =>
+  console.log(`    ${id.padEnd(10)} ${(p * 100).toFixed(1).padStart(5)}%`))
 
 console.log('  칭호 부여율')
 Object.entries(r.titleRate).sort((a, b) => b[1] - a[1]).forEach(([t, p]) =>

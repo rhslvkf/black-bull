@@ -26,6 +26,13 @@ function buyWithBudget(state: GameState, stockId: string, budget: number): GameS
  * 에만 곱한다. flag/impact/retire/rivalMul/fundamentalMul/buyStockPct는 스위치이거나
  * 이미 배수·비율이라 여기에 등급을 곱하면 의미가 없거나 배율이 두 번 먹는다.
  *
+ * `cashMul`은 **현금 델타에만** 걸리는 별도 배율이다(gradeCashMul). 기본값은 `mul`이라
+ * 이 인자를 넘기지 않는 호출자 — 이벤트 효과(engine.ts)와 배율을 직접 지정하는
+ * 테스트 — 의 동작은 예전과 한 글자도 다르지 않다. 채널을 가른 이유는
+ * BALANCE.grade.cashMul 주석에 있다: 하나의 배율로는 "야근 S가 월급의 3배"와
+ * "회복 카드가 잠기지 않으므로 회복 슬롯은 늘 살아 있어야 한다"를 동시에 만족시킬 수
+ * 없다(현금을 잡으려 mul을 눕히면 회복·스탯 성장이 같이 죽는다).
+ *
  * 보상만이 아니라 **대가도 함께 커진다** — 음수 델타(야근의 컨디션 −18, 소주의 현금
  * −40,000)에도 같은 배율이 곱해진다. 이것이 등급 규칙 그 자체다(BALANCE.grade 주석).
  *
@@ -34,7 +41,7 @@ function buyWithBudget(state: GameState, stockId: string, budget: number): GameS
  * A등급이 `180000 * 2.2 === 396000.00000000006`이다.
  * (−40,000 × 2.2는 정확히 −88,000이라 예시가 되지 못한다 — 리뷰 Fix Round 1에서 정정.)
  */
-export function applyEffects(state: GameState, effects: Effect[], mul = 1): GameState {
+export function applyEffects(state: GameState, effects: Effect[], mul = 1, cashMul = mul): GameState {
   let s = state
   for (const e of effects) {
     switch (e.type) {
@@ -45,7 +52,7 @@ export function applyEffects(state: GameState, effects: Effect[], mul = 1): Game
       }
       case 'mental': s = bump(s, '__mentalPending', e.delta * mul); break
       case 'condition': s = bump(s, '__conditionPending', e.delta * mul); break
-      case 'cash': s = { ...s, player: { ...s.player, cash: Math.max(0, s.player.cash + Math.round(e.delta * mul)) } }; break
+      case 'cash': s = { ...s, player: { ...s.player, cash: Math.max(0, s.player.cash + Math.round(e.delta * cashMul)) } }; break
       case 'flag':
         s = e.value === 'inc'
           ? bump(s, e.key, 1)

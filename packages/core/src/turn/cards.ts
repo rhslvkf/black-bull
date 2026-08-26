@@ -5,7 +5,7 @@ import { GameError } from '../error'
 import { isShaken } from '../mental/mental'
 import { evalCondition } from './conditions'
 import { applyEffects } from './effects'
-import { gradeAp, gradeMul } from './grade'
+import { gradeAp, gradeCashMul, gradeMul } from './grade'
 
 export function loadCards(): ActionCardDef[] { return raw as ActionCardDef[] }
 
@@ -58,6 +58,8 @@ export function playCard(state: GameState, cardId: string, grade: CardGrade): Ga
   if (!isCardAvailable(state, card)) throw new GameError('CARD_LOCKED')
 
   const mul = gradeMul(grade)
+  // 현금만 별도 곡선을 쓴다 — 근거는 BALANCE.grade.cashMul 주석.
+  const cashMul = gradeCashMul(grade)
   // 비용은 한 번에 모아 **효과와 같은 배율**로 적용한다. money·condition을 따로 두 번
   // 호출하면 한쪽에만 배율을 빠뜨리는 변경이 조용히 가능해지는데, cards.json에
   // cost.condition을 가진 카드가 아직 없어 그 실수를 잡을 테스트를 쓸 수도 없다
@@ -65,5 +67,5 @@ export function playCard(state: GameState, cardId: string, grade: CardGrade): Ga
   const costs: Effect[] = []
   if (card.cost?.money) costs.push({ type: 'cash', delta: -card.cost.money })
   if (card.cost?.condition) costs.push({ type: 'condition', delta: -card.cost.condition })
-  return applyEffects(applyEffects(state, costs, mul), card.effects, mul)
+  return applyEffects(applyEffects(state, costs, mul, cashMul), card.effects, mul, cashMul)
 }

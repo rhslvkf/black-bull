@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { initGame, advanceTurn } from './advance'
 import { actionPoints, cardApCost, loadCards, isCardAvailable } from './cards'
-import { gradeAp, gradeMul, GRADES } from './grade'
+import { gradeAp, gradeCashMul, GRADES } from './grade'
 import { buy } from './trade'
 import { totalAssets } from './accounting'
 import { BALANCE } from '../balance'
@@ -409,6 +409,9 @@ describe('턴 루프와 슬롯 (Task 6)', () => {
   })
 
   // Ruling 13 — 배율은 비용에도 곱해진다. 돈은 정수 KRW이므로 곱한 뒤 반올림된다.
+  // Task 8부터 **현금 델타만** 별도 곡선(gradeCashMul)을 쓴다 — 기대값을 리터럴이
+  // 아니라 그 함수에서 유도하므로, BALANCE.grade.cashMul을 다시 튜닝해도 이 테스트는
+  // 계속 "등급이 비용에 곱해진다"만 고정한다.
   it('등급이 돈 비용도 키우고, 곱한 뒤에도 현금은 정수다', () => {
     const paid = loadCards().find(c => (c.cost?.money ?? 0) > 0)!
     const at = (g: CardGrade) => makeState({
@@ -418,7 +421,8 @@ describe('턴 루프와 슬롯 (Task 6)', () => {
     // 오롯이 카드 비용의 차이다.
     const spent = (g: CardGrade) => at(g).player.cash - advanceTurn(at(g), [paid.id]).player.cash
     expect(spent('A') - spent('C'))
-      .toBe(Math.round(paid.cost!.money! * gradeMul('A')) - Math.round(paid.cost!.money! * gradeMul('C')))
+      .toBe(Math.round(paid.cost!.money! * gradeCashMul('A')) - Math.round(paid.cost!.money! * gradeCashMul('C')))
+    expect(spent('A')).toBeGreaterThan(spent('C'))
     // 정수성은 턴 루프를 통과한 뒤에도 유지돼야 한다. 현금이 오가는 카드 전부 × 등급
     // 전부를 돈다 — 한 카드(30,000원)만 돌리면 여섯 배율 모두 우연히 정수가 나와 아무것도
     // 고정하지 못한다(Fix Round 1 Major 1). 잔고는 **낮게** 잡는다: 큰 잔고에 더하면

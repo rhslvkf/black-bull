@@ -3,7 +3,7 @@ import { makeState } from '../testkit'
 import { loadCards, isCardAvailable, cardLockReason, playCard } from './cards'
 import { GameError } from '../error'
 import { BALANCE } from '../balance'
-import { gradeMul, GRADES } from './grade'
+import { gradeCashMul, GRADES } from './grade'
 import { applyEffects } from './effects'
 import type { ActionCardDef, Effect, Condition, StatKey, CardGrade } from '../types'
 
@@ -191,9 +191,11 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
   const rich = () => makeState({ player: { cash: 10_000_000 } })
 
   it('돈 비용에 등급 배율이 곱해진다', () => {
+    // 현금 델타는 Task 8부터 gradeCashMul을 쓴다(gradeMul이 아니다) — C등급이 1.0이
+    // 아닐 수 있으므로 기대값을 카드 금액 리터럴이 아니라 그 함수에서 유도한다.
     const spent = (g: CardGrade) => rich().player.cash - playCard(rich(), paid.id, g).player.cash
-    expect(spent('C')).toBe(paid.cost!.money)
-    expect(spent('A')).toBe(Math.round(paid.cost!.money! * gradeMul('A')))
+    expect(spent('C')).toBe(Math.round(paid.cost!.money! * gradeCashMul('C')))
+    expect(spent('A')).toBe(Math.round(paid.cost!.money! * gradeCashMul('A')))
     expect(spent('A')).toBeGreaterThan(spent('C'))
   })
 
@@ -233,8 +235,10 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
         ...(c.cost?.money ? [c.cost.money] : []),
         ...c.effects.flatMap(e => (e.type === 'cash' ? [Math.abs(e.delta)] : [])),
       ]
+      // 현금 채널의 배율은 gradeCashMul이다(Task 8) — gradeMul로 재면 **실제로는
+      // 쓰이지 않는 곱**을 검사하게 되어, 프로덕션 경로의 반올림이 사라져도 그린이다.
       return amounts.flatMap(amount => GRADES.map(g => ({
-        label: `${c.name} ${amount}원 × 등급 ${g}`, amount, g, product: amount * gradeMul(g),
+        label: `${c.name} ${amount}원 × 등급 ${g}`, amount, g, product: amount * gradeCashMul(g),
       })))
     })
 
@@ -246,13 +250,13 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
     const zero = () => makeState({ player: { cash: 0 } })
     // ② 구현이 내놓는 값은 언제나 정수이고, 원시 곱을 반올림한 값과 같다.
     for (const x of cases) {
-      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], gradeMul(x.g)).player.cash
+      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], 1, gradeCashMul(x.g)).player.cash
       expect(Number.isInteger(cash), x.label).toBe(true)
       expect(cash, x.label).toBe(Math.round(x.product))
     }
     // ③ 비정수 조합에서는 구현 값이 원시 곱과 **달라야** 한다 — 반올림이 실제로 일어났다는 증거.
     for (const x of floats) {
-      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], gradeMul(x.g)).player.cash
+      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], 1, gradeCashMul(x.g)).player.cash
       expect(cash, `${x.label}: 원시 곱 ${x.product}`).not.toBe(x.product)
     }
   })
@@ -266,13 +270,37 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
     }
   })
 
-  it('야근의 D·A등급은 반올림이 없으면 실제로 소수점이 남는다 (위 테스트가 겨냥하는 지점)', () => {
-    // 위 테스트가 무엇을 잡는지 데이터로 못박아 둔다 — 이 곱셈이 정수가 되어버리면
-    // (예: 야근 금액이 바뀌면) 위 테스트는 통과해도 아무것도 고정하지 못하게 된다.
+  it('야근은 반올림이 없으면 실제로 소수점이 남는 등급을 가진다 (위 테스트가 겨냥하는 지점)', () => {
+    // 위 테스트가 무엇을 잡는지 데이터로 못박아 둔다 — 이 곱셈이 전부 정수가 되어버리면
+    // (야근 금액이 바뀌거나 cashMul 곡선을 갈아끼우면) 위 테스트는 통과해도 아무것도
+    // 고정하지 못하게 된다. 어느 등급인지는 곡선에 따라 달라지므로 **등급을 이름으로
+    // 박지 않고** 여섯 등급 중 하나라도 소수점이 남는지를 본다 (현재 D·B).
     const overtime = loadCards().find(c => c.id === 'overtime')!
     const cash = overtime.effects.find(e => e.type === 'cash')!
-    expect(cash.type === 'cash' && Number.isInteger(cash.delta * gradeMul('D'))).toBe(false)
-    expect(cash.type === 'cash' && Number.isInteger(cash.delta * gradeMul('A'))).toBe(false)
+    expect(cash.type).toBe('cash')
+    const floats = GRADES.filter(g =>
+      cash.type === 'cash' && !Number.isInteger(cash.delta * gradeCashMul(g)))
+    expect(floats.length, `야근 ${cash.type === 'cash' ? cash.delta : 0}원이 여섯 등급 전부 정수로 떨어진다`)
+      .toBeGreaterThan(0)
+  })
+
+  /**
+   * Task 8 리뷰 — **무위험 노동이 투자를 이기면 이 게임은 투자 게임이 아니다.**
+   * 야근 S등급이 턴당 576,000원이던 시절, 월급은 턴당 182,500원(4턴에 730,000원)이라
+   * 노동이 월급의 3.16배였다. 같은 시기 seedhold의 무매매 대비 마진은 +4.7%뿐이다.
+   * 두 숫자를 BALANCE에서 유도해 비교하므로, cashMul이나 employedNet을 다시 튜닝해도
+   * 이 조항은 계속 살아 있다.
+   */
+  it('야근 한 장의 현금은 S등급이라도 턴당 월급을 넘지 않는다', () => {
+    const overtime = loadCards().find(c => c.id === 'overtime')!
+    const gain = overtime.effects.find(e => e.type === 'cash')!
+    expect(gain.type).toBe('cash')
+    const perTurnPay = BALANCE.employedNet / BALANCE.payPeriod
+    const s = gain.type === 'cash' ? gain.delta * gradeCashMul('S') : 0
+    expect(s, `야근 S ${s}원 vs 턴당 월급 ${perTurnPay}원`).toBeLessThanOrEqual(perTurnPay)
+    // 기대 등급(스탯 0의 등급 분포는 D~C 사이다) 근처에서는 월급의 절반 이하다.
+    const c = gain.type === 'cash' ? gain.delta * gradeCashMul('C') : 0
+    expect(c).toBeLessThanOrEqual(perTurnPay / 2)
   })
 })
 
