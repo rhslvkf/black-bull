@@ -4,6 +4,7 @@ import { loadCards, isCardAvailable, cardLockReason, playCard } from './cards'
 import { GameError } from '../error'
 import { BALANCE } from '../balance'
 import { gradeMul, GRADES } from './grade'
+import { applyEffects } from './effects'
 import type { ActionCardDef, Effect, Condition, StatKey, CardGrade } from '../types'
 
 const cards = loadCards()
@@ -176,6 +177,12 @@ const CASH_CARDS = loadCards().filter(c =>
  * 정수성을 잴 때 쓸 **최소 잔고**. 잔고가 크면 부동소수 오차가 덧셈에서 반올림돼
  * 사라진다(`10_000_000 + 125999.99999999999 === 10126000`) — 오차가 살아남는 저잔고에서
  * 재야 정수화가 실제로 고정된다. 비용이 있는 카드는 그 비용만큼은 있어야 잠기지 않는다.
+ *
+ * **마진이 아주 얇다.** 재리뷰가 이진 탐색으로 잰 임계는 D등급(`180000 × 0.7`) 기준
+ * **약 ₩5,500**이다 — 초기 잔고를 그 위로 올리는 순간 아래 저잔고 테스트는 조용히
+ * 공허해진다("현실적인 값으로 바꾸자"가 정확히 그 지뢰다). 잔고를 바꿔야 한다면
+ * 위 **저수준 테스트**(`현금 델타 × 등급 배율이 잔고와 무관하게 정수로 만들어진다`)가
+ * 방어선으로 남아 있는지 먼저 확인하고 바꿔라.
  */
 const minCashFor = (c: ActionCardDef): number => c.cost?.money ?? 0
 
@@ -214,6 +221,42 @@ describe('playCard — 등급이 비용에도 곱해진다 (Ruling 13)', () => {
    * 그래서 현금이 오가는 카드를 **데이터에서 전수로** 뽑아 여섯 등급 전부를 돌린다 —
    * 새 카드가 추가돼도 자동으로 덮인다.
    */
+  /**
+   * Fix Round 2 — 아래 저잔고 테스트는 "잔고가 충분히 작아야 오차가 살아남는다"는
+   * 전제에 기대고 있다(재리뷰 실측 임계: D등급 기준 **약 ₩5,500**). 그 전제가 깨져도
+   * 정수화가 고정되도록, 잔고·클램프·덧셈 흡수와 **완전히 분리된** 저수준 검증을 둔다:
+   * 잔고 0에 그 금액만큼만 들어오게 해 곱셈·반올림 자체만 관측한다.
+   */
+  it('현금 델타 × 등급 배율이 잔고와 무관하게 정수로 만들어진다 (저수준)', () => {
+    const cases = CASH_CARDS.flatMap(c => {
+      const amounts = [
+        ...(c.cost?.money ? [c.cost.money] : []),
+        ...c.effects.flatMap(e => (e.type === 'cash' ? [Math.abs(e.delta)] : [])),
+      ]
+      return amounts.flatMap(amount => GRADES.map(g => ({
+        label: `${c.name} ${amount}원 × 등급 ${g}`, amount, g, product: amount * gradeMul(g),
+      })))
+    })
+
+    // ① 공허성 방어 — 원시 곱이 비정수인 조합이 **실제로 존재해야** 이 테스트가 뭔가를
+    //    고정한다. 카드 금액이 바뀌어 모든 곱이 정수가 되면 여기서 먼저 터진다.
+    const floats = cases.filter(x => !Number.isInteger(x.product))
+    expect(floats.length, `비정수 곱 조합이 없다: ${cases.length}개 전부 정수`).toBeGreaterThan(0)
+
+    const zero = () => makeState({ player: { cash: 0 } })
+    // ② 구현이 내놓는 값은 언제나 정수이고, 원시 곱을 반올림한 값과 같다.
+    for (const x of cases) {
+      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], gradeMul(x.g)).player.cash
+      expect(Number.isInteger(cash), x.label).toBe(true)
+      expect(cash, x.label).toBe(Math.round(x.product))
+    }
+    // ③ 비정수 조합에서는 구현 값이 원시 곱과 **달라야** 한다 — 반올림이 실제로 일어났다는 증거.
+    for (const x of floats) {
+      const cash = applyEffects(zero(), [{ type: 'cash', delta: x.amount }], gradeMul(x.g)).player.cash
+      expect(cash, `${x.label}: 원시 곱 ${x.product}`).not.toBe(x.product)
+    }
+  })
+
   it('현금이 오가는 모든 카드 × 모든 등급에서 현금이 정수 KRW다 (데이터 전수)', () => {
     for (const c of CASH_CARDS) {
       for (const g of GRADES) {
