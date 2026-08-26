@@ -1,4 +1,4 @@
-import type { GameState } from '../types'
+import type { GameState, CardGrade } from '../types'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { createRng } from '../rng/rng'
@@ -10,7 +10,7 @@ import { drawEvents, resolveImpacts, revealRumors } from '../events/engine'
 import { settleMental } from '../mental/mental'
 import { settleCondition, rollForcedSkip } from '../mental/condition'
 import { accrueInterest, checkMarginCall } from './margin'
-import { playCard } from './cards'
+import { playCard, actionPoints, cardApCost } from './cards'
 import { settlePayroll, settleTier, stepRival } from './economy'
 import { cashRatio, totalAssets } from './accounting'
 import { judgeEnding } from '../endings/endings'
@@ -43,8 +43,26 @@ export function initGame(seed: number): GameState {
   return { ...base, slots, rng: rng2, rerollsLeft: rerollCount(base) }
 }
 
-export function cardsPerTurn(state: GameState): number {
-  return state.player.employed ? 1 : 2
+/**
+ * Ruling 9 — 카드의 행동력 비용을 계산하려면 슬롯에서 등급을 알아야 하는데,
+ * `gradeOfSlot`은 슬롯에 없는 카드를 물으면 던진다(계약 유지, 그대로 둔다).
+ * 그런데 `advanceTurn(s, [id])` 형태의 기존 호출부가 core 테스트·sim에 이미 많고,
+ * 그 id가 그 턴에 뽑힌 슬롯에 실제로 있을지는 호출자가 신경 쓰지 않는 경우가 대부분이다
+ * (예: `hodl`이 그 턴의 회복 슬롯일 확률은 1/4뿐이다). 지금 하드 거부를 걸면 이 태스크가
+ * sim 전략 재작성까지 끌어안게 된다.
+ *
+ * 그래서 지금은 관대하게: 슬롯(행동/회복 어느 쪽이든)에 있으면 그 등급을, 없으면
+ * 중립 등급 'C'로 계산한다. 예외를 제어 흐름으로 쓰지 않기 위해 `gradeOfSlot`을
+ * try/catch로 감싸는 대신 슬롯을 직접 조회한다.
+ *
+ * Task 6이 이 관대함을 하드한 `NOT_IN_SLOTS` 거부로 바꾼다 — 그때는 이 헬퍼를
+ * 지우고 호출부를 `gradeOfSlot`으로 되돌린다.
+ */
+function gradeOfSlotOrDefault(state: GameState, cardId: string): CardGrade {
+  const inAction = state.slots.action.find(s => s.cardId === cardId)
+  if (inAction) return inAction.grade
+  if (state.slots.recovery.cardId === cardId) return state.slots.recovery.grade
+  return 'C'
 }
 
 function takePending(s: GameState, key: string): [number, GameState] {
@@ -57,7 +75,9 @@ function takePending(s: GameState, key: string): [number, GameState] {
 export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   if (state.status !== 'playing') throw new GameError('NOT_PLAYING')
   if (state.pendingChoices.length > 0) throw new GameError('CHOICE_PENDING')
-  if (cardIds.length > cardsPerTurn(state)) throw new GameError('TOO_MANY_CARDS')
+  const budget = actionPoints(state)
+  const spent = cardIds.reduce((sum, id) => sum + cardApCost(id, gradeOfSlotOrDefault(state, id)), 0)
+  if (spent > budget) throw new GameError('NO_AP')
 
   let s: GameState = { ...state, cutscene: null, lastTurnSkip: null }
 

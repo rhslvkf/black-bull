@@ -145,6 +145,10 @@ export const BALANCE = {
   /** 매 턴 뽑히는 슬롯 칸 수. 행동 카드가 7장이라 action(3) < 카드 수라서
    *  중복 없는 뽑기가 항상 가능하다. recovery는 항상 1칸 열려 있다(스펙 불변식). */
   slots: { action: 3, recovery: 1 },
+  /** 턴당 행동력. 1차의 cardsPerTurn(재직 1장/퇴사 2장)을 대체한다.
+   *  퇴사가 카드 장수가 아니라 예산 보너스가 되는 편이 의미상 맞다 — 야근을 안 하니
+   *  한 주가 통째로 남는다. 회복 카드는 이 예산을 소모하지 않는다(교착 방지). */
+  action: { base: 2, staminaPerAp: 3, unemployedBonus: 2, max: 6 },
   /** 리롤은 행동 슬롯만 다시 굴린다. base가 없으면 인맥 0인 초반에 리롤이 아예 없어
    *  슬롯 뽑기의 운을 완화할 수단이 사라진다. */
   reroll: { base: 1, networkPer: 3, max: 4 },

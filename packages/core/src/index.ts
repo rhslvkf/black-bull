@@ -2,14 +2,14 @@ export { createRng, rngNext, Rand, type RngState } from './rng/rng'
 export * from './types'
 export { BALANCE, TIER_NAMES } from './balance'
 export { GameError } from './error'
-export { initGame, advanceTurn, cardsPerTurn } from './turn/advance'
+export { initGame, advanceTurn } from './turn/advance'
 export { buy, sell, canBuy, canSell, maxBuyQty } from './turn/trade'
 export {
   totalAssets, holdingValue, cashRatio, priceOf, portfolioLossPct, positionLossPct,
   noTradeBaseline, investmentRoi,
 } from './turn/accounting'
 export { maxLoan, takeLoan, repayLoan } from './turn/margin'
-export { loadCards, isCardAvailable, cardLockReason, type CardLock } from './turn/cards'
+export { loadCards, isCardAvailable, cardLockReason, actionPoints, cardApCost, type CardLock } from './turn/cards'
 export { GRADES, gradeMul, gradeAp, rollGrade, cardStat } from './turn/grade'
 export { drawSlots, rerollSlots, rerollCount, gradeOfSlot } from './turn/slots'
 export { slotsWith } from './testkit'

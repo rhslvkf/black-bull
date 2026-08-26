@@ -1,4 +1,4 @@
-import { cardsPerTurn, isShaken, moodOf } from '@bb/core'
+import { actionPoints, isShaken, moodOf } from '@bb/core'
 import { useGame } from '../store/store'
 import { Art } from '../art/Art'
 import { NewsFeed } from '../components/NewsFeed'
@@ -14,7 +14,7 @@ export function HomeScreen() {
   const togglePick = useGame(st => st.togglePick)
   if (!s) return null
 
-  const limit = cardsPerTurn(s)
+  const limit = actionPoints(s)
   const shaken = isShaken(s)
   // 표정 구간 판정은 core(moodOf)가 갖는다. 예전에는 여기서 '시드머니 대비 ROI ≥ 20%'로
   // 갈랐는데, 월급 입금만으로 턴 4에 48%가 되어 normal 6종이 사실상 죽어 있었다

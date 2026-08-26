@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
-import { act } from './strategies'
+import { act, withinApBudget } from './strategies'
 import {
-  BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, cardsPerTurn, Rand, createRng,
+  BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
 } from '@bb/core'
 
@@ -27,7 +27,7 @@ function ladder(seeds: number, qtyOf: (s: GameState) => number) {
         const q = Math.min(maxBuyQty(s, 'sjc'), qtyOf(s))
         if (q > 0) { try { s = buy(s, 'sjc', q) } catch { /* 티어락·자금부족은 무시 */ } }
       }
-      s = advanceTurn(s, ['hodl'].slice(0, cardsPerTurn(s)))
+      s = advanceTurn(s, withinApBudget(s, ['hodl']))
     }
     if (s.trackers.shakenTurns > 0) shakenRuns++
     shakenTurns += s.trackers.shakenTurns
@@ -88,7 +88,7 @@ describe('playOne', () => {
       }
       const { state, cards } = act(s, 'cash', rand)
       expect(state.player.holdings).toEqual([])
-      s = advanceTurn(state, cards.slice(0, cardsPerTurn(state)))
+      s = advanceTurn(state, withinApBudget(state, cards))
     }
   })
 })

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { initGame, advanceTurn, cardsPerTurn } from './advance'
+import { initGame, advanceTurn } from './advance'
+import { actionPoints, cardApCost } from './cards'
+import { gradeAp } from './grade'
 import { buy } from './trade'
 import { totalAssets } from './accounting'
 import { BALANCE } from '../balance'
@@ -7,6 +9,7 @@ import { GameError } from '../error'
 import { resolveChoice } from '../events/engine'
 import { loadEvents } from '../events/content'
 import { stepPrices } from '../market/price'
+import { makeState, slotsWith } from '../testkit'
 import type { Regime } from '../types'
 
 const run = (s = initGame(1), cards: string[] = ['hodl']) => advanceTurn(s, cards)
@@ -32,6 +35,71 @@ describe('initGame', () => {
   })
 })
 
+describe('행동력', () => {
+  it('체력 0이면 기본값이다', () => {
+    expect(actionPoints(makeState({ player: { stats: { stamina: 0 } } }))).toBe(BALANCE.action.base)
+  })
+  it('체력이 오르면 행동력이 늘어난다', () => {
+    const lo = actionPoints(makeState({ player: { stats: { stamina: 0 } } }))
+    const hi = actionPoints(makeState({ player: { stats: { stamina: 9 } } }))
+    expect(hi).toBeGreaterThan(lo)
+  })
+  it('퇴사하면 보너스를 받는다', () => {
+    const emp = actionPoints(makeState({ player: { employed: true, stats: { stamina: 3 } } }))
+    const un  = actionPoints(makeState({ player: { employed: false, stats: { stamina: 3 } } }))
+    expect(un - emp).toBe(BALANCE.action.unemployedBonus)
+  })
+  it('상한을 넘지 않는다', () => {
+    expect(actionPoints(makeState({ player: { employed: false, stats: { stamina: 99 } } })))
+      .toBeLessThanOrEqual(BALANCE.action.max)
+  })
+  it('회복 카드는 행동력을 쓰지 않는다', () => {
+    for (const id of ['rest', 'exercise', 'drink', 'hodl']) expect(cardApCost(id, 'S')).toBe(0)
+  })
+  it('행동 카드는 등급을 따라 행동력을 쓴다', () => {
+    expect(cardApCost('analyze', 'E')).toBe(gradeAp('E'))
+    expect(cardApCost('analyze', 'S')).toBe(gradeAp('S'))
+  })
+})
+
+describe('advanceTurn 행동력 예산', () => {
+  it('예산을 넘는 조합은 거부된다', () => {
+    const s = makeState({ player: { stats: { stamina: 0 } } })
+    // base=2인 상태에서 ⚡3짜리를 넣으면 초과
+    expect(() => advanceTurn({ ...s, slots: slotsWith('analyze', 'S') }, ['analyze'])).toThrow(/NO_AP/)
+  })
+  it('회복 카드는 예산과 무관하게 항상 쓸 수 있다', () => {
+    const s = makeState({ player: { stats: { stamina: 0 }, mental: 5 } })
+    expect(() => advanceTurn({ ...s, slots: slotsWith('rest', 'C') }, ['rest'])).not.toThrow()
+  })
+  it('행동력이 매우 낮아도(체력 0·재직·컨디션 0) 회복 카드만으로 턴을 넘길 수 있다 (교착 방지)', () => {
+    const s = makeState({ player: { employed: true, condition: 0, stats: { stamina: 0 } } })
+    expect(() => advanceTurn({ ...s, slots: slotsWith('rest', 'S') }, ['rest'])).not.toThrow()
+  })
+  it('정확히 예산만큼 쓰는 조합은 허용된다 (경계값)', () => {
+    // base=2 상태에서 등급 C(⚡2)는 예산과 정확히 같다 — 경계에서 거부되면 안 된다.
+    const s = makeState({ player: { stats: { stamina: 0 } } })
+    expect(actionPoints(s)).toBe(2)
+    expect(() => advanceTurn({ ...s, slots: slotsWith('analyze', 'C') }, ['analyze'])).not.toThrow()
+  })
+  it('슬롯의 실제 등급이 예산 계산에 쓰인다', () => {
+    // 같은 카드라도 슬롯에 박힌 등급에 따라 통과/거부가 갈려야 한다 — 등급을 무시하고
+    // 항상 중립값으로 계산하면 이 두 기대값이 같아져 버린다.
+    const s = makeState({ player: { stats: { stamina: 0 } } }) // budget = 2
+    expect(() => advanceTurn({ ...s, slots: slotsWith('analyze', 'E') }, ['analyze'])).not.toThrow() // ⚡1
+    expect(() => advanceTurn({ ...s, slots: slotsWith('analyze', 'S') }, ['analyze'])).toThrow(/NO_AP/) // ⚡3
+  })
+  it('두 장 이상을 쓰면 각 장의 비용이 합산돼 예산 검사에 반영된다', () => {
+    const s = makeState({ player: { employed: false, stats: { stamina: 0 } } })
+    expect(actionPoints(s)).toBe(4)
+    // analyze는 슬롯에서 S(⚡3), report는 슬롯에 없어 기본 등급 C(⚡2)로 계산된다.
+    // 합산하면 3+2=5로 예산 4를 넘어 거부돼야 한다 — 첫 장(analyze, ⚡3)만 보면
+    // 4 이내라 통과해버린다.
+    expect(() => advanceTurn({ ...s, slots: slotsWith('analyze', 'S') }, ['analyze', 'report']))
+      .toThrow(/NO_AP/)
+  })
+})
+
 describe('advanceTurn', () => {
   it('턴이 1 증가한다', () => expect(run().turn).toBe(2))
   it('가격 히스토리가 늘어난다', () => {
@@ -40,15 +108,9 @@ describe('advanceTurn', () => {
   it('카드 효과가 반영된다', () => {
     expect(run(initGame(1), ['news']).player.stats.info).toBeGreaterThan(0)
   })
-  it('재직 중엔 카드 1장, 2장은 거부된다', () => {
-    expect(cardsPerTurn(initGame(1))).toBe(1)
-    expect(() => advanceTurn(initGame(1), ['hodl', 'news'])).toThrow(/TOO_MANY_CARDS/)
-  })
-  it('퇴사 후엔 2장까지 쓸 수 있다', () => {
-    const s = initGame(1)
-    s.player.employed = false
-    expect(cardsPerTurn(s)).toBe(2)
-    expect(() => advanceTurn(s, ['hodl', 'news'])).not.toThrow()
+  it('회복 카드 + 예산 안의 행동 카드 조합은 허용된다', () => {
+    // base=2인 상태에서 hodl(회복, 0) + news(⚡2)는 기본 예산 2 안에 들어간다.
+    expect(() => advanceTurn(initGame(1), ['hodl', 'news'])).not.toThrow()
   })
   it('선택지가 남아 있으면 진행이 막힌다', () => {
     const s = { ...initGame(1), pendingChoices: [{ eventId: 'x' }] }

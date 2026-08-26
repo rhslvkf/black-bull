@@ -1,8 +1,8 @@
 import {
-  initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, cardsPerTurn, moodOf,
+  initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, moodOf,
   BALANCE, createRng, Rand, type Mood,
 } from '@bb/core'
-import { act, type Strategy } from './strategies'
+import { act, withinApBudget, type Strategy } from './strategies'
 
 export interface RunResult {
   ending: string; titles: string[]; assets: number
@@ -52,7 +52,7 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     }
     moodTurns[moodOf(s)]++   // 플레이어가 이 턴에 실제로 보는 표정
     const { state, cards } = act(s, strategy, rand)
-    s = advanceTurn(state, cards.slice(0, cardsPerTurn(state)))
+    s = advanceTurn(state, withinApBudget(state, cards))
   }
 
   const assets = Math.max(0, totalAssets(s))

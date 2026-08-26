@@ -1,9 +1,11 @@
 import raw from '../../data/cards.json'
-import type { ActionCardDef, GameState } from '../types'
+import type { ActionCardDef, GameState, CardGrade } from '../types'
+import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { isShaken } from '../mental/mental'
 import { evalCondition } from './conditions'
 import { applyEffects } from './effects'
+import { gradeAp } from './grade'
 
 export function loadCards(): ActionCardDef[] { return raw as ActionCardDef[] }
 
@@ -28,6 +30,21 @@ export function cardLockReason(state: GameState, card: ActionCardDef): CardLock 
 
 export function isCardAvailable(state: GameState, card: ActionCardDef): boolean {
   return cardLockReason(state, card) === null
+}
+
+/** 이번 턴 쓸 수 있는 행동력. 체력이 오를수록, 퇴사했을수록 늘어나되 상한이 있다. */
+export function actionPoints(state: GameState): number {
+  const a = BALANCE.action
+  const raw = a.base + Math.floor(state.player.stats.stamina / a.staminaPerAp)
+    + (state.player.employed ? 0 : a.unemployedBonus)
+  return Math.min(a.max, raw)
+}
+
+/** 카드 한 장의 행동력 소모. 회복 카드는 등급과 무관하게 0이다 — 행동력이
+ *  바닥나도 회복만은 항상 가능해야 한다는 교착 방지 불변식 때문이다. */
+export function cardApCost(cardId: string, grade: CardGrade): number {
+  const card = loadCards().find(c => c.id === cardId)
+  return card?.isRecovery ? 0 : gradeAp(grade)
 }
 
 export function playCard(state: GameState, cardId: string): GameState {

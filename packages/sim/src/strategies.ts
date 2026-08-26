@@ -1,6 +1,6 @@
 import {
-  type GameState, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
-  loadCards, isCardAvailable, Rand, createRng, priceOf,
+  type GameState, type CardGrade, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
+  loadCards, isCardAvailable, Rand, createRng, priceOf, actionPoints, cardApCost,
 } from '@bb/core'
 
 /**
@@ -43,6 +43,32 @@ function investPct(s: GameState, id: string, pct: number): GameState {
   const qty = Math.min(maxBuyQty(s, id), Math.floor(budget / priceOf(s, id)))
   if (qty <= 0) return s
   try { return buy(s, id, qty) } catch { return s }
+}
+
+/** advance.ts의 관대한 슬롯 조회(Ruling 9)와 같은 규칙: 슬롯에 있으면 그 등급,
+ *  없으면 중립 등급 'C'로 본다. sim 전략은 뽑힌 슬롯을 들여다보지 않고 `loadCards()`
+ *  전체에서 카드를 고르므로, 슬롯 밖 카드를 고르는 일이 흔하다. */
+function gradeInSlots(state: GameState, cardId: string): CardGrade {
+  const inAction = state.slots.action.find(s => s.cardId === cardId)
+  if (inAction) return inAction.grade
+  if (state.slots.recovery.cardId === cardId) return state.slots.recovery.grade
+  return 'C'
+}
+
+/** 1차의 `cards.slice(0, cardsPerTurn(state))`를 대신한다. 이번 턴 행동력 예산 안에
+ *  들어오는 카드만 앞에서부터 채워 넣는다 — 회복 카드는 비용이 0이라 항상 들어간다.
+ *  무작위성을 추가로 쓰지 않으므로 시드 결정론에 영향이 없다. */
+export function withinApBudget(state: GameState, cardIds: string[]): string[] {
+  const budget = actionPoints(state)
+  let spent = 0
+  const kept: string[] = []
+  for (const id of cardIds) {
+    const cost = cardApCost(id, gradeInSlots(state, id))
+    if (spent + cost > budget) continue
+    spent += cost
+    kept.push(id)
+  }
+  return kept
 }
 
 /** 전략별 매매 + 카드 선택. rand는 호출자가 소유한다. */
