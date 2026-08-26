@@ -104,10 +104,31 @@ export function apCostOf(state: GameState, cardIds: string[]): number {
  * - 컨디션: 강제 스킵 문턱(`condition.forcedSkipBelow` = 20) **+10**. 턴 드레인(−4)에
  *   야근이 겹치지 않는 한 한 턴에 10을 넘겨 떨어지지 않는다.
  */
-export const RECOVERY_AT = {
-  mental: BALANCE.mental.shakenMax + 6,
-  condition: BALANCE.condition.forcedSkipBelow + 10,
-} as const
+export interface RecoveryThresholds { mental: number; condition: number }
+
+/** `recoveryAt`이 읽는 밸런스의 최소 형태. `BALANCE`가 이 형태를 만족하고, 테스트는
+ *  가짜 밸런스를 넣어 결과가 **따라 움직이는지**를 본다. */
+export interface RecoveryBalanceShape {
+  mental: { shakenMax: number }
+  condition: { forcedSkipBelow: number }
+}
+
+/**
+ * 회복 임계를 **밸런스에서 계산하는 순수 함수.** 상수가 아니라 함수인 이유는
+ * Fix Round 2 리뷰가 잡은 것 때문이다: 상수와 기대값을 `toBe`로 맞대면 **틀린 리터럴만**
+ * 잡히고 "우연히 지금 유도값과 같은 리터럴"(`{ mental: 35, condition: 30 }`)은 그대로
+ * 통과한다 — 고정해야 하는 건 값이 아니라 **BALANCE와의 연결**이다. 입력을 받는 함수로
+ * 두면 테스트가 가짜 밸런스를 밀어 넣어 결과가 따라 움직이는지 볼 수 있고, 리터럴 구현은
+ * 그 테스트를 **통과할 수 없다**.
+ */
+export function recoveryAt(balance: RecoveryBalanceShape): RecoveryThresholds {
+  return {
+    mental: balance.mental.shakenMax + 6,
+    condition: balance.condition.forcedSkipBelow + 10,
+  }
+}
+
+export const RECOVERY_AT: RecoveryThresholds = recoveryAt(BALANCE)
 
 /**
  * 전략별 행동 카드 취향. **이 표가 "전략이 행동력을 어떻게 쓰는가"의 전부다.**

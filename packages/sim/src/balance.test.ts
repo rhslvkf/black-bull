@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
-import { act, apCostOf, CARD_PREF, RECOVERY_AT } from './strategies'
+import { act, apCostOf, CARD_PREF, RECOVERY_AT, recoveryAt } from './strategies'
 import {
   BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
@@ -221,6 +221,10 @@ describe('runBatch', () => {
    * 이 단언이 red가 되는 경우는 두 가지고 둘 다 회귀가 아니다:
    *  - 문턱을 크게 올리면(도달 불가) → 그때는 "문턱이 원인"이 되므로 위 주석을 고쳐라.
    *  - 성장 곡선이 눌려 아무도 1억에 못 닿으면 → 그건 밸런스 회귀 신호다.
+   *
+   * **한계(Fix Round 2 재리뷰):** 이 게이트는 도달 여부만 보고 **도달 난이도는 못 잰다** —
+   * `loan.minTier`를 3 → 1로 **낮춰도** 그린이다(더 쉽게 닿을 뿐이므로). 난이도까지
+   * 고정하면 밸런스 튜닝을 과하게 묶으므로 일부러 조이지 않았다.
    */
   it('대출 문턱 자체에는 도달한다 — 신용이 죽은 원인은 문턱이 아니다 (Ruling 16)', () => {
     const floor = BALANCE.tierMins[BALANCE.loan.minTier]
@@ -477,15 +481,45 @@ describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
     expect(pairs).toEqual([])
   })
 
-  it('회복 임계는 리터럴이 아니라 BALANCE에서 유도된다', () => {
-    // Fix Round 1 Minor 1 — 예전 단언은 `35 > 29`, `30 > 20`으로 **순서만** 재서,
-    // RECOVERY_AT을 `{ mental: 35, condition: 30 }` 리터럴로 하드코딩해도 그린이었다.
-    // 제목이 말하는 것을 실제로 재려면 유도식과 **같은 값인지**를 봐야 한다.
-    // 여유폭(+6 / +10)의 근거는 strategies.ts의 RECOVERY_AT 주석에 있다.
-    expect(RECOVERY_AT.mental).toBe(BALANCE.mental.shakenMax + 6)
-    expect(RECOVERY_AT.condition).toBe(BALANCE.condition.forcedSkipBelow + 10)
-    // 여유폭이 유도의 전부가 아니라는 것도 못박는다 — 문턱 자체가 움직이면 임계도 움직인다.
-    expect(RECOVERY_AT.mental).toBeGreaterThan(BALANCE.mental.shakenMax)
-    expect(RECOVERY_AT.condition).toBeGreaterThan(BALANCE.condition.forcedSkipBelow)
+  /**
+   * **Fix Round 2 Minor 1 — 값이 아니라 연결(coupling)을 잰다.**
+   *
+   * 이 테스트는 두 번 헛발질했다. ①처음에는 `35 > 29`, `30 > 20`으로 **순서만** 재서
+   * 리터럴 하드코딩이 그대로 통과했다. ②다음에는 `toBe(shakenMax + 6)`로 등가 비교를
+   * 했는데, 그건 **틀린 리터럴만** 잡고 "우연히 지금 유도값과 같은 리터럴"
+   * (`{ mental: 35, condition: 30 }`)은 여전히 통과했다 — 재리뷰어가 실제로 재현했다.
+   *
+   * 고정해야 하는 것은 임계의 **값**이 아니라 그 값이 `BALANCE`에서 **온다는 사실**이다.
+   * 그래서 임계를 순수 함수 `recoveryAt(balance)`로 두고, **가짜 밸런스를 밀어 넣어
+   * 결과가 따라 움직이는지**를 본다. 인자를 무시하는 구현(=리터럴)은 입력을 바꿔도
+   * 값이 안 움직이므로 이 테스트를 **통과할 수 없다**(뮤테이션 MU-J / MU-J2 — 보고서).
+   *
+   * 두 축을 따로 미는 것도 의도적이다. 한 축만 고정하고 다른 축은 공허하게 두는 실수가
+   * 이 저장소에서 반복됐다 — 멘탈을 밀면 멘탈만, 컨디션을 밀면 컨디션만 움직여야 한다.
+   */
+  it('회복 임계가 BALANCE에 실제로 연결돼 있다 — 리터럴 구현은 통과할 수 없다', () => {
+    const base = recoveryAt(BALANCE)
+    // 모듈 상수가 그 함수의 결과 그대로여야 한다 — 둘이 갈라지면 sim은 옛 임계로 논다.
+    expect(RECOVERY_AT).toEqual(base)
+
+    // ① 흔들림 문턱을 밀면 멘탈 임계만 따라 올라간다.
+    const shakier = recoveryAt({
+      ...BALANCE,
+      mental: { ...BALANCE.mental, shakenMax: BALANCE.mental.shakenMax + 21 },
+    })
+    expect(shakier.mental, '흔들림 문턱을 올렸는데 멘탈 임계가 안 움직인다').toBeGreaterThan(base.mental)
+    expect(shakier.condition, '멘탈 문턱이 컨디션 임계를 오염시킨다').toBe(base.condition)
+
+    // ② 강제 스킵 문턱을 밀면 컨디션 임계만 따라 올라간다.
+    const sleepier = recoveryAt({
+      ...BALANCE,
+      condition: { ...BALANCE.condition, forcedSkipBelow: BALANCE.condition.forcedSkipBelow + 17 },
+    })
+    expect(sleepier.condition, '스킵 문턱을 올렸는데 컨디션 임계가 안 움직인다').toBeGreaterThan(base.condition)
+    expect(sleepier.mental, '컨디션 문턱이 멘탈 임계를 오염시킨다').toBe(base.mental)
+
+    // ③ 임계는 문턱보다 **위**다 — 한 턴 앞서 반응한다는 설계 그 자체(strategies.ts 주석).
+    expect(base.mental).toBeGreaterThan(BALANCE.mental.shakenMax)
+    expect(base.condition).toBeGreaterThan(BALANCE.condition.forcedSkipBelow)
   })
 })
