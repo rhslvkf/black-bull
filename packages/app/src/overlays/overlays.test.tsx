@@ -40,6 +40,35 @@ describe('오버레이 max-width (리뷰 M-5)', () => {
   })
 })
 
+// 리뷰 Fix Round 1(Critical 1) — §0·§4.3은 프롤로그·컷신을 "장면"으로 규정한다. 장면은
+// 화면을 온전히 차지해야지, 게임 화면 위에 얹힌 반투명 레이어여서는 안 된다(진짜
+// 모달인 EventModal은 `.overlay`의 반투명 배경을 그대로 써도 된다 — 그래서 이 검사는
+// `.overlay` 자체가 아니라 `.overlay.prologue`·`.overlay.cutscene[data-tone=...]`처럼
+// 더 구체적인 선택자로 좁힌 규칙만 본다). jsdom은 실제 합성 결과를 계산하지 않으므로
+// (Ruling 20과 같은 이유) index.css 소스에서 이 세 규칙 블록을 직접 파싱해, 알파
+// 채널(rgba(...)의 네 번째 인자, 또는 별도 opacity 속성)을 전혀 쓰지 않는지 고정한다.
+// alpha를 다시 올리는 방향의 회귀(1차 수정이 그랬듯 rgba(..., .96) 등)를 여기서 잡는다.
+describe('프롤로그·컷신은 완전 불투명 장면이다 (Critical 1 Fix Round 1)', () => {
+  const cssPathOpaque = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const cssOpaque = readFileSync(cssPathOpaque, 'utf-8')
+  const prologueBgRule = cssOpaque.match(/\.overlay\.prologue\s*\{[^}]*\}/)?.[0] ?? ''
+  const cutscenePromoteBgRule = cssOpaque.match(/\.overlay\.cutscene\[data-tone="up"\]\s*\{[^}]*\}/)?.[0] ?? ''
+  const cutsceneDemoteBgRule = cssOpaque.match(/\.overlay\.cutscene\[data-tone="down"\]\s*\{[^}]*\}/)?.[0] ?? ''
+
+  it('세 규칙이 전부 index.css에 존재한다', () => {
+    expect(prologueBgRule, '.overlay.prologue 규칙을 못 찾았다').not.toBe('')
+    expect(cutscenePromoteBgRule, '.overlay.cutscene[data-tone="up"] 규칙을 못 찾았다').not.toBe('')
+    expect(cutsceneDemoteBgRule, '.overlay.cutscene[data-tone="down"] 규칙을 못 찾았다').not.toBe('')
+  })
+
+  it('세 규칙 모두 알파 채널(rgba/opacity)을 전혀 쓰지 않는다', () => {
+    for (const rule of [prologueBgRule, cutscenePromoteBgRule, cutsceneDemoteBgRule]) {
+      expect(rule, `알파가 섞인 rgba(...)를 쓰고 있다: "${rule}"`).not.toMatch(/rgba\(/)
+      expect(rule, `opacity 속성으로 반투명을 흉내내고 있다: "${rule}"`).not.toMatch(/opacity\s*:/)
+    }
+  })
+})
+
 describe('EventModal', () => {
   it('대기 중인 선택지가 없으면 아무것도 안 그린다', () => {
     const { container } = render(<EventModal />)
@@ -684,6 +713,49 @@ describe('PrologueView', () => {
     renderWithState({}, <PrologueView />)
     expect(parseFloat(screen.getByTestId('prologue-skip').style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
     expect(parseFloat(screen.getByTestId('prologue-next').style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+  })
+})
+
+// 리뷰 Fix Round 1(Critical 2) — 브리프의 "화면 완결성" 검사(위)만으로는 장면이 통째로
+// 사라지거나(4→3) 화자 없는 두 장면의 순서가 뒤바뀌어도 아무것도 못 잡는다(리뷰 실측:
+// 556개 전부 통과했다). PrologueView의 SCENES를 그대로 import해 비교하면 자기충족
+// (배열이 바뀌면 기대값도 같이 바뀐다)이라 절대 아무것도 못 잡으므로, 각 장면의
+// 화자·본문을 여기 리터럴로 박아 실제 렌더 결과와 대조한다.
+describe('프롤로그 서사 무결성 — 장면 개수·순서·화자 (Critical 2 Fix Round 1)', () => {
+  const EXPECTED_SCENES: ReadonlyArray<{ speaker: string | null; text: string }> = [
+    { speaker: '박대박', text: '회식 자리. 박대박이 계좌를 돌린다.\n"+3,240만원 (+412%)"' },
+    { speaker: null, text: '집에 오는 길 내내 그 숫자가 떠나지 않는다.' },
+    { speaker: null, text: '새벽 2시. 증권사 앱을 깔고 적금을 깬다.\n시드 300만원.' },
+    { speaker: null, text: '"나만 없어 주식."\n\n그렇게 3년이 시작됐다.' },
+  ]
+
+  it(`정확히 ${EXPECTED_SCENES.length}개 장면이 이 순서·화자·본문 그대로 재생된다`, () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true) // 본문이 즉시 완성되도록(타이핑 대기 없이 즉시 비교)
+    renderWithState({}, <PrologueView />)
+
+    EXPECTED_SCENES.forEach((expected, i) => {
+      const isLast = i === EXPECTED_SCENES.length - 1
+
+      if (expected.speaker === null) {
+        expect(screen.queryByTestId('speaker-tag'), `장면 ${i}: 화자가 없어야 하는데 있다`).toBeNull()
+      } else {
+        expect(screen.getByTestId('speaker-tag').textContent, `장면 ${i}: 화자가 다르다`).toBe(expected.speaker)
+      }
+      expect(screen.getByTestId('dialogue-text').textContent, `장면 ${i}: 본문이 다르다`).toBe(expected.text)
+      // 버튼 라벨('다음'/'시작')이 이 테스트가 기대하는 장면 개수와 어긋나면(예: 장면이
+      // 하나 지워져 실제로는 더 일찍 '시작'이 뜨면) 여기서 바로 드러난다.
+      expect(
+        screen.getByTestId('prologue-next').textContent,
+        `장면 ${i}: 버튼 라벨이 다르다(마지막 장면 판정이 기대와 어긋난다)`,
+      ).toBe(isLast ? '시작' : '다음')
+
+      fireEvent.click(screen.getByTestId('prologue-next'))
+    })
+
+    // 위 루프의 마지막 클릭(마지막 장면의 '시작')이 실제로 프롤로그를 끝냈는지 —
+    // 장면이 기대보다 하나 더 있으면(삭제의 역, 즉 늘어난 경우) 여기서 아직 남아 있다.
+    expect(screen.queryByTestId('prologue')).toBeNull()
+    expect(useGame.getState().prologueDone).toBe(true)
   })
 })
 

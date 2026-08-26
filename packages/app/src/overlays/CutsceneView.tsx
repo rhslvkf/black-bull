@@ -20,20 +20,33 @@ const LINES: Record<string, string> = {
   'cutscene.demote.4': '한 단계 아래로 밀려났다. 다시 처음부터.',
 }
 
-// art/keys.ts §5 컷신 키 계약: cutscene.promote.{1..5} + cutscene.demote.{0..4} 10종뿐이다.
-// PROMOTE_TIERS/DEMOTE_TIERS에서 그대로 유도한다 — 숫자 범위를 여기 다시 적으면(1차
-// 개발의 반복 결함인 상수 복제) registry.test.tsx의 'settleTier 컷신 키 정합성'과
-// 어긋날 여지가 생긴다.
-const CUTSCENE_ART_KEYS: ReadonlySet<string> = new Set([
-  ...PROMOTE_TIERS.map(t => `cutscene.promote.${t}`),
-  ...DEMOTE_TIERS.map(t => `cutscene.demote.${t}`),
-])
-/** `as ArtKey` 없이 string을 컷신 아트 키로 좁히는 유일한 통로(art/keys.ts NPC_ID_BY_NAME_KO의
- *  isNpcId, EventModal의 isNpcName과 같은 기법). 존재하지 않는 키(MU11)는 여기서 걸러져
- *  <Art>에 도달하지 않는다 — Art.tsx는 모르는 id에 대해 조용히 null을 반환하므로, 이
- *  가드가 없으면 "빈 화면"이 곧 폴백처럼 보이는 사고가 난다. */
-function isCutsceneArtKey(x: string): x is ArtKey {
-  return CUTSCENE_ART_KEYS.has(x)
+/**
+ * `kind`·`tier`가 실제 registry의 컷신 아트 키(art/keys.ts §5: cutscene.promote.{1..5} +
+ * cutscene.demote.{0..4} 10종)와 대응하면 그 키를, 아니면 `null`을 돌려준다.
+ *
+ * 리뷰 Fix Round 1(Major) — 이전엔 `Set.has()` 기반 타입가드(`x is ArtKey`)였는데,
+ * 그 가드를 "항상 true"로 망가뜨려도 `tsc`와 테스트 556개 전부 통과했다: `x is ArtKey`
+ * 단언 자체가 컴파일러에게 "믿어달라"고 말하는 것이라, 가드 본문이 실제로 무엇을
+ * 검사하는지와 무관하게 타입 체크를 통과시켜 버린다 — `as` 캐스트를 없앤 자리에
+ * 사실상 같은 종류의 구멍을 다시 만든 셈이었다.
+ *
+ * 이번엔 타입 단언을 아예 쓰지 않는다: `PROMOTE_TIERS`/`DEMOTE_TIERS`(art/keys.ts의
+ * 리터럴 튜플 `[1,2,3,4,5]`·`[0,1,2,3,4]`, `as const`로 각 원소가 리터럴 타입이다)를
+ * 순회하며 실제 `tier`와 비교하고, **일치가 확인된 반복 변수 `t` 그대로**로 템플릿
+ * 문자열을 만든다. `t`는 그 순회 안에서 리터럴 유니온(`1|2|3|4|5` 등)으로 타입되므로
+ * `` `cutscene.promote.${t}` ``의 타입을 TypeScript가 ArtKey의 해당 분기와 정확히
+ * 같은 리터럴 유니온으로 스스로 추론한다 — 캐스트도 `x is ArtKey` 단언도 필요 없다.
+ * 이 함수를 "비교 없이 항상 매칭되게" 망가뜨리면 `tier`(넓은 `number`)가 그대로
+ * 템플릿에 들어가 `` `cutscene.promote.${number}` ``가 되어 ArtKey에 대입할 수 없다
+ * — 즉 가드를 무력화하는 순간 **컴파일 자체가 깨진다**(`tsc --noEmit`이 잡는다).
+ */
+function cutsceneArtKey(kind: 'promote' | 'demote', tier: number): ArtKey | null {
+  if (kind === 'promote') {
+    for (const t of PROMOTE_TIERS) if (t === tier) return `cutscene.promote.${t}`
+  } else {
+    for (const t of DEMOTE_TIERS) if (t === tier) return `cutscene.demote.${t}`
+  }
+  return null
 }
 
 interface ParsedCutscene { kind: 'promote' | 'demote'; tier: number }
@@ -69,6 +82,7 @@ export function CutsceneView() {
   const title = TIER_NAMES[parsed.tier] ?? ''
   const tone = parsed.kind === 'promote' ? 'up' : 'down'
   const line = LINES[cutscene] ?? ''
+  const artKey = cutsceneArtKey(parsed.kind, parsed.tier)
 
   // §6 "화면 전환 — 컷신 크로스페이드". prefers-reduced-motion이면 즉시 나타난다.
   // jsdom은 외부 CSS(@media 포함)를 읽지 않으므로(Ruling 20, ChoiceSheet.tsx와 같은 기법)
@@ -86,7 +100,7 @@ export function CutsceneView() {
       <h3 className="cutscene-title" data-testid="cutscene-title">{title}</h3>
 
       <div className="cutscene-stage" data-testid="cutscene-stage">
-        {isCutsceneArtKey(cutscene) && <Art id={cutscene} size={260} />}
+        {artKey && <Art id={artKey} size={260} />}
       </div>
 
       <DialogueBox speaker={null} text={line} onAdvance={clear} />

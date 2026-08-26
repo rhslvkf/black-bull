@@ -475,17 +475,20 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* ---------- 컷신 (overlays/CutsceneView.tsx, §4.3) ----------
    "배경이 바뀌는 연출로 간다" — 승급/강등마다 오버레이 전체 배경을 다른 톤으로
    물들인다. 톤 자체은 CutsceneView.tsx가 `data-tone`("up"/"down")으로 내려주고,
-   여기서는 그 값에 대응하는 그라디언트만 정의한다(--good/--danger, 기존 15색 재사용 —
-   새 색 토큰을 추가하지 않는다). */
-/* Fix Round 1(스크린샷 육안 검수) — 처음 값(top stop alpha .16)은 84%가 그대로
-   비쳐 보여, 밑에 깔린 홈 화면의 캐릭터 스테이지(같은 티어 이름 라벨)가 컷신
-   제목 위에 그대로 겹쳐 보였다(가독성 사고). .overlay 기본값(rgba(11,14,19,.96))과
-   같은 급의 불투명도를 양쪽 stop 모두에 유지하면서 톤 색만 섞는다. */
+   여기서는 그 값에 대응하는 그라디언트만 정의한다.
+   리뷰 Fix Round 1(Critical 1) — §0·§4.3은 프롤로그·컷신을 "장면"으로 규정한다.
+   장면은 화면을 온전히 차지해야지, 게임 화면 위에 얹힌 반투명 레이어여서는 안 된다
+   (진짜 모달인 EventModal과는 다르다 — 그쪽은 `.overlay`의 rgba(...,.96)를 그대로
+   쓴다). 알파를 .16→.96/.97로 올렸던 1차 수정은 리뷰 재현에서 여전히 뒤가 읽혔다
+   (sRGB 감마 특성상 밝은 텍스트 위 반투명 합성은 알파를 조금 올리는 정도로는 안
+   지워진다) — 그래서 접근 자체를 바꾼다: 알파 채널을 아예 쓰지 않는 완전 불투명
+   단색/그라디언트로 만든다(--good/--danger와 결이 맞는 톤을 불투명 hex로 새로
+   골랐다 — 알파가 섞인 기존 토큰을 그대로 쓰면 다시 반투명이 된다). */
 .overlay.cutscene[data-tone="up"] {
-  background: linear-gradient(180deg, rgba(31, 84, 56, .96), rgba(11, 14, 19, .97) 60%);
+  background: linear-gradient(180deg, #1f5438 0%, #0b0e13 60%);
 }
 .overlay.cutscene[data-tone="down"] {
-  background: linear-gradient(180deg, rgba(96, 40, 40, .96), rgba(11, 14, 19, .97) 60%);
+  background: linear-gradient(180deg, #602828 0%, #0b0e13 60%);
 }
 .cutscene-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--text); }
 .cutscene-stage { display: flex; justify-content: center; }
@@ -494,7 +497,10 @@ ul { list-style: none; padding: 0; margin: 0; }
    그 값이 가리키는 키프레임만 정의한다. */
 @keyframes cutscene-crossfade { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---------- 프롤로그 (overlays/PrologueView.tsx, §0) ---------- */
+/* ---------- 프롤로그 (overlays/PrologueView.tsx, §0) ----------
+   리뷰 Fix Round 1(Critical 1) — 컷신과 같은 이유로 완전 불투명 단색(알파 없음)을
+   쓴다. `--bg`(앱 배경색 자체)는 이미 알파 없는 hex(#0b0e13)라 그대로 재사용한다. */
+.overlay.prologue { background: var(--bg); }
 .prologue-stage { width: 55%; max-width: 220px; }
 .prologue-stage-art { border-radius: 12px; }
 
