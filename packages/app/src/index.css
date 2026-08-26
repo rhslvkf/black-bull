@@ -119,6 +119,18 @@ ul { list-style: none; padding: 0; margin: 0; }
   font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
 }
 
+/* §3.1 진행바(리뷰 Fix Round 1 Ruling 22) — TopBar 바로 아래, 156턴 중 지금 턴의
+   진척을 보여준다. 높이(12px)는 TurnProgress.tsx의 상수가 인라인으로 내려주므로
+   여기서 다시 정의하지 않는다. */
+.turn-progress {
+  background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px;
+}
+.turn-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #7db2ff);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
 /* §3.1 캐릭터 스테이지: 배경 레이어 + 인물 레이어가 같은 자리를 겹쳐 채우고, 그 위에
    티어·수익률 배지가 뜬다. 높이(260px)는 CharacterStage.tsx의 상수가 인라인으로
    내려주므로 여기서 다시 정의하지 않는다. */

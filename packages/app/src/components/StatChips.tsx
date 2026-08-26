@@ -41,7 +41,7 @@ function StatChip({ statKey, label, value }: { statKey: keyof Stats; label: stri
     <span
       className={`stat-chip${flash ? ' stat-chip-flash' : ''}`}
       data-testid={`stat-${statKey}`}
-      style={{ ['--chip' as string]: `var(--stat-${statKey})` }}
+      style={{ '--chip': `var(--stat-${statKey})` }}
     >
       <span className="stat-chip-dot" aria-hidden="true" />
       <span className="stat-chip-label">{label}</span>

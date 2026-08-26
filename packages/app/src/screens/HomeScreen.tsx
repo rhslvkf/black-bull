@@ -2,6 +2,7 @@ import { useGame } from '../store/store'
 import { NewsFeed } from '../components/NewsFeed'
 import { CardGrid } from '../components/CardGrid'
 import { TopBar } from '../components/TopBar'
+import { TurnProgress } from '../components/TurnProgress'
 import { CharacterStage } from '../components/CharacterStage'
 import { StatChips } from '../components/StatChips'
 import { ActionMeter } from '../components/ActionMeter'
@@ -34,6 +35,7 @@ export function HomeScreen() {
   return (
     <section className="screen home">
       <TopBar />
+      <TurnProgress />
       <CharacterStage />
       {skipNotice && <p className="turn-skipped" data-testid="turn-skipped">{skipNotice}</p>}
       <NewsFeed />
