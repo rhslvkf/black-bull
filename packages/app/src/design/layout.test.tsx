@@ -42,11 +42,18 @@ import { CHARACTER_STAGE_HEIGHT_PX } from '../components/CharacterStage'
  * *결과*를 잴 수 없고, 그 결과를 만들어내는 *수단*을 하나씩 막아볼 수 있을 뿐이다.
  *
  * **그래서 결과의 권위는 `packages/app/scripts/layout-audit.mjs`에 있다** — 실브라우저로
- * 156턴을 돌며 버튼의 존재·크기·뷰포트 포함·**히트테스트**를 직접 잰다. 이 파일은
- * 그보다 값싸고 빠른 **조기 경보**일 뿐이다.
+ * 156턴을 돌며 버튼의 존재·크기·뷰포트 포함·히트테스트·**그 자리의 픽셀**을 직접 잰다.
+ * 이 파일은 그보다 값싸고 빠른 **조기 경보**일 뿐이다.
  *
  * > **레이아웃을 건드리는 변경은 `scripts/layout-audit.mjs`를 반드시 돌려라.**
  * > 이 파일이 green인 것은 "알려진 우회가 없다"는 뜻이지 "화면이 멀쩡하다"는 뜻이 아니다.
+ *
+ * ### 실증된 반례 (이 파일이 놓쳤던 것들)
+ * 재리뷰가 이 파일 green + 감사 통과 상태로 버튼을 무력화한 방법들이다. 지금은 전부
+ * **감사 쪽 픽셀 오라클**이 잡는다 — 이 파일이 잡는 게 아니다:
+ *   `filter: opacity(0)` · `opacity: .01` · 다른 요소가 만든 하단 커튼(`pointer-events: none`)
+ *   · `color: transparent` · `font-size: 0`
+ * 이런 종류는 여기서 막으려 하지 않는다(막으면 또 열거가 된다).
  */
 
 // ─────────────────────────────── CSS 원문 ───────────────────────────────
@@ -70,7 +77,17 @@ function collectCssFiles(dir: string): string[] {
 }
 
 const CSS_FILES = collectCssFiles(SRC_DIR)
-const CSS_SOURCES = CSS_FILES.map(f => ({ file: f.slice(SRC_DIR.length + 1), text: readFileSync(f, 'utf-8') }))
+/** `index.html` 안의 인라인 `<style>`도 앱에 실려 나가는 CSS다 — 함께 훑는다.
+ *  (지금은 비어 있지만, 여기 한 블록을 넣는 것으로 훑기를 피할 수 있으면 안 된다.)
+ *  **범위 밖:** `<link rel="stylesheet">`로 불러오는 외부 스타일시트(현재는 웹폰트 CDN
+ *  하나뿐이다). 파일이 저장소에 없으므로 정적으로 훑을 수 없다 — 알려진 한계다. */
+const INDEX_HTML = readFileSync(join(SRC_DIR, '../index.html'), 'utf-8')
+const INLINE_STYLES = [...INDEX_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+  .map((m, i) => ({ file: `index.html <style> #${i + 1}`, text: m[1] ?? '' }))
+const CSS_SOURCES = [
+  ...CSS_FILES.map(f => ({ file: f.slice(SRC_DIR.length + 1), text: readFileSync(f, 'utf-8') })),
+  ...INLINE_STYLES,
+]
 // jsdom은 @import를 따라가지 않으므로 전부 이어붙인다(런타임 겹 전용).
 const CSS_FOR_DOM = CSS_SOURCES.map(s => s.text.replace(/@import[^;]+;/g, '')).join('\n')
 
@@ -279,7 +296,15 @@ describe('전수 훑기의 전제 — 파서가 실제로 규칙을 읽고 있�
     expect(names).toContain('index.css')
     expect(names).toContain('design/tokens.css')
     // 새 CSS 파일이 생기면 자동으로 포함된다 — 목록을 여기 적지 않는 이유다.
-    expect(CSS_SOURCES.every(s => s.text.length > 0)).toBe(true)
+    expect(CSS_FILES.every(f => readFileSync(f, 'utf-8').length > 0)).toBe(true)
+  })
+  it('index.html의 인라인 <style>도 훑기 범위 안이다 (지금은 없지만 생기면 자동으로 들어온다)', () => {
+    // 이 케이스는 "인라인 style 블록을 추출하는 경로가 살아 있다"를 고정한다.
+    const extracted = [...'<style>.x{flex:1 1 auto}</style>'.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+    expect(extracted).toHaveLength(1)
+    expect(extracted[0]![1]).toContain('flex')
+    // 실제 index.html에 <style>이 생기면 CSS_SOURCES에 자동으로 들어간다.
+    expect(INLINE_STYLES.length).toBe((INDEX_HTML.match(/<style[^>]*>/g) ?? []).length)
   })
   it('모든 CSS 파일에서 충분히 많은 규칙을 뽑았다 (빈 배열에 대고 도는 공허한 검사 방지)', () => {
     expect(ALL_RULES.length).toBeGreaterThan(100)

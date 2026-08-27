@@ -12,6 +12,7 @@ import { CutsceneView } from './overlays/CutsceneView'
 import { EndingView } from './overlays/EndingView'
 import { PrologueView } from './overlays/PrologueView'
 import { DUR_BASE, DUR_SLOW, prefersReducedMotion, useShakePulse } from './design/motion'
+import { seedFromLocation } from './seedParam'
 
 /** §6 "탭 전환 슬라이드" — 슬라이드가 시작되는 지점의 가로 오프셋(px). 탭이 오른쪽으로
  *  이동하면(TAB_ORDER 기준 인덱스 증가) 오른쪽에서, 왼쪽으로 이동하면 왼쪽에서 들어와야
@@ -55,7 +56,9 @@ export default function App() {
       <main className="app start" data-testid="app-root">
         <h1>흑우키우기</h1>
         <p>3년 뒤, 당신의 계좌는 어떻게 되어 있을까.</p>
-        <button className="primary" data-testid="start" onClick={() => newGame()}>시작하기</button>
+        {/* `?seed=123`이 있으면 그 시드로 시작한다 — 감사 스크립트가 같은 판을 재현하는
+            유일한 입구다(seedParam.ts 주석 참고). 없으면 평소대로 무작위 시드다. */}
+        <button className="primary" data-testid="start" onClick={() => newGame(seedFromLocation())}>시작하기</button>
       </main>
     )
   }

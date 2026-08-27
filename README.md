@@ -285,9 +285,24 @@ SVG가 자리를 채우고 이미지가 한 장 들어올 때마다 그 자리�
 
 ```bash
 pnpm --filter @bb/app build && pnpm --filter @bb/app preview   # 다른 터미널
-node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/            # 390×844
-node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --height 667  # 짧은 기기
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/               # 390×844, 156턴
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --height 667   # 짧은 기기
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --seed 42      # 시드 고정
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --turns 20     # 부분 표본(빠른 확인)
 ```
+
+| 옵션 | 뜻 |
+|---|---|
+| `--url` | 미리보기 주소 (기본 `http://localhost:4173/`) |
+| `--width` · `--height` | 뷰포트 (기본 390×844) |
+| `--seed` | 게임 시드 (기본 고정값). 앱이 `?seed=`를 읽어 그 판을 재현한다 |
+| `--turns` | 몇 턴까지 볼지 (기본 156 = 완주). **156 미만은 '표본'이고 결과가 아니다** |
+| `--pixels off` | 픽셀 오라클 끄기 |
+| `--pixel-debug 1` | 표본마다 픽셀 수치를 찍는다(임계값을 다시 잴 때) |
+
+**종료 코드:** `0` 완주 통과 · `1` 위반 · `2` 부분 표본(위반 없음, 판정 아님).
+`--turns`로 줄인 런의 "통과"를 근거로 인용하면 안 된다 — 붐비는 턴에서만 드러나는 결함이
+있다(실측: `display: contents` 결함은 12턴에서 통과하고 156턴에서만 잡혔다).
 
 한 판(기본 156턴)을 자동으로 끝까지 돌면서 매 턴 **두 번**(카드 고르기 전/후)
 `한 주 넘기기` 버튼을 잰다. 재는 것은 **메커니즘이 아니라 결과**다:
@@ -297,10 +312,19 @@ node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --height
 | 존재 · 크기(w·h > 0) | 버튼을 안 그리거나 `display:none`으로 접었을 때 |
 | 터치 타깃(height ≥ 44) | 전역 제약 위반 |
 | 뷰포트 포함(상·하·좌·우) | 무엇이든 버튼을 화면 밖으로 밀었을 때 |
-| **히트테스트**(`elementFromPoint`가 버튼인가) | 무엇이 덮든(`position`·`z-index`·`pointer-events`…) |
-| **가시성**(`Element.checkVisibility`) | `opacity:0`처럼 기하학은 멀쩡한데 안 보일 때 |
+| **히트테스트**(`elementFromPoint`가 버튼인가) | 버튼을 덮는 요소가 클릭을 가로챌 때 |
+| **가시성**(`Element.checkVisibility`) | `display`·`visibility`·`opacity:0`·`content-visibility` |
+| **픽셀**(버튼 rect로 크롭한 페이지 스크린샷) | **그 자리에 아무것도 안 보일 때** — 무엇이 원인이든 |
 
 하나라도 위반이면 **종료 코드 1**. 표본이 0건이어도 실패한다.
+
+픽셀 오라클이 마지막 겹이다. 기하와 히트테스트가 전부 정상인데 버튼이 안 보이는 경우가
+실제로 있었다 — `filter: opacity(0)`(`checkVisibility`는 filter를 안 본다), `opacity: .01`
+(정확히 0만 false), 다른 요소가 만든 `pointer-events: none` 커튼(`elementFromPoint`가
+정의상 못 본다). 셋 다 **메커니즘이 다르고 결과는 같다.** 그래서 메커니즘을 열거하는 대신
+결과를 묻는다: *그 자리에 무언가 보이는가?* 임계값은 156턴 312표본 실측에서 골랐다
+(정상 잉크 3.52~3.75% / 공격 0.00~1.81% → 경계 2.0%). 매 실행 **관측된 최소 잉크**를
+출력하므로, 그 값이 경계에 가까워지면 임계값을 다시 재야 한다는 신호가 된다.
 
 > **왜 이 지표인가.** 예전에는 `document.documentElement.scrollHeight`로 쟀는데,
 > `.app { height: 100dvh; overflow: hidden }` 아래에서 그 값은 뷰포트를 넘을 수가 없어
@@ -309,9 +333,16 @@ node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --height
 > **부재를 만족으로 읽는 검사**는 이 저장소가 네 번 밟은 함정이다. 지표를 고를 때는
 > 언제나 먼저 물어라: *이 값이 나빠질 수 있는가? 무엇이 틀렸을 때 나빠지는가?*
 
-> **알려진 한계.** 감사는 기하학·히트테스트·가시성을 본다. **글자만 안 보이게 하는 변경**
-> (`color: transparent`, `font-size: 0`)은 통과한다 — 실측으로 확인했다. 그 계층을 잡으려면
-> 픽셀 비교(시각 회귀)가 필요하고 지금은 없다.
+> **알려진 한계 (2026-08-27 기준, 실측으로 확인한 것만 적는다).**
+> - 감사가 보는 것은 **'한 주 넘기기' 버튼 한 곳**이다. 카드·탭바·오버레이가 안 보이게
+>   되는 것은 어떤 지표도 보지 않는다.
+> - 픽셀 오라클은 **버튼 자리에 무언가 보이는가**만 묻는다. 글자가 **읽을 수 있는지**
+>   (대비·잘림·엉뚱한 글자)는 묻지 않는다. 예: 라벨을 다른 문구로 바꿔치기하면 통과한다.
+> - 임계값(잉크 2.0%)은 **웹폰트가 로드되지 않은 환경**에서 잰 값이다. 폰트가 바뀌면
+>   정상값이 움직일 수 있다 — 그때는 `--pixel-debug 1`로 다시 재라.
+> - 정적 CSS 훑기(`design/layout.test.tsx`)의 범위는 `src/**/*.css` + `index.html`의
+>   인라인 `<style>`이다. `<link>`로 불러오는 **외부 스타일시트는 범위 밖**이다.
+> - 감사는 CI에 없다. 사람이 돌려야 한다.
 
 **Playwright는 선택적 외부 의존이다** — 무거운 브라우저 의존성을 `package.json`에
 올리지 않았고 CI 게이트도 아니다(별개 결정). 없으면 스크립트가 안내와 함께 비영점 종료한다.
