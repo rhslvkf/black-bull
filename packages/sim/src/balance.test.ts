@@ -3,7 +3,7 @@ import { playOne, runBatch } from './runner'
 import { act, apCostOf, CARD_PREF, RECOVERY_AT, recoveryAt } from './strategies'
 import {
   BALANCE, ENDING_IDS, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
-  buy, maxBuyQty, priceOf, type GameState,
+  buy, maxBuyQty, priceOf, maxLoan, marginShortfall, type GameState,
 } from '@bb/core'
 import type { Strategy } from './strategies'
 
@@ -46,6 +46,17 @@ function ladder(seeds: number, qtyOf: (s: GameState) => number) {
  * (buyhold 200판이 네 번) 스위트 시간의 절반이 중복 계산이었다. 메모는 결과를 바꾸지
  * 않고 시간만 줄인다 — 표본을 키운 게이트의 비용을 여기서 되산다.
  */
+/**
+ * `leverage` 배치의 판수. 신용 게이트들과 아래 엔딩 조사가 **같은 배치 하나**를 나눠 쓰므로
+ * (메모가 먹는다) 이 숫자를 올리면 스위트 시간이 그만큼만 늘고 조사 표본도 같이 커진다.
+ *
+ * 1,500인 이유는 `fire` 때문이다. `fire`는 자산 10억 + 퇴사라 조사에서 가장 희소한
+ * 엔딩이고(실측 0.07~0.4%, 시드창 4개에서 1500판당 3~6판), 500판으로 줄이면 창에 따라
+ * 0판이 되어 아래 '도달 가능한 엔딩 집합' 게이트가 시드 운에 흔들린다.
+ * 누적 실측(seed0=1): 250판 fire=1 · 500판 2 · 1000판 3 · 1500판 4.
+ */
+const CENSUS_LEVERAGE_RUNS = 1500
+
 const cache = new Map<string, ReturnType<typeof runBatch>>()
 function batch(runs: number, strategy: Strategy, seed0 = 1) {
   const key = `${runs}/${strategy}/${seed0}`
@@ -69,13 +80,21 @@ describe('playOne', () => {
   })
   it('같은 시드·전략은 같은 결과 (결정론)', () => {
     expect(playOne(5, 'momentum')).toEqual(playOne(5, 'momentum'))
+    // `leverage`는 대출·상환·강제청산이라는 새 상태 경로를 탄다. `Math.random`이 하나만
+    // 섞여도 sim 스위트 전체가 flaky해지므로, 신용 경로도 같은 시드 두 번이 바이트 단위로
+    // 같은지 따로 잰다 — 실제로 빚을 진 시드를 골라서 재야 의미가 있다(seed 162는
+    // 아래 조사에서 `fire`가 나온 판이라 대출·퇴사 경로를 둘 다 지난다).
+    const a = playOne(162, 'leverage')
+    expect(a).toEqual(playOne(162, 'leverage'))
+    expect(a.peakLoan, '이 시드는 실제로 빚을 진 판이어야 결정성 검사가 신용 경로를 덮는다')
+      .toBeGreaterThan(0)
   })
-  it('일곱 전략 모두 예외 없이 완주한다', () => {
-    for (const s of ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const) {
+  it('여덟 전략 모두 예외 없이 완주한다', () => {
+    for (const s of ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic', 'leverage'] as const) {
       expect(() => playOne(3, s)).not.toThrow()
     }
   })
-  it('일곱 전략은 같은 시드에서 서로 다른 결과를 낸다', () => {
+  it('여덟 전략은 같은 시드에서 서로 다른 결과를 낸다', () => {
     // panic vs buyhold는 §8.2 게이트가 이미 구분하지만, 나머지 조합은 구분하는 테스트가
     // 없었다 — momentum이 조용히 buyhold로 퇴화해도 스위트가 그린으로 남는 맹점.
     // "momentum vs random·cash"만 비교하면 momentum이 buyhold로 퇴화해도 random·cash와는
@@ -84,7 +103,7 @@ describe('playOne', () => {
     // 퇴화하는 것도 여기서 잡힌다.
     // `labor`는 `cash`와 **매매가 같고 카드만 다르다** — 카드 정책이 퇴화하면 여기서 잡힌다.
     const seed = 21
-    const strategies = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const
+    const strategies = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic', 'leverage'] as const
     const results = strategies.map(s => playOne(seed, s))
     for (let i = 0; i < results.length; i++) {
       for (let j = i + 1; j < results.length; j++) {
@@ -121,9 +140,9 @@ describe('playOne', () => {
  * 전체로 되돌려도 예외 없이 통과하고 결과만 소리 없이 움직였다(panic 32.9M → 34.7M).
  */
 describe('전략은 이번 턴 슬롯에서만 카드를 고른다 (리뷰 Minor 1)', () => {
-  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic', 'leverage'] as const satisfies readonly Strategy[]
 
-  it('일곱 전략 × 여러 시드에서 고른 카드가 항상 슬롯 안에 있다', () => {
+  it('여덟 전략 × 여러 시드에서 고른 카드가 항상 슬롯 안에 있다', () => {
     const events = loadEvents()
     for (const strategy of ALL) {
       for (const seed of [1, 2, 3]) {
@@ -184,20 +203,23 @@ describe('runBatch', () => {
 
   // 밸런스 게이트 — 스펙 §8.2
   /**
-   * **Ruling 16 — 예전 제목은 `두 존버 전략 모두 파산율이 15% 미만이다`였고, 하한이 없는
-   * `< 15%`는 언제나 0을 보고 통과했다(전 전략 0.0%). 구조적으로 공허했다.**
+   * **Ruling 16의 절반 — 신용을 부르지 않는 전략의 파산율이 0인 것은 성질이 아니라 정의다.**
    *
-   * 진짜 이유는 "존버가 안전하다"가 아니라 **sim 전략이 신용을 한 번도 부르지 않는다**는
-   * 것이다(`takeLoan` 호출이 전략 코드에 없다). 총자산이 0 이하로 내려가려면 빚이
-   * 있어야 하므로, 신용을 안 쓰는 한 파산은 **원리적으로 불가능**하다.
-   * 제목이 실제로 재는 것을 말하도록 바꾸고, 전제(`marginRate`)를 함께 단언한다.
+   * 예전 제목은 `두 존버 전략 모두 파산율이 15% 미만이다`였고, 하한이 없는 `< 15%`는
+   * 언제나 0을 보고 통과했다(전 전략 0.0%) — 구조적으로 공허했다. 진짜 이유는
+   * "존버가 안전하다"가 아니라 **그 전략들이 `takeLoan`을 부르지 않는다**는 것이다.
+   * 총자산(`cash + 보유평가액 − loan`)이 0 이하로 내려가려면 빚이 있어야 하므로,
+   * 빚을 지지 않는 한 파산은 **원리적으로 불가능**하다.
    *
-   * **이 테스트가 red가 되면 그건 회귀가 아니라 신용 시스템이 살아났다는 뜻이다.**
-   * 그때는 `bankruptRate === 0`을 지우고 예전의 상한 게이트(`< 0.15`)를 **하한과 함께**
-   * 되살려라 — "가끔은 망한다"와 "자주 망하지는 않는다"를 둘 다 재야 한다.
+   * 그래서 여기서 재는 것은 "일곱 전략이 조용히 빚을 지기 시작하지 않았는가"다 —
+   * `marginRate === 0`이 전제고 `bankruptRate === 0`이 그 따름정리다. 앞의 것이 깨지면
+   * 뒤의 것도 의미가 바뀌므로 둘을 나란히 단언한다.
+   *
+   * **파산이 실제로 일어나는가는 `leverage`가 잰다**(바로 아래 게이트). 그쪽이
+   * "가끔은 망한다"와 "자주 망하지는 않는다"를 하한·상한으로 둘 다 못박는다.
    */
-  it('신용을 쓰지 않는 sim 전략에서는 파산이 원리적으로 발생하지 않는다 (Ruling 16)', () => {
-    // 이미 다른 게이트가 돌린 배치를 그대로 재사용한다(메모) — 일곱 전략을 전부 덮는다.
+  it('신용을 부르지 않는 일곱 전략에서는 파산이 원리적으로 발생하지 않는다 (Ruling 16)', () => {
+    // 이미 다른 게이트가 돌린 배치를 그대로 재사용한다(메모) — `leverage`를 뺀 일곱을 전부 덮는다.
     const probes: [number, Strategy][] = [
       [500, 'cash'], [500, 'labor'], [500, 'seedhold'], [500, 'buyhold'],
       [500, 'panic'], [300, 'random'], [200, 'momentum'],
@@ -210,23 +232,63 @@ describe('runBatch', () => {
   })
 
   /**
-   * Ruling 16의 나머지 절반 — **왜** 신용이 안 쓰이는지를 수치로 못박는다.
+   * **신용 시스템이 살아 있다 — `leverage`가 실제로 빚을 지고, 가끔 그 빚에 망한다.**
    *
-   * 리뷰 Fix Round 1의 가설은 "`BALANCE.loan.minTier`(=3, 자산 1억)가 너무 높아 어떤
-   * 플레이로도 문턱에 도달하지 못한다"였는데, **실측은 그 반대다.** 최종 자산이 아니라
-   * `trackers.peakAssets`(판 중 한 번이라도 도달한 최고 자산)로 재면 문턱을 넘는 판이
-   * 실제로 있다: panic 15.6% · momentum 9.0% · random 2.8% · buyhold 1.0% (각 500판).
-   * 즉 막고 있는 것은 **문턱이 아니라 sim 전략이 대출을 부르지 않는다는 사실**이다.
+   * 예전 게이트('신용을 쓰지 않는 sim 전략에서는 파산이 원리적으로 발생하지 않는다')는
+   * "이 테스트가 red가 되면 그건 회귀가 아니라 신용 시스템이 살아났다는 뜻이다. 그때는
+   * `bankruptRate === 0`을 지우고 예전의 상한 게이트(`< 0.15`)를 **하한과 함께**
+   * 되살려라"라고 적어 두었다. 그 조건이 왔다 — 여기가 그 되살린 게이트다.
    *
-   * 이 단언이 red가 되는 경우는 두 가지고 둘 다 회귀가 아니다:
-   *  - 문턱을 크게 올리면(도달 불가) → 그때는 "문턱이 원인"이 되므로 위 주석을 고쳐라.
-   *  - 성장 곡선이 눌려 아무도 1억에 못 닿으면 → 그건 밸런스 회귀 신호다.
+   * 상한만 두면 0으로 공허하게 통과하고(그게 예전 결함이다), 하한만 두면 "매판 파산"도
+   * 통과한다. 실측(n=1500, 시드창 4개): 신용 사용 30.0~32.2% · 파산 2.8~3.9%.
+   */
+  it('leverage는 실제로 빚을 지고, 가끔은 그 빚에 망한다', () => {
+    const r = batch(CENSUS_LEVERAGE_RUNS, 'leverage')
+    expect(r.marginRate, `신용 사용률 ${(r.marginRate * 100).toFixed(1)}%`).toBeGreaterThan(0.2)
+    // '썼다'와 '판을 키웠다'는 다른 말이다. 1원을 빌려도 marginRate는 1이 되므로,
+    // 빚의 규모가 대출이 열리는 티어의 자산선을 실제로 넘는지를 따로 못박는다.
+    expect(r.peakLoanMax, `빚 최고잔액 ${r.peakLoanMax}원`)
+      .toBeGreaterThan(BALANCE.tierMins[BALANCE.loan.minTier]!)
+    expect(r.bankruptRate, `파산율 ${(r.bankruptRate * 100).toFixed(2)}% — 가끔은 망해야 한다`)
+      .toBeGreaterThan(0)
+    expect(r.bankruptRate, `파산율 ${(r.bankruptRate * 100).toFixed(2)}% — 자주 망하면 안 된다`)
+      .toBeLessThan(0.15)
+  })
+
+  /**
+   * **마진콜의 유예 한 주가 실제로 쓰인다.**
+   *
+   * core는 담보가 무너진 그 주에 경고(`marginCallDueTurn`)만 세우고, 다음 주에도 회복하지
+   * 못했을 때 비로소 전량 청산한다. 그 유예가 의미를 가지려면 **경고를 받고도 살아 나오는
+   * 판이 실제로 있어야** 한다 — 경고 = 청산이면 유예는 코드에만 있는 장치다.
+   *
+   * 두 값을 나란히 놓는 것이 이 게이트의 전부다. 경고율만 재면 "전부 청산됐다"도 통과하고,
+   * 청산율만 재면 "경고가 아예 안 선다"도 통과한다.
+   * 실측(n=1500, 시드창 4개): 경고 22.6~23.9% · 강제청산 1.8~2.3% — 경고받은 판의 90%가
+   * 유예 안에 살아 나온다.
+   */
+  it('마진콜 경고를 받고도 대부분 살아 나온다 — 유예 한 주가 코드에만 있는 장치가 아니다', () => {
+    const r = batch(CENSUS_LEVERAGE_RUNS, 'leverage')
+    expect(r.marginWarnRate, `경고율 ${(r.marginWarnRate * 100).toFixed(2)}%`).toBeGreaterThan(0.05)
+    expect(r.marginCallRate, `강제청산율 ${(r.marginCallRate * 100).toFixed(2)}%`).toBeGreaterThan(0)
+    expect(r.marginCallRate, `경고 ${(r.marginWarnRate * 100).toFixed(2)}% → 청산 ${(r.marginCallRate * 100).toFixed(2)}%`)
+      .toBeLessThan(r.marginWarnRate * 0.5)
+  })
+
+  /**
+   * **대출 문턱에 닿는다.** 예전 주석은 "막고 있는 것은 문턱이 아니라 sim 전략이 대출을
+   * 부르지 않는다는 사실"이라고 적혀 있었다 — `leverage`가 생긴 지금 그 문장은 거짓이다.
+   *
+   * 지금 재는 것은 하나다: `BALANCE.loan.minTier`의 자산선(1억)이 실제 플레이에서 닿는
+   * 높이인가. 최종 자산이 아니라 `trackers.peakAssets`로 재야 한다 — 닿았다가 잃으면
+   * 최종 자산에는 흔적이 남지 않는다. 실측(각 500판): leverage 29.6% · panic 15.6% ·
+   * momentum 9.0% · random 2.8% · buyhold 1.0%.
    *
    * **한계(Fix Round 2 재리뷰):** 이 게이트는 도달 여부만 보고 **도달 난이도는 못 잰다** —
    * `loan.minTier`를 3 → 1로 **낮춰도** 그린이다(더 쉽게 닿을 뿐이므로). 난이도까지
    * 고정하면 밸런스 튜닝을 과하게 묶으므로 일부러 조이지 않았다.
    */
-  it('대출 문턱 자체에는 도달한다 — 신용이 죽은 원인은 문턱이 아니다 (Ruling 16)', () => {
+  it('대출 문턱 자체에 도달한다 — 신용을 쓰지 않는 전략도 닿는다 (Ruling 16)', () => {
     const floor = BALANCE.tierMins[BALANCE.loan.minTier]
     expect(floor, '대출 문턱 티어의 자산선').toBeGreaterThan(0)
     const reach = (['panic', 'buyhold'] as const).map(st => batch(500, st).loanReachRate)
@@ -439,13 +501,15 @@ describe('runBatch', () => {
  * sim 27/27이 그대로 green이었다(리뷰어 실측). 8종 중 3종이 이미 0판인 상태에서
  * "4종 이상"은 두 칸의 여유를 그냥 내주는 문턱이었다.
  *
- * 그래서 부등식을 버리고 **집합을 그대로 못박는다** — 지금 실제로 도달 가능한 5종이
- * 정확히 그 5종이어야 하고, **위로든(새로 하나가 열림) 아래로든(하나가 닫힘)** 달라지면
- * red다. 조사 표본은 아래 CENSUS 표(전략 7종 · 총 3,560판, 이 파일의 다른 게이트가
- * 이미 계산해 둔 배치를 그대로 재사용하므로 추가 비용이 없다).
+ * 그래서 부등식을 버리고 **집합을 그대로 못박는다** — 위로든(새로 하나가 열림)
+ * 아래로든(하나가 닫힘) 달라지면 red다.
  *
- * 밸런스 상수는 이 태스크에서 하나도 바꾸지 않았다 — 게임플레이가 아니라 게이트가
- * 현실을 보게 만드는 작업이다.
+ * **이번에 그 집합이 실제로 움직였다.** 직전 판정은 5종(`bank`·`breakeven`·`kimheir`·
+ * `savings`·`wise`)이었고 `legend`·`fire`·`super`는 "원인: `takeLoan` 호출부 부재"로
+ * 이름을 적어 남겨둔 도달 불가였다. 신용 진입점이 생기고(app의 계좌 화면, 그리고 sim의
+ * `leverage` 전략) 그 셋이 전부 실제로 나온다 — 조사 5,120판 기준 `legend` 54판 ·
+ * `super` 9판 · `fire` 4판. 그래서 REACHABLE은 **엔딩 8종 전부**가 됐고 UNREACHABLE은
+ * 비었다. 도달 불가의 원인을 적어두던 자리는 이제 남길 이름이 없다.
  */
 describe('엔딩 도달 가능성 조사 (최종 리뷰 M5, Ruling 48)', () => {
   /** 이 조사가 훑는 배치 목록. 전부 이 파일의 다른 게이트가 이미 도는 (runs, strategy)
@@ -453,36 +517,45 @@ describe('엔딩 도달 가능성 조사 (최종 리뷰 M5, Ruling 48)', () => {
   const CENSUS = [
     [500, 'cash'], [500, 'labor'], [500, 'seedhold'], [500, 'buyhold'], [500, 'panic'],
     [300, 'random'], [300, 'panic'], [200, 'random'], [200, 'buyhold'], [60, 'momentum'],
+    [CENSUS_LEVERAGE_RUNS, 'leverage'], [60, 'leverage'],
   ] as const satisfies readonly (readonly [number, Strategy])[]
 
-  /** 지금 **실제로 도달 가능한** 엔딩. 실측(2026-08-27, 아래 조사 3,560판)이 출처다. */
-  const REACHABLE = ['bank', 'breakeven', 'kimheir', 'savings', 'wise'] as const
-  /** 지금 **도달 불가능한** 엔딩. 조용히 통과시키지 않고 이름을 적어 남긴다 — 원인과
-   *  판정은 아래 '도달 불가 3종' 테스트의 주석에 있다. */
-  const UNREACHABLE = ['fire', 'legend', 'super'] as const
+  /** 지금 **실제로 도달 가능한** 엔딩. 실측(2026-08-27, 아래 조사 5,120판)이 출처다.
+   *  지금은 `ENDING_IDS` 전체와 같지만 **일부러 손으로 적는다** — `ENDING_IDS`에서
+   *  유도하면 "엔딩 목록에 있는 것은 도달 가능하다"는 동어반복이 되어, 하나가 닫혀도
+   *  기대값이 같이 따라 내려가 아무것도 잡지 못한다. */
+  const REACHABLE = [
+    'bank', 'breakeven', 'fire', 'kimheir', 'legend', 'savings', 'super', 'wise',
+  ] as const
+  /** 지금 **도달 불가능한** 엔딩. 비어 있다 — 8종 전부가 조사에서 실제로 나온다.
+   *  다시 채워야 할 일이 생기면 그때는 **원인과 함께** 이름을 적어라(예전에는
+   *  `legend`·`fire`·`super`가 "takeLoan 호출부 부재"라는 이유로 여기 있었다). */
+  const UNREACHABLE: readonly string[] = []
 
-  /** 조사 전체의 엔딩별 판수 합계. */
-  function census(): { counts: Record<string, number>; runs: number } {
+  /** 조사 전체의 엔딩별 판수 합계와, 같은 조사에서 **따로 계산된** 파산 판수. */
+  function census(): { counts: Record<string, number>; runs: number; bankrupts: number } {
     const counts: Record<string, number> = {}
     let runs = 0
+    let bankrupts = 0
     for (const [n, st] of CENSUS) {
       const r = batch(n, st)
       runs += r.runs
+      bankrupts += Math.round(r.bankruptRate * r.runs)
       for (const [id, c] of Object.entries(r.endingCounts)) counts[id] = (counts[id] ?? 0) + c
     }
-    return { counts, runs }
+    return { counts, runs, bankrupts }
   }
 
   it('조사 표본이 실제로 크다 — 표본이 쪼그라들면 아래 두 게이트가 공허해진다', () => {
     const { runs } = census()
-    expect(runs).toBe(3560)
+    expect(runs).toBe(5120)
   })
 
   it('분류표가 엔딩 전수를 덮는다 — 새 엔딩을 추가하면 분류를 강요당한다', () => {
     expect([...REACHABLE, ...UNREACHABLE].sort()).toEqual([...ENDING_IDS].sort())
   })
 
-  it('도달 가능한 엔딩 집합이 정확히 그 5종이다 (위로도 아래로도 달라지면 red)', () => {
+  it('도달 가능한 엔딩 집합이 정확히 그 8종이다 (위로도 아래로도 달라지면 red)', () => {
     const { counts } = census()
     // `Object.keys`는 0판인 엔딩을 애초에 담지 않지만, 어떤 이유로든 0이 기록되는
     // 구현으로 바뀌어도 이 게이트가 헐거워지지 않도록 0을 명시적으로 걸러낸다.
@@ -490,44 +563,50 @@ describe('엔딩 도달 가능성 조사 (최종 리뷰 M5, Ruling 48)', () => {
     expect(observed, `조사 실측: ${JSON.stringify(counts)}`).toEqual([...REACHABLE].sort())
   })
 
-  it('도달 가능한 5종은 전부 실제로 판수가 있다 — 목록만 적어두고 0판이면 red', () => {
+  it('도달 가능한 8종은 전부 실제로 판수가 있다 — 목록만 적어두고 0판이면 red', () => {
     const { counts } = census()
     for (const id of REACHABLE) {
-      expect(counts[id] ?? 0, `${id}가 조사 3,560판에서 한 번도 안 나왔다`).toBeGreaterThan(0)
+      expect(counts[id] ?? 0, `${id}가 조사 5,120판에서 한 번도 안 나왔다`).toBeGreaterThan(0)
     }
   })
 
-  // ── 도달 불가 3종 — 조용히 통과시키지 않고 이름을 적어 남긴다 ──────────────────
-  //
-  // `legend`(파산) · `fire`(자산 10억 이상 + 퇴사) · `super`(자산 5억 이상 + 재직)는
-  // 조사 3,560판에서 **한 판도 나오지 않는다**. 최종 리뷰 M4가 원인을 확정했다:
-  //
-  //   **`takeLoan` 호출부가 어디에도 없다.** core에 신용거래(`takeLoan`/강제청산)가
-  //   구현돼 있지만 그것을 부르는 진입점이 UI에도 sim 전략에도 없어서, 레버리지 없이
-  //   3년 만에 5억·10억에 닿는 경로가 없고(상단 3종), 동시에 파산도 원리적으로
-  //   일어나지 않는다(`legend`). 실제로 sim의 `bankruptRate`는 항상 0이고,
-  //   '신용을 쓰지 않는 sim 전략에서는 파산이 원리적으로 발생하지 않는다'(Ruling 16)가
-  //   그 사실을 이미 별도로 고정하고 있다.
-  //
-  // 이것을 고치는 것은 **게임플레이 기능 추가**(신용 진입점 신설)이고 밸런스·장르
-  // 감각이 걸린 설계 결정이라 **사용자 결정 대기** 상태다. 그때까지 이 사실이
-  // 게이트 밑으로 사라지지 않도록, 여기에 이름을 적어 못박는다 — 셋 중 하나라도
-  // 도달 가능해지면(=신용 진입점이 생기면) 이 테스트가 red가 되어 **위 REACHABLE
-  // 목록을 함께 갱신하라고 알린다.** 그게 이 테스트의 목적이다.
-  it('도달 불가 3종(legend·fire·super)은 조사 3,560판에서 0판이다 — 원인은 takeLoan 호출부 부재(사용자 결정 대기, M4)', () => {
+  /**
+   * **상단 3종의 여유가 얼마나 얇은지를 숫자로 남긴다.**
+   *
+   * 위 두 게이트는 "0판이 아니다"까지만 본다. `fire`는 조사 5,120판에서 **4판**이라
+   * 그 통과선 바로 위에 있고, 밸런스가 조금만 눌려도 0으로 떨어진다 — 그때 red가 되는
+   * 것은 옳지만, **얼마나 아슬아슬했는지를 아무도 모르는 채로** red가 되면 원인을 다시
+   * 찾아야 한다. 그래서 실측 판수를 실패 메시지에 담아 기록한다.
+   *
+   * 하한은 실측값에 붙이지 않는다(시드창마다 `fire` 3~6판, `super` 8~11판, `legend`
+   * 42~59판으로 흔들린다). 잡으려는 것은 "상단이 통째로 닫혔다"이지 "몇 판 줄었다"가
+   * 아니다 — 통계적 잡음까지 못박으면 밸런싱 한 번에 의미 없이 red가 된다.
+   */
+  it('상단 3종(legend·fire·super)이 실제로 나온다 — 신용이 없으면 원리적으로 닫히는 셋이다', () => {
     const { counts } = census()
-    for (const id of UNREACHABLE) {
-      expect(counts[id] ?? 0, `${id}가 도달 가능해졌다 — REACHABLE 목록을 갱신해라`).toBe(0)
+    const top = ['legend', 'fire', 'super'] as const
+    const seen = top.map(id => `${id} ${counts[id] ?? 0}판`).join(' · ')
+    for (const id of top) {
+      expect(counts[id] ?? 0, `${seen} — ${id}가 닫혔다`).toBeGreaterThan(0)
     }
+    // `legend`는 파산 엔딩이라 신용 없이는 원리적으로 불가능하고(총자산이 0 이하로
+    // 내려가려면 빚이 있어야 한다), `fire`·`super`는 3년 만에 5억·10억에 닿아야 한다.
+    // 셋 다 `leverage` 말고는 아무도 만들지 못하므로, 그 전략이 대출을 그만두면
+    // 이 게이트가 곧바로 red가 된다(보고서 §뮤테이션 MU-L1).
+    expect(batch(CENSUS_LEVERAGE_RUNS, 'leverage').marginRate, '상단 3종의 출처는 신용이다')
+      .toBeGreaterThan(0)
   })
 
-  it('파산이 실제로 0건이다 — legend가 0판인 이유가 판정 버그가 아니라 파산 부재임을 확인한다', () => {
-    // legend는 `bankrupt || assets <= 0`일 때만 나온다. 파산율이 0이 아닌데 legend가
-    // 0판이면 그건 도달 불가가 아니라 **판정 버그**다 — 둘을 구별해 둔다.
-    for (const [n, st] of CENSUS) {
-      const r = batch(n, st)
-      expect(r.bankruptRate, `${st} ${n}판의 파산율`).toBe(0)
-    }
+  it('legend 판수와 파산 판수가 일치한다 — 판정 경로가 갈라지지 않았다', () => {
+    // `legend`는 `bankrupt || assets <= 0`일 때만 나온다. 두 수를 **서로 다른 경로로**
+    // 세서 맞대면 판정 버그가 드러난다: 엔딩 쪽은 core의 `judgeEnding`이 고른 id를 세고,
+    // 파산 쪽은 sim이 최종 상태에서 직접 잰 `totalAssets(s) <= 0`을 센다(runner.ts).
+    // (예전에는 sim의 `bankrupt`가 `ending === 'legend'`였다 — 그 정의로는 이 단언이
+    //  자기 자신을 비교하는 자기충족 문장이 된다.)
+    const { counts, bankrupts } = census()
+    expect(counts['legend'] ?? 0, `legend ${counts['legend'] ?? 0}판 vs 파산 ${bankrupts}판`)
+      .toBe(bankrupts)
+    expect(bankrupts, '파산이 0건이면 위 단언이 0 === 0으로 공허하게 통과한다').toBeGreaterThan(0)
   })
 })
 
@@ -537,7 +616,7 @@ describe('엔딩 도달 가능성 조사 (최종 리뷰 M5, Ruling 48)', () => {
  * 매매 차이만 재게 되고, `CARD_PREF` 표는 있으나 마나 한 장식이 된다.
  */
 describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
-  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+  const ALL = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic', 'leverage'] as const satisfies readonly Strategy[]
   const use = () => Object.fromEntries(ALL.map(s => [s, batch(60, s).cardUse]))
   /** 두 카드 사용 분포의 거리(L1). 0이면 완전히 같고 2면 겹치는 카드가 하나도 없다. */
   function l1(a: Record<string, number>, b: Record<string, number>): number {
@@ -576,7 +655,10 @@ describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
         if (d < 0.2) pairs.push(`${a} vs ${b}: L1 ${d.toFixed(3)}`)
       }
     }
-    // 실측 최소 거리는 buyhold vs panic의 0.31이다(둘 다 야근이 1순위라 가장 가깝다).
+    // 실측 최소 거리는 labor vs buyhold의 0.262다(둘 다 야근이 1순위라 가장 가깝다).
+    // `leverage`가 가장 가까운 상대는 panic(0.429)이고 나머지는 전부 0.43 이상이다 —
+    // 기업분석·커뮤니티를 위에 두고 인맥 카드(forum·study)를 맨 뒤로 미는 표라서
+    // 어느 기존 전략과도 상위 두 장이 겹치지 않는다.
     expect(pairs).toEqual([])
   })
 
@@ -620,5 +702,110 @@ describe('전략별 행동력 사용이 실제로 다르다 (Task 8)', () => {
     // ③ 임계는 문턱보다 **위**다 — 한 턴 앞서 반응한다는 설계 그 자체(strategies.ts 주석).
     expect(base.mental).toBeGreaterThan(BALANCE.mental.shakenMax)
     expect(base.condition).toBeGreaterThan(BALANCE.condition.forcedSkipBelow)
+  })
+})
+
+/**
+ * **`leverage`가 이름값을 하는가** — 신용을 다루는 세 갈래를 각각 직접 부른다.
+ *
+ * 배치 통계(위의 `marginRate`·`marginWarnRate`)는 "전체적으로 그런 일이 일어난다"까지만
+ * 말한다. 세 갈래 중 하나가 죽어도 나머지 둘이 통계를 그대로 유지할 수 있으므로
+ * (예: 경고 대응을 통째로 지워도 신용 사용률은 그대로다), 갈래마다 상태를 만들어
+ * `act`를 한 번 부르고 **그 한 번이 무엇을 했는지**를 본다.
+ *
+ * 각 상태는 전제(한도가 실제로 열려 있는가 / 담보가 실제로 무너져 있는가)를 core의
+ * `maxLoan`·`marginShortfall`로 **먼저 단언한다** — 전제가 성립하지 않으면 뒤의 단언은
+ * 우연히 통과하는 문장이 된다.
+ */
+describe('leverage의 신용 조작 세 갈래', () => {
+  const rand = () => new Rand(createRng(0x5eed))
+  /** 티어·현금·빚·보유를 갈아 끼운 판. `initGame`의 나머지(가격·국면·슬롯)는 그대로 둔다. */
+  function rig(seed: number, over: {
+    tier?: number; cash?: number; loan?: number; qty?: number; due?: number | null
+  }): GameState {
+    const s = initGame(seed)
+    const price = priceOf(s, 'sjc')
+    const qty = over.qty ?? 0
+    return {
+      ...s,
+      player: {
+        ...s.player,
+        tier: (over.tier ?? s.player.tier) as GameState['player']['tier'],
+        cash: over.cash ?? s.player.cash,
+        loan: over.loan ?? 0,
+        holdings: qty > 0 ? [{ stockId: 'sjc', qty, avgCost: price, heldTurns: 10 }] : [],
+        marginCallDueTurn: over.due ?? null,
+      },
+    }
+  }
+
+  it('① 한도가 열려 있으면 빌려서 산다', () => {
+    const s = rig(4, { tier: 3, cash: 200_000_000 })
+    expect(maxLoan(s), '전제: 한도가 실제로 열려 있어야 한다').toBeGreaterThan(0)
+    const { state } = act(s, 'leverage', rand())
+    expect(state.player.loan, '대출을 일으키지 않았다').toBeGreaterThan(0)
+    expect(state.player.holdings.length, '빌린 돈을 시장에 넣지 않았다').toBeGreaterThan(0)
+  })
+
+  it('② 티어가 모자라면 빌리지 않는다 — TIER_LOCKED를 삼키는 것이 아니라 애초에 안 부른다', () => {
+    const s = rig(4, { tier: BALANCE.loan.minTier - 1, cash: 200_000_000 })
+    expect(maxLoan(s), '전제: 티어락이 걸려 한도가 0이어야 한다').toBe(0)
+    expect(act(s, 'leverage', rand()).state.player.loan).toBe(0)
+  })
+
+  it('③ 마진콜 경고가 서면 팔아서 갚는다 — 담보가 멀쩡해도 경고 하나로 움직인다', () => {
+    // 담보는 건전하다(빚 1천만 · 보유 1억). 그런데도 경고가 서 있으면 물러난다 —
+    // 이 상태를 고른 이유는 경고 갈래를 **부족액 갈래(④)와 분리해서** 재기 위해서다.
+    const s = rig(4, { tier: 3, cash: 0, loan: 10_000_000, qty: 1500, due: 2 })
+    expect(marginShortfall(s), '전제: 이 상태의 담보는 부족하지 않아야 한다').toBe(0)
+    expect(s.player.marginCallDueTurn, '전제: 경고가 서 있어야 한다').not.toBeNull()
+    const { state } = act(s, 'leverage', rand())
+    expect(state.player.loan, '경고를 받고도 빚을 그대로 뒀다').toBe(0)
+    expect(state.player.holdings, '경고를 받고도 포지션을 그대로 뒀다').toEqual([])
+  })
+
+  it('④ 담보가 무너지면 경고가 서기 전에 먼저 줄인다', () => {
+    const s = rig(4, { tier: 3, cash: 0, loan: 100_000_000, qty: 1500, due: null })
+    expect(marginShortfall(s), '전제: 담보가 실제로 모자라야 한다').toBeGreaterThan(0)
+    const { state } = act(s, 'leverage', rand())
+    expect(state.player.loan, '부족액을 보고도 빚을 안 줄였다')
+      .toBeLessThan(s.player.loan)
+    expect(marginShortfall(state), '줄이고도 여전히 담보가 모자란다').toBe(0)
+  })
+})
+
+/**
+ * **`leverage`가 대조군과 실제로 다르게 노는가** — 이름만 다른 전략을 Major로 취급해 온
+ * 저장소의 전례 때문에, 매매 패턴·자산 상단·신용을 전부 대조군과 **비율로** 맞댄다.
+ * 리터럴 기준선을 박으면 밸런싱 한 번에 무의미해지므로 전부 다른 배치와의 관계로 쓴다.
+ */
+describe('leverage는 대조군과 다르게 논다', () => {
+  const lev = () => batch(CENSUS_LEVERAGE_RUNS, 'leverage')
+
+  it('갈아타지 않는다 — 판당 주문 수가 뇌동매매의 절반 아래다', () => {
+    // 실측(판당 주문): panic 312.1 · momentum 149.8 · buyhold 82.7 · leverage 62.6.
+    // 레버리지는 종목을 바꾸는 것이 아니라 **같은 종목의 크기**를 빚으로 바꾼다.
+    const l = lev(), p = batch(500, 'panic')
+    expect(l.avgTrades, `leverage ${l.avgTrades.toFixed(1)} / panic ${p.avgTrades.toFixed(1)}`)
+      .toBeLessThan(p.avgTrades * 0.5)
+  })
+
+  it('빚이 판의 상단을 연다 — 최고자산 중앙값과 문턱 도달률이 대조군을 넘는다', () => {
+    const l = lev(), p = batch(500, 'panic'), b = batch(500, 'buyhold')
+    const rival = Math.max(p.peakAssetsMedian, b.peakAssetsMedian)
+    expect(l.peakAssetsMedian, `leverage ${l.peakAssetsMedian} / 대조군 최고 ${rival}`)
+      .toBeGreaterThan(rival * 1.15)
+    expect(l.loanReachRate, `문턱 도달 leverage ${(l.loanReachRate * 100).toFixed(1)}% / panic ${(p.loanReachRate * 100).toFixed(1)}%`)
+      .toBeGreaterThan(p.loanReachRate * 1.5)
+  })
+
+  it('그 상단이 공짜가 아니다 — 중앙값은 오히려 짙은 노출 존버보다 낮다', () => {
+    // 이 게임이 가르치려는 것은 "빚을 지면 부자가 된다"가 아니다. 레버리지는 분포의
+    // 꼬리를 양쪽으로 늘릴 뿐이고(위로는 super·fire, 아래로는 legend), 중앙값은
+    // 이자와 강제청산에 깎인다. 실측: leverage 0.31억 vs buyhold 0.41억.
+    // 이 단언이 뒤집히면 신용이 무위험 차익거래가 됐다는 뜻이다.
+    const l = lev(), b = batch(500, 'buyhold')
+    expect(l.assetsMedian, `leverage ${l.assetsMedian} / buyhold ${b.assetsMedian}`)
+      .toBeLessThan(b.assetsMedian)
   })
 })
