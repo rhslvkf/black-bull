@@ -300,6 +300,44 @@ describe('마진콜 한 주 유예', () => {
       // 담보 999,400 + 400주 × 500 = 1,199,400, 요구치 2,600,000 → 1,400,600 모자란다
       expect(marginShortfall(collapsedAt(7))).toBe(1_400_600)
     })
+
+    /**
+     * **요구 담보가 정수가 아닌 계좌.** 위 케이스들은 전부 `loan` 100만이라
+     * `× 1.3`이 딱 130만으로 떨어진다 — 그 구간에서는 올림과 내림이 같은 값이라
+     * `Math.ceil`을 `Math.floor`로 바꿔도 core 스위트가 통째로 green이었다(리뷰 Minor 1).
+     * 올림이 필요한 이유는 배너가 "이만큼 채우면 해소된다"고 말하기 때문이다 —
+     * 내림이면 배너가 말한 금액을 그대로 채워도 1원이 모자란 채로 청산당한다.
+     */
+    describe('요구 담보가 정수가 아닐 때 — 부족액은 올림이어야 한다', () => {
+      const LOAN = 1_000_001
+      const CASH = 1_300_000
+      const required = LOAN * BALANCE.loan.callRatio
+      const account = (cash: number, due: number | null = null) => makeState({
+        turn: 8,
+        player: { tier: 3, loan: LOAN, cash, holdings: [], marginCallDueTurn: due },
+      })
+
+      it('전제 확인: 요구 담보가 정수가 아니고, 올림과 내림이 실제로 갈린다', () => {
+        expect(Number.isInteger(required)).toBe(false)
+        // 부족분이 1원과 2원 사이 — 올림 2 · 내림 1로 두 구현이 여기서만 갈린다.
+        expect(required - CASH).toBeGreaterThan(1)
+        expect(required - CASH).toBeLessThan(2)
+      })
+
+      it('부족액을 올려 잡는다', () => {
+        expect(marginShortfall(account(CASH))).toBe(2)
+      })
+
+      it('배너가 말한 부족액을 그대로 채우면 판정 주간이 와도 청산되지 않는다', () => {
+        // 올림의 존재 이유 그 자체. 내림이면 채운 뒤에도 담보가 요구치에 1원 못 미쳐
+        // 이 계좌는 전량 청산된다.
+        const short = marginShortfall(account(CASH))
+        const after = checkMarginCall(account(CASH + short, 8))
+        expect(after.flags['marginCalled'], `부족액 ${short}원을 채우고도 청산됐다`).toBeUndefined()
+        expect(after.player.loan).toBe(LOAN)
+        expect(after.player.marginCallDueTurn).toBeNull()   // 회복했으므로 경고만 내린다
+      })
+    })
   })
 })
 

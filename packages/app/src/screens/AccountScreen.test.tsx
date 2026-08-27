@@ -239,8 +239,25 @@ describe('AccountScreen — 신용 창구', () => {
     })
 
     it('경고가 서 있으면 문구와 부족액이 함께 뜬다', () => {
+      renderCredit({
+        cash: 1_000_000, loan: 10_000_000, marginCallDueTurn: 7,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }],
+      })
+      expect(text('margin-banner')).toContain('다음 주까지 담보를 못 채우면 보유 종목이 전량 청산됩니다')
+      // 부족액 = ceil(10,000,000 × 1.3 − (1,000,000 + 710,000))
+      expect(text('margin-shortfall')).toBe(' 부족액 11,290,000원')
+    })
+
+    /**
+     * **보유가 0인 계좌에는 청산할 것이 없다** — core `checkMarginCall`은 팔 것이 없으면
+     * 현금에서 `min(현금, 빚)`을 그대로 떼어 갚는다. 그런데도 배너가 "전량 청산됩니다"라고
+     * 말했다(리뷰 Minor 4). 이 상태는 가상이 아니다: 한 번 청산되고 잔존 채무가 남은 계좌가
+     * 정확히 '보유 0 + 빚 있음'이고, 그 계좌에 다음 경고가 다시 선다.
+     */
+    it('보유가 없으면 청산이 아니라 현금 상환이라고 말한다', () => {
       renderCredit({ cash: 1_000_000, loan: 10_000_000, holdings: [], marginCallDueTurn: 7 })
-      expect(text('margin-banner')).toContain('다음 주까지 담보를 못 채우면 전량 청산됩니다')
+      expect(text('margin-banner')).toContain('다음 주까지 담보를 못 채우면 현금이 대출 상환에 들어갑니다')
+      expect(text('margin-banner'), '팔 것이 없는데 매도를 예고한다').not.toContain('청산')
       // 부족액 = ceil(10,000,000 × 1.3 − 1,000,000)
       expect(text('margin-shortfall')).toBe(' 부족액 12,000,000원')
     })

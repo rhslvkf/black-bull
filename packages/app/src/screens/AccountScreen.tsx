@@ -69,6 +69,11 @@ export function CreditSection() {
   // 청산 판정과 배너가 서로 다른 식을 갖게 된다 — marginShortfall이 그러라고 있는 함수다.
   const shortfall = marginShortfall(s)
   const warned = marginCallDueTurn !== null
+  // 판정 주간에 실제로 집행되는 것은 **보유가 있으면 전량 청산, 없으면 현금 상환**이다
+  // (core `checkMarginCall`: 보유를 전부 판 대금에 현금을 더해 `min(현금, 빚)`을 갚는다).
+  // 보유가 비어 있는 계좌에도 "전량 청산"이라고 쓰면 배너가 팔 것도 없는 매도를 예고한다 —
+  // 재경고 경로(청산 뒤 잔존 채무)가 정확히 그 상태다(리뷰 Minor 4).
+  const hasHoldings = s.player.holdings.length > 0
 
   // 버튼이 core의 throw를 대신 막는다(BAD_AMOUNT / TIER_LOCKED / LOAN_LIMIT).
   const overLimit = amount > limit
@@ -81,7 +86,8 @@ export function CreditSection() {
     <section className="credit" data-testid="credit-section">
       {warned && (
         <p className="margin-banner" data-testid="margin-banner">
-          <strong>마진콜</strong> 다음 주까지 담보를 못 채우면 전량 청산됩니다.
+          <strong>마진콜</strong> 다음 주까지 담보를 못 채우면{' '}
+          {hasHoldings ? '보유 종목이 전량 청산됩니다.' : '현금이 대출 상환에 들어갑니다.'}
           <span data-testid="margin-shortfall"> 부족액 {won(shortfall)}</span>
         </p>
       )}

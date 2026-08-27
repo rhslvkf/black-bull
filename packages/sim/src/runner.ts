@@ -3,6 +3,7 @@ import {
   GRADES, BALANCE, createRng, Rand, type Mood,
 } from '@bb/core'
 import { act, apCostOf, type Strategy } from './strategies'
+import { isBankrupt } from './bankruptcy'
 
 /** 등급을 숫자로 — E=0 … S=5. 후반 등급 상승을 재려면 순서가 있는 축이 필요하다. */
 const gradeIdx = (g: string): number => GRADES.findIndex(x => x === g)
@@ -169,12 +170,14 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     ending: s.ending?.endingId ?? 'unknown',
     titles: s.ending?.titles ?? [],
     assets, shakenTurns: s.trackers.shakenTurns,
-    // 파산 여부는 **최종 상태**에서 직접 잰다. 예전에는 `ending === 'legend'`였는데,
-    // 그러면 "legend가 0판인 이유가 판정 버그가 아니라 파산 부재임을 확인한다"는 게이트가
-    // 자기 자신을 검사하는 자기충족 단언이 된다(같은 값을 양쪽에 놓고 비교). advanceTurn이
-    // 파산을 판정하는 식(`totalAssets(s) <= 0`)을 그대로 쓰면 `legend` 판수와 파산 판수가
-    // **서로 다른 경로로** 계산돼 교차검증이 실제로 성립한다.
-    bankrupt: totalAssets(s) <= 0, turns: s.turn,
+    // 파산 여부는 **최종 상태**에서 직접 잰다(`isBankrupt`). 예전에는 `ending === 'legend'`
+    // 였는데, 그러면 "legend가 0판인 이유가 판정 버그가 아니라 파산 부재임을 확인한다"는
+    // 게이트가 자기 자신을 검사하는 자기충족 단언이 된다(같은 값을 양쪽에 놓고 비교).
+    // advanceTurn이 파산을 판정하는 식(`totalAssets(s) <= 0`)을 그대로 쓰면 `legend`
+    // 판수와 파산 판수가 **서로 다른 경로로** 계산돼 교차검증이 실제로 성립한다.
+    // 그 되돌림을 실제로 잡는 지킴이는 `bankruptcy.test.ts`다 — 이 한 줄이 다시
+    // 엔딩 이름을 읽기 시작하면 거기서 red가 된다.
+    bankrupt: isBankrupt(s), turns: s.turn,
     priceMul, moodTurns,
     apSpent, rerolls,
     gradeSumEarly, gradeCountEarly, gradeSumLate, gradeCountLate,
