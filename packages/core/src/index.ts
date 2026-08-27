@@ -8,7 +8,7 @@ export {
   totalAssets, holdingValue, cashRatio, priceOf, portfolioLossPct, positionLossPct,
   noTradeBaseline, investmentRoi, fee, tax,
 } from './turn/accounting'
-export { maxLoan, takeLoan, repayLoan } from './turn/margin'
+export { maxLoan, takeLoan, repayLoan, marginShortfall } from './turn/margin'
 // playCard는 sim이 **선택 미리보기**에 쓴다 — "이 카드를 내면 다음 카드가 잠기는가"를
 // 알려면 실제로 내본 상태가 필요하고, 그 규칙을 sim이 다시 구현하면 두 사본이 어긋난다.
 export { loadCards, isCardAvailable, cardLockReason, actionPoints, cardApCost, playCard, type CardLock } from './turn/cards'

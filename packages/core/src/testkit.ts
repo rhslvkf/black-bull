@@ -30,7 +30,7 @@ export function makeState(over: MakeStateOverride = {}): GameState {
     cash: BALANCE.seedMoney, loan: 0, holdings: [],
     mental: 80, condition: 80, burnoutTurns: 0,
     stats: { grit: 1, stamina: 1, info: 0, analysis: 0, network: 1 },
-    employed: true, tier: 0,
+    employed: true, tier: 0, marginCallDueTurn: null,
   }
   const player: PlayerState = playerOver
     ? { ...defaultPlayer, ...playerOver, stats: { ...defaultPlayer.stats, ...(playerOver.stats ?? {}) } }

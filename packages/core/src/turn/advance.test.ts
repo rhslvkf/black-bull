@@ -323,15 +323,45 @@ describe('advanceTurn — 턴 루프 조립 확인 T-B5~T-B9 (최종 리뷰 M1)'
     expect(r.player.loan).toBe(loan + Math.round(loan * BALANCE.loan.rate))
   })
 
-  it('T-B9: 담보가 모자라면 1턴 진행에 반대매매가 실행된다', () => {
+  /**
+   * T-B9: 담보가 모자라면 반대매매가 실행된다 — 단 **한 주 유예 뒤에**.
+   *
+   * 유예 한 주가 턴 루프의 어디에 놓이는지가 이 테스트의 전부다. `checkMarginCall`은
+   * advanceTurn 4단계에서, 맨 끝의 `turn: s.turn + 1`보다 **먼저** 불린다. 그래서
+   * `dueTurn = 이번 턴 + 1`은 정확히 **다음 advanceTurn 호출**을 가리킨다 —
+   * 경고가 선 그 턴에 곧바로 청산되면(+0) 유예가 없는 것이고, 한 턴 더 밀리면(+2)
+   * 두 주를 주는 것이다. 아래 두 테스트가 그 두 실수를 각각 잡는다.
+   *
+   * 담보가 무너져도 **총자산은 양수**로 잡아둔다(현금 1,200만 − 대출 1,000만). 총자산이
+   * 음수면 경고가 선 그 턴 끝의 파산 판정(8.5단계)에 게임이 끝나버려 다음 주가 오지 않는다.
+   */
+  const shortOfCollateral = () => {
     const base = initGame(1)
-    const s = {
-      ...base,
-      player: { ...base.player, cash: 100_000, loan: 5_000_000 },  // 담보 10만 << 대출×1.3
-    }
-    const r = run(s)
+    // 담보 1,200만 < 대출 1,000만 × 1.3 = 1,300만. 총자산 +200만이라 파산은 아니다.
+    return { ...base, player: { ...base.player, cash: 12_000_000, loan: 10_000_000 } }
+  }
+
+  it('T-B9a: 담보가 무너진 그 턴에는 청산하지 않고 다음 턴으로 경고를 세운다', () => {
+    const s = shortOfCollateral()
+    expect(s.player.marginCallDueTurn).toBeNull()          // 전제: 경고가 없던 상태
+    const r = run(s, [])
+    expect(r.flags['marginCalled']).toBeUndefined()        // 청산은 일어나지 않았다
+    expect(r.player.loan).toBeGreaterThan(0)               // 빚은 그대로 남아 있다(이자까지 붙는다)
+    expect(r.status).toBe('playing')                       // 파산으로 끝나지도 않았다
+    // 경고는 **바로 다음에 플레이할 턴**을 가리킨다. advanceTurn이 돌려준 r.turn이 곧
+    // 그 턴이므로, +0(그 주에 청산)도 +2(두 주 유예)도 이 단언에서 어긋난다.
+    expect(r.player.marginCallDueTurn).toBe(r.turn)
+    expect(r.turn).toBe(2)
+  })
+
+  it('T-B9b: 유예 주가 와도 담보를 못 채웠으면 그때 반대매매가 실행된다', () => {
+    const s = shortOfCollateral()
+    const warned = run(s, [])
+    expect(warned.flags['marginCalled']).toBeUndefined()   // 전제: 아직 청산 전이다
+    const r = run({ ...warned, pendingChoices: [] }, [])
     expect(r.flags['marginCalled']).toBe(true)
     expect(r.player.holdings).toEqual([])
+    expect(r.player.marginCallDueTurn).toBeNull()          // 집행된 예고는 남지 않는다
   })
 })
 

@@ -27,7 +27,7 @@ export function initGame(seed: number): GameState {
       cash: BALANCE.seedMoney, loan: 0, holdings: [],
       mental: 100, condition: 100, burnoutTurns: 0,
       stats: { grit: 0, stamina: 0, info: 0, analysis: 0, network: 0 },
-      employed: true, tier: 0,
+      employed: true, tier: 0, marginCallDueTurn: null,
     },
     pendingImpacts: [], news: [], firedOneShots: [], flags: {},
     pendingChoices: [], rivalAssets: BALANCE.rival.start,

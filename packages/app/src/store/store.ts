@@ -28,8 +28,11 @@ export function apSpent(state: GameState, picked: string[]): number {
  *  없어 카드 목록이 비고 턴을 넘길 수 없다.
  *  v4: trackers에 feesPaid/taxPaid/peakAssets/maxDrawdownPct/tradeCount 5개가 늘었다
  *  (Task 7). v3 저장에는 이 필드들이 없어 `undefined`로 로드되면 Math.max(undefined, x)가
- *  NaN이 되어 최대 낙폭이 영구히 NaN으로 오염될 수 있다(형태 검사가 실제 방어선이다). */
-export const SAVE_VERSION = 4
+ *  NaN이 되어 최대 낙폭이 영구히 NaN으로 오염될 수 있다(형태 검사가 실제 방어선이다).
+ *  v5: PlayerState에 marginCallDueTurn(마진콜 유예 예고)이 늘었다. v4 저장에는 이 필드가
+ *  없어 `undefined`로 로드되면 checkMarginCall의 `=== null` 분기가 전부 어긋나, 담보가
+ *  무너져도 경고가 서지 않고 유예가 영원히 끝나지 않는다. */
+export const SAVE_VERSION = 5
 /** 키 이름도 버전에서 파생시킨다 — 리터럴로 'v1'을 박아두면 SAVE_VERSION을 올렸을 때
  *  키만 v1로 남아 이름이 거짓말이 된다(리뷰 Minor 2). 키가 바뀌면 구버전 저장은
  *  읽히지 않고 남아 있다가 브라우저가 정리한다 — version 필드 검사와 이중 방어다. */
