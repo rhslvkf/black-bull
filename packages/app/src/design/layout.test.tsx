@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { render, cleanup, screen } from '@testing-library/react'
@@ -32,18 +32,47 @@ import { CHARACTER_STAGE_HEIGHT_PX } from '../components/CharacterStage'
  * **(b) 런타임** — 렌더된 DOM에서 인라인 style 우회(소스에는 없는 값)를 잡는다.
  * 소스 훑기가 못 보는 유일한 통로가 그것이다.
  *
- * ### 이 파일이 증명하지 못하는 것
- * jsdom은 **레이아웃을 계산하지 않는다** — 높이·겹침·"버튼이 화면 안에 있는가"는
- * 여기서 증명되지 않는다. 그 증거는 `scripts/layout-audit.mjs`(실브라우저 156턴 감사)와
- * 보고서의 실측표다. 이 파일이 지키는 것은 **그 실측을 성립하게 만든 구조**다.
+ * ### ⚠ 이 검사는 **완전하지 않다** (Fix Round 3, Ruling 35)
+ * 여기 있는 것은 **알려진 메커니즘의 열거**다 — `flex`·`min-height`·`overflow`·
+ * `position`·`display`·`margin`. 열거는 언제나 N+1번째 메커니즘에 뚫린다:
+ * `transform`, `clip-path`, `:has()`, `content-visibility`, 아직 없는 CSS 기능…
+ * 재리뷰가 실제로 그렇게 뚫었다(`display: contents`, `margin-top: 100vh`).
+ *
+ * jsdom은 **레이아웃을 계산하지 않으므로** 여기서는 "버튼이 화면 안에 있고 눌린다"는
+ * *결과*를 잴 수 없고, 그 결과를 만들어내는 *수단*을 하나씩 막아볼 수 있을 뿐이다.
+ *
+ * **그래서 결과의 권위는 `packages/app/scripts/layout-audit.mjs`에 있다** — 실브라우저로
+ * 156턴을 돌며 버튼의 존재·크기·뷰포트 포함·**히트테스트**를 직접 잰다. 이 파일은
+ * 그보다 값싸고 빠른 **조기 경보**일 뿐이다.
+ *
+ * > **레이아웃을 건드리는 변경은 `scripts/layout-audit.mjs`를 반드시 돌려라.**
+ * > 이 파일이 green인 것은 "알려진 우회가 없다"는 뜻이지 "화면이 멀쩡하다"는 뜻이 아니다.
  */
 
 // ─────────────────────────────── CSS 원문 ───────────────────────────────
+/**
+ * **앱에 실려 나가는 모든 CSS를 모은다** (Fix Round 3, Ruling 37).
+ * `index.css` 하나만 읽던 이전 버전은 같은 선언을 `tokens.css`로 한 줄 옮기는 것만으로
+ * 무력화됐다(재리뷰 R6'). 파일 목록을 손으로 적지 않고 `src/` 아래를 훑어 모은다 —
+ * 새 CSS 파일이 생겨도 자동으로 포함된다.
+ */
 const here = dirname(fileURLToPath(import.meta.url))
-const read = (p: string) => readFileSync(join(here, p), 'utf-8')
-const RAW_CSS = read('../index.css')
-// jsdom은 @import를 따라가지 않으므로 토큰 파일을 직접 이어붙인다(런타임 겹 전용).
-const CSS_FOR_DOM = read('./tokens.css') + '\n' + RAW_CSS.replace(/@import[^;]+;/g, '')
+const SRC_DIR = join(here, '..')
+
+function collectCssFiles(dir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...collectCssFiles(full))
+    else if (entry.name.endsWith('.css')) out.push(full)
+  }
+  return out.sort()
+}
+
+const CSS_FILES = collectCssFiles(SRC_DIR)
+const CSS_SOURCES = CSS_FILES.map(f => ({ file: f.slice(SRC_DIR.length + 1), text: readFileSync(f, 'utf-8') }))
+// jsdom은 @import를 따라가지 않으므로 전부 이어붙인다(런타임 겹 전용).
+const CSS_FOR_DOM = CSS_SOURCES.map(s => s.text.replace(/@import[^;]+;/g, '')).join('\n')
 
 interface CssRule {
   /** 선택자 목록 원문. */
@@ -52,6 +81,8 @@ interface CssRule {
   decls: Map<string, string>
   /** 이 규칙을 감싼 at-rule 조건들(`@media …`). 보고 메시지에만 쓴다. */
   context: string[]
+  /** 어느 파일에서 왔는가. 실패 메시지가 파일까지 가리키게 한다. */
+  file: string
 }
 
 /**
@@ -61,10 +92,10 @@ interface CssRule {
  * 무관하게 **원문에 그런 선언이 있는가**를 보는 것이기 때문이다. 파서가 조용히 버리는
  * 규칙이 하나라도 있으면 그게 곧 사각지대가 된다.
  */
-function parseAllRules(css: string): CssRule[] {
+function parseAllRules(css: string, file: string): CssRule[] {
   const src = css.replace(/\/\*[\s\S]*?\*\//g, '')
   const out: CssRule[] = []
-  const walk = (text: string, context: string[]): void => {
+  const walk = (text: string, context: string[], parentSelector: string | null): void => {
     let i = 0
     while (i < text.length) {
       const open = text.indexOf('{', i)
@@ -83,27 +114,36 @@ function parseAllRules(css: string): CssRule[] {
         // @media·@supports 등 조건부 블록은 안쪽을 이어서 훑는다.
         // @keyframes는 선택자가 아니라 키프레임 선택자(0%, from…)라 건너뛴다.
         if (!prelude.startsWith('@keyframes') && !prelude.startsWith('@font-face')) {
-          walk(body, [...context, prelude])
+          walk(body, [...context, prelude], parentSelector)
         }
       } else if (prelude !== '') {
+        // 부모가 있으면 CSS 중첩이다 — `&`를 부모 선택자로 풀어 평범한 선택자로 만든다.
+        // (중첩을 쓰지 않는 지금도 미리 다뤄 둔다: 나중에 누가 중첩으로 우회하면
+        //  이 겹이 조용히 눈감는 대신 그대로 잡는다.)
+        const selectorText = parentSelector === null
+          ? prelude
+          : prelude.includes('&') ? prelude.replaceAll('&', parentSelector) : `${parentSelector} ${prelude}`
+        // 중첩 블록을 걷어낸 뒤 선언만 읽는다(중첩이 선언 파싱을 오염시키지 않게).
+        const flat = body.replace(/[^{}]*\{[^{}]*\}/g, '')
         const decls = new Map<string, string>()
-        for (const part of body.split(';')) {
+        for (const part of flat.split(';')) {
           const c = part.indexOf(':')
           if (c === -1) continue
           const name = part.slice(0, c).trim().toLowerCase()
           const value = part.slice(c + 1).trim()
           if (name !== '' && value !== '') decls.set(name, value)
         }
-        out.push({ selectorText: prelude, decls, context })
+        out.push({ selectorText, decls, context, file })
+        if (body.includes('{')) walk(body, context, selectorText)
       }
       i = j
     }
   }
-  walk(src, [])
+  walk(src, [], null)
   return out
 }
 
-const ALL_RULES = parseAllRules(RAW_CSS)
+const ALL_RULES = CSS_SOURCES.flatMap(({ file, text }) => parseAllRules(text, file))
 
 /**
  * `flex` 축약/개별 선언이 지정하는 flex-grow. 지정하지 않으면 null.
@@ -162,7 +202,7 @@ function couldApplyTo(rule: CssRule, el: Element): boolean {
   })
 }
 
-const where = (r: CssRule) => (r.context.length > 0 ? `${r.context.join(' / ')} { ${r.selectorText} }` : r.selectorText)
+const where = (r: CssRule) => `${r.file}: ${r.context.length > 0 ? `${r.context.join(' / ')} { ${r.selectorText} }` : r.selectorText}`
 
 // ─────────────────────────────── 렌더 ───────────────────────────────
 let styleEl: HTMLStyleElement
@@ -184,13 +224,69 @@ beforeEach(() => {
 })
 
 const scrollChildren = () => [...screen.getByTestId('home-scroll').children]
+
+/**
+ * **홈이 실제로 그리는 자식은 상태에 따라 달라진다** (Fix Round 3, Minor 2).
+ * 기본 렌더만 훑던 이전 버전은 `.turn-skipped`(강제 스킵 안내)처럼 특정 상태에서만
+ * 나타나는 자식을 한 번도 보지 않았고, `.turn-skipped { flex: 1 1 auto }`는 두 겹 모두
+ * green이었다. 조건부로 붙는 행을 전부 한 번씩 화면에 올려 자식 집합을 모은다.
+ *
+ * 새 조건부 행이 생기면 여기에 상태를 한 줄 추가해야 한다 — 그 자체가 이 검사의
+ * 알려진 한계다(자식 목록에 의존하는 구조다). 그래서 아래 '선택자 훑기'가 한 겹 더 있다.
+ */
+const HOME_STATES: { name: string; apply: () => void }[] = [
+  { name: '기본', apply: () => {} },
+  { name: '강제 스킵 안내(turn-skipped)', apply: () => {
+    const st = useGame.getState().state!
+    useGame.setState({ state: { ...st, lastTurnSkip: 'burnout' } })
+  } },
+  { name: '번아웃 예고', apply: () => {
+    const st = useGame.getState().state!
+    useGame.setState({ state: { ...st, player: { ...st.player, burnoutTurns: 3 } } })
+  } },
+  { name: '선택지 대기(turn-blocked)', apply: () => {
+    const st = useGame.getState().state!
+    useGame.setState({ state: { ...st, pendingChoices: [{ eventId: 'x', dueTurn: st.turn }] } })
+  } },
+  { name: '흔들림', apply: () => {
+    const st = useGame.getState().state!
+    useGame.setState({ state: { ...st, player: { ...st.player, mental: 10 } } })
+  } },
+]
+
+/** 상태 하나를 올려 렌더하고, 그 화면의 스크롤 자식들을 콜백에 넘긴다. */
+function forEachHomeState(fn: (children: Element[], stateName: string) => void): void {
+  for (const { name, apply } of HOME_STATES) {
+    cleanup()
+    localStorage.clear()
+    useGame.getState().reset()
+    useGame.getState().newGame(1)
+    useGame.getState().finishPrologue()
+    apply()
+    render(<App />)
+    fn(scrollChildren(), name)
+  }
+}
 const label = (el: Element) => `${el.tagName.toLowerCase()}.${el.className || '(무클래스)'}`
 /** jsdom은 `min-height: 0`을 '0'으로, `170px`를 '170px'로 돌려준다. */
 const px = (v: string) => Number.parseFloat(v)
 
 describe('전수 훑기의 전제 — 파서가 실제로 규칙을 읽고 있다', () => {
-  it('index.css에서 충분히 많은 규칙을 뽑았다 (빈 배열에 대고 도는 공허한 검사 방지)', () => {
+  it('src/ 아래의 CSS 파일을 **디렉터리에서 모은다** (파일 목록 하드코딩 금지 — Ruling 37)', () => {
+    // 수집이 0개를 찾았을 때 "위반 0건"이 되는 것도 부재를 만족으로 읽는 자리다.
+    expect(CSS_FILES.length).toBeGreaterThanOrEqual(2)
+    const names = CSS_SOURCES.map(s => s.file)
+    expect(names).toContain('index.css')
+    expect(names).toContain('design/tokens.css')
+    // 새 CSS 파일이 생기면 자동으로 포함된다 — 목록을 여기 적지 않는 이유다.
+    expect(CSS_SOURCES.every(s => s.text.length > 0)).toBe(true)
+  })
+  it('모든 CSS 파일에서 충분히 많은 규칙을 뽑았다 (빈 배열에 대고 도는 공허한 검사 방지)', () => {
     expect(ALL_RULES.length).toBeGreaterThan(100)
+    // 파일마다 최소 한 규칙은 나와야 한다 — 한 파일이 통째로 파싱 실패하면 사각지대다.
+    for (const src of CSS_SOURCES) {
+      expect(ALL_RULES.some(r => r.file === src.file), `${src.file}에서 규칙을 하나도 못 뽑았다`).toBe(true)
+    }
   })
   it('@media 안쪽 규칙도 함께 뽑는다 — 미디어에 숨기는 우회를 보려면 필수다', () => {
     const inMedia = ALL_RULES.filter(r => r.context.length > 0)
@@ -293,6 +389,59 @@ describe('축소 사슬 — 각 노드가 내용보다 작아질 수 있다 (Rul
   })
 })
 
+/**
+ * 아래는 재리뷰가 실제로 뚫고 들어온 메커니즘들을 막는 **조기 경보**다.
+ * 값이 싸서 넣었을 뿐, 이것으로 목록이 닫혔다는 뜻이 **아니다**(위 ⚠ 참고).
+ * 각 항목 옆의 R번호는 그 우회를 실증한 재리뷰 공격이다.
+ */
+describe('조기 경보 — 조작부를 무력화하는 알려진 수단들 (완전하지 않다)', () => {
+  const actionTargets = () => [screen.getByTestId('home-actions'), screen.getByTestId('next-turn')]
+
+  it('R1: 조작부를 display로 감추지 않는다', () => {
+    for (const el of actionTargets()) {
+      expect(getComputedStyle(el).display, label(el)).not.toBe('none')
+      const hidden = ALL_RULES.filter(r => /^(none)$/.test((r.decls.get('display') ?? '').replace(/!important/i, '').trim()))
+        .filter(r => couldApplyTo(r, el)).map(where)
+      expect(hidden, label(el)).toEqual([])
+      const vis = ALL_RULES.filter(r => /hidden|collapse/.test(r.decls.get('visibility') ?? ''))
+        .filter(r => couldApplyTo(r, el)).map(where)
+      expect(vis, label(el)).toEqual([])
+    }
+  })
+
+  it('R2: 스크롤 영역을 흐름 밖으로 빼내지 않는다 — 조작부 위를 덮을 수 있다', () => {
+    const scroll = screen.getByTestId('home-scroll')
+    expect(['static', 'relative', '']).toContain(getComputedStyle(scroll).position)
+    const bad = ALL_RULES.filter(r => /absolute|fixed|sticky/.test(r.decls.get('position') ?? ''))
+      .filter(r => couldApplyTo(r, scroll)).map(where)
+    expect(bad).toEqual([])
+  })
+
+  it('R3: 스크롤 영역의 display를 흐름 요소에서 벗기지 않는다 (display: contents 등)', () => {
+    const scroll = screen.getByTestId('home-scroll')
+    expect(['block', 'flex']).toContain(getComputedStyle(scroll).display)
+    const bad = ALL_RULES.filter(r => /contents|inline|none/.test((r.decls.get('display') ?? '').replace(/!important/i, '').trim()))
+      .filter(r => couldApplyTo(r, scroll)).map(where)
+    expect(bad).toEqual([])
+  })
+
+  it('R5: 조작부에 화면을 밀어내는 큰 여백을 주지 않는다', () => {
+    for (const el of actionTargets()) {
+      const bad = ALL_RULES.filter(r => {
+        for (const [name, value] of r.decls) {
+          if (!/^margin(-top|-bottom)?$/.test(name)) continue
+          // vh/% 여백은 뷰포트 크기만큼 밀 수 있다. px는 큰 값만 본다.
+          if (/vh|vmin|vmax|%/.test(value)) return true
+          const mx = value.match(/(-?[\d.]+)px/g)
+          if (mx !== null && mx.some(v => Math.abs(Number.parseFloat(v)) > 200)) return true
+        }
+        return false
+      }).filter(r => couldApplyTo(r, el)).map(where)
+      expect(bad, label(el)).toEqual([])
+    }
+  })
+})
+
 describe('주 조작부는 스크롤 밖에 있다', () => {
   it("'한 주 넘기기'는 스크롤 영역 안에 있지 않다", () => {
     const scroll = screen.getByTestId('home-scroll')
@@ -358,16 +507,39 @@ describe('스크롤 영역에서 자라는 자식은 없다 (전수 훑기 + 런
     expect(scrollChildren().some(el => el.getAttribute('data-testid') === 'char-stage')).toBe(true)
   })
 
-  it('소스 어디에도 flex-grow > 0을 주는 선언이 없다 (@media·!important 포함)', () => {
+  it('조건부 행까지 포함해 자식 집합을 모은다 (기본 렌더만 보면 놓친다 — Minor 2)', () => {
+    const seen = new Set<string>()
+    forEachHomeState(children => { for (const el of children) seen.add(el.className) })
+    // 조건부로만 나타나는 행이 실제로 표본에 들어왔는지 확인한다.
+    expect([...seen].some(c => c.includes('turn-skipped')), '강제 스킵 안내가 표본에 없다').toBe(true)
+    expect(seen.size).toBeGreaterThan(6)
+  })
+
+  it('소스 어디에도 flex-grow > 0을 주는 선언이 없다 (@media·!important·모든 CSS 파일·여러 상태)', () => {
     const violations: string[] = []
-    for (const el of scrollChildren()) {
-      for (const rule of ALL_RULES) {
-        const grow = declaredGrow(rule.decls)
-        if (grow === null || grow <= 0) continue
-        if (!couldApplyTo(rule, el)) continue
-        violations.push(`${label(el)} ← ${where(rule)} { ${rule.decls.get('flex') ?? `flex-grow: ${rule.decls.get('flex-grow')}`} }`)
+    forEachHomeState((children, stateName) => {
+      for (const el of children) {
+        for (const rule of ALL_RULES) {
+          const grow = declaredGrow(rule.decls)
+          if (grow === null || grow <= 0) continue
+          if (!couldApplyTo(rule, el)) continue
+          violations.push(`[${stateName}] ${label(el)} ← ${where(rule)}`)
+        }
       }
-    }
+    })
+    expect([...new Set(violations)]).toEqual([])
+  })
+
+  it('`.home-scroll`을 겨냥한 어떤 규칙도 스테이지 말고는 자라게 하지 않는다 (선택자 훑기)', () => {
+    // 자식 목록에 의존하지 않는 한 겹 더 — 아직 렌더된 적 없는 자식을 겨냥한 규칙도 잡는다.
+    // `.home-scroll` **자신**은 자라야 한다(남은 세로를 차지하는 쪽이다) — 자손을 겨냥한
+    // 규칙만 본다: `.home-scroll` 뒤에 결합자와 다른 선택자가 더 붙은 형태.
+    const targetsDescendant = (sel: string) => /\.home-scroll\s*[>+~\s]\s*\S/.test(sel)
+    const violations = ALL_RULES.filter(r => {
+      const grow = declaredGrow(r.decls)
+      if (grow === null || grow <= 0) return false
+      return r.selectorText.split(',').some(x => targetsDescendant(x.trim()))
+    }).filter(r => !r.selectorText.includes('.char-stage')).map(where)
     expect(violations).toEqual([])
   })
 
@@ -383,7 +555,11 @@ describe('스크롤 영역에서 자라는 자식은 없다 (전수 훑기 + 런
     expect(violations).toEqual([])
   })
 
-  it('계산된 값으로도 자라지 않는다 (겹치는 마지막 확인)', () => {
+  // Minor 1(재리뷰) — jsdom의 캐스케이드는 구체성을 무시하므로 이 검사가 실질적으로
+  // 잡는 것은 **인라인 style과 소스 순서상 마지막 규칙**뿐이다. 스타일시트 우회의
+  // 본체는 위 전수 훑기가 담당한다. 이 케이스는 그 위에 얹는 값싼 겹이지 독립적인
+  // 방어선이 아니다 — 이름과 주석이 그 이상을 주장하지 않게 적어 둔다.
+  it('계산된 값으로도 자라지 않는다 (jsdom 한계상 사실상 인라인·마지막 규칙만)', () => {
     const violations = scrollChildren()
       .filter(el => Number(getComputedStyle(el).flexGrow || '0') > 0).map(label)
     expect(violations).toEqual([])
