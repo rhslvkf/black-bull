@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import {
   type GameState, initGame, advanceTurn, buy, sell, averageDown, resolveChoice, loadEvents, totalAssets,
-  GameError, actionPoints, cardApCost, gradeOfSlot, rerollSlots,
+  GameError, actionPoints, cardApCost, gradeOfSlot, rerollSlots, takeLoan, repayLoan,
 } from '@bb/core'
 
 /** 이미 고른 카드들의 행동력 합. 슬롯 밖 카드(원래는 있을 수 없다)는 0으로 친다 —
@@ -63,6 +63,13 @@ function isValidGameState(x: unknown): x is GameState {
   const player = s.player as Record<string, unknown>
   if (typeof player.cash !== 'number') return false
   if (!Array.isArray(player.holdings)) return false
+  // 계좌 화면의 마진콜 배너가 렌더 즉시 읽고(`marginCallDueTurn !== null`), core의
+  // checkMarginCall이 매 턴 `=== null`로 분기한다. v4 이전 저장에는 이 필드가 없어
+  // `undefined`로 로드되는데, `undefined !== null`은 참이므로 core는 "경고가 이미 서
+  // 있다"고 읽고 `state.turn < undefined`(false)를 지나 **유예 없이 곧바로 청산**한다.
+  // 숫자도 null도 아닌 값은 전부 거부한다 — 정수가 아닌 숫자(1.5·NaN)도 턴 번호가 될 수
+  // 없으므로 같이 막는다(`Number.isInteger`는 undefined·NaN·1.5에 전부 false다).
+  if (player.marginCallDueTurn !== null && !Number.isInteger(player.marginCallDueTurn)) return false
   if (!Array.isArray(s.stockDefs)) return false
   // HUD가 렌더 즉시 읽는다(noTradeBaseline → trackers.netPayroll). 빠져 있으면 수익률이
   // NaN%로 표시되므로 다른 렌더 필드와 같은 급으로 검사한다. v1 저장에는 이 필드가
@@ -144,6 +151,15 @@ interface Store {
    *  guard 없이 직접 commit한다. advanceTurn을 거치지 않으므로 턴·행동력·리롤을
    *  소모하지 않는다. */
   doAverageDown(stockId: string, budget: number): void
+  /** 신용 대출 — core의 takeLoan을 그대로 부른다. `doAverageDown`과 같은 자리(턴을
+   *  넘기지 않는 계좌 화면의 즉시 행동)지만, 그쪽과 달리 **guard()를 거친다**:
+   *  takeLoan은 조건이 안 맞으면 GameError(BAD_AMOUNT/TIER_LOCKED/LOAN_LIMIT)를 던지는
+   *  함수라(averageDown은 던지지 않고 상태를 그대로 돌려준다) 삼킬 예외가 실제로 있다.
+   *  정상 경로에서는 계좌 화면의 버튼이 먼저 막으므로 여기까지 오지 않는다 —
+   *  guard는 화면이 놓친 경우에 앱이 하얗게 죽지 않게 하는 마지막 방어선이다. */
+  doTakeLoan(amount: number): void
+  /** 신용 상환 — core의 repayLoan. guard를 쓰는 이유는 doTakeLoan과 같다(BAD_AMOUNT). */
+  doRepayLoan(amount: number): void
   choose(eventId: string, idx: number): void
   setTab(t: TabKey): void
   selectStock(id: string | null): void
@@ -231,6 +247,8 @@ export const useGame = create<Store>((set, get) => {
       if (!s) return
       commit(averageDown(s, stockId, budget))
     },
+    doTakeLoan(amount) { guard(s => takeLoan(s, amount)) },
+    doRepayLoan(amount) { guard(s => repayLoan(s, amount)) },
     choose(eventId, idx) { guard(s => resolveChoice(s, eventId, idx, events)) },
     setTab(tab) { set({ tab }) },
     selectStock(selectedStock) { set({ selectedStock }) },
