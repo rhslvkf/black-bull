@@ -246,7 +246,7 @@ const HOME_STATES: { name: string; apply: () => void }[] = [
   } },
   { name: '선택지 대기(turn-blocked)', apply: () => {
     const st = useGame.getState().state!
-    useGame.setState({ state: { ...st, pendingChoices: [{ eventId: 'x', dueTurn: st.turn }] } })
+    useGame.setState({ state: { ...st, pendingChoices: [{ eventId: 'x' }] } })
   } },
   { name: '흔들림', apply: () => {
     const st = useGame.getState().state!
