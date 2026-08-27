@@ -1173,7 +1173,8 @@ NEGATIVE: no text, no letters, no hangul, no numbers, no watermark, no signature
 
 ### `sector.반도체` — 반도체
 
-> `윤슬반도체` — 변동성이 가장 낮은 대장주. 여덟 개 중 가장 정직하게 생겨야 한다.
+> `윤슬반도체` — 시장의 대장주. 변동성은 개별 종목 중 두 번째로 낮다(0.030, 최저는 금융 0.022).
+> 여덟 개 중 가장 정직하게 생겨야 한다.
 
 ```text
 STYLE: Korean webtoon illustration, clean bold ink linework, flat cel shading with a soft rim light, muted desaturated palette built on deep charcoal navy (#0B0E13) and slate grey with one warm amber-gold accent (#E6B45A), cinematic low-key lighting, contemporary Seoul, 2020s Korean office-worker life, hand-drawn digital painting.
