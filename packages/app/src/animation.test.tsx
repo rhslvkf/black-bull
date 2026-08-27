@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import App from './App'
@@ -121,5 +124,27 @@ describe('가장자리 맥동은 정확히 한 번만 재생된다 (Fix Round 1 
     expect(anim).toBe('edge-pulse 960ms var(--ease-standard)')
     expect(anim).not.toContain('infinite')
     unmount()
+  })
+})
+
+// Fix Round 2(리뷰) — ChoiceSheet.test.tsx에서 실측된 함정과 같은 클래스다: 위
+// 런타임 테스트는 최종 문자열이 '960ms'인지만 보므로, App.tsx가 그 숫자를
+// `DUR_SLOW * 2`로 계산하는 대신 리터럴 `960`을 직접 써도(하드코딩) 똑같이
+// 통과한다. 소스가 실제로 `DUR_SLOW` 식별자를 참조하는지 직접 본다.
+describe('가장자리 맥동 duration이 소스에서 실제로 DUR_SLOW를 참조한다 (Fix Round 2)', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it('PULSE_DURATION_MS 선언 줄이 DUR_SLOW를 참조한다(하드코딩 회귀 방지)', () => {
+    const line = src.split('\n').find(l => l.includes('PULSE_DURATION_MS') && l.includes('=')) ?? ''
+    expect(line, 'PULSE_DURATION_MS 선언 줄을 못 찾았다').not.toBe('')
+    expect(line).toMatch(/DUR_SLOW/)
+    expect(line).not.toMatch(/\b\d{2,}\b/) // 960 같은 두 자리 이상 리터럴이 섞이면 안 된다(곱셈 계수 '2'는 허용)
+  })
+
+  it('edge-pulse 애니메이션 문자열 자체에는 숫자 리터럴이 하드코딩돼 있지 않다', () => {
+    const line = src.split('\n').find(l => l.includes('edge-pulse')) ?? ''
+    expect(line, 'edge-pulse를 포함하는 줄을 못 찾았다').not.toBe('')
+    expect(line).not.toMatch(/\d+ms/)
   })
 })

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import App from './App'
@@ -135,6 +138,18 @@ describe('탭 전환 슬라이드 (§6 화면 전환, MU11)', () => {
     goHome()
     fireEvent.click(screen.getByTestId('tab-market'))
     expect(screen.getByTestId('tab-body').style.animation).toContain(`${DUR_BASE}ms`)
+  })
+
+  // Fix Round 2(리뷰) — ChoiceSheet.test.tsx에서 실측된 함정과 동일하다: DUR_BASE가
+  // 마침 240이라 위 런타임 테스트는 '240ms' 하드코딩으로 되돌려도 통과한다. 소스가
+  // 실제로 DUR_BASE 식별자를 참조하는지 직접 본다.
+  it('슬라이드 duration이 소스에서 실제로 DUR_BASE를 참조한다(하드코딩 회귀 방지, Fix Round 2)', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf-8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    const line = src.split('\n').find(l => l.includes('tab-slide')) ?? ''
+    expect(line, 'tab-slide를 포함하는 줄을 못 찾았다').not.toBe('')
+    expect(line).toMatch(/\$\{DUR_BASE\}ms/)
+    expect(line).not.toMatch(/\d+ms/)
   })
 
   it('탭 전환 슬라이드가 실제 탭 전환(다른 화면 렌더)과 함께 일어난다', () => {

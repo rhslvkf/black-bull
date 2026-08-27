@@ -365,3 +365,24 @@ describe('대화창 페이드인 (§6 화면 전환)', () => {
     expect(screen.getByTestId('dialogue-box').style.animation).toContain(`${DUR_BASE}ms`)
   })
 })
+
+// Fix Round 2(리뷰) — ChoiceSheet.test.tsx에서 실측된 함정과 동일하다: DUR_BASE가
+// 마침 240이라 위 런타임 테스트는 '240ms'를 하드코딩으로 되돌려도 통과한다(값이
+// 우연히 같아서다). 소스가 실제로 DUR_BASE 식별자를 참조하는지 직접 본다.
+describe('페이드인 duration이 소스에서 실제로 DUR_BASE를 참조한다 (Fix Round 2)', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFileSync(join(here, 'DialogueBox.tsx'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const animationLine = src.split('\n').find(line => line.includes('dialogue-fade-in')) ?? ''
+
+  it('애니메이션 선언 줄을 찾을 수 있다 (전제 확인)', () => {
+    expect(animationLine, 'dialogue-fade-in을 포함하는 줄을 못 찾았다').not.toBe('')
+  })
+
+  it('그 줄이 `${DUR_BASE}ms` 형태로 식별자를 실제로 참조한다', () => {
+    expect(animationLine).toMatch(/\$\{DUR_BASE\}ms/)
+  })
+
+  it('그 줄에 숫자 리터럴 duration이 하드코딩돼 있지 않다', () => {
+    expect(animationLine).not.toMatch(/\d+ms/)
+  })
+})

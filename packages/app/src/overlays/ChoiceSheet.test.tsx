@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { loadEvents, type EventChoice } from '@bb/core'
@@ -217,6 +220,34 @@ describe('ChoiceSheet — 컴포넌트 단위 방어 (Task 19 뮤테이션 대�
     const anim = screen.getByTestId('choice-sheet').style.animation
     expect(anim).toContain(`${DUR_BASE}ms`)
   })
+
+// Fix Round 2(리뷰) — 위 런타임 테스트는 "화면에 보이는 문자열에 '240ms'가
+// 들어있는가"만 본다. 그런데 DUR_BASE가 **마침 240**이라 `'choice-sheet-slide-up
+// 240ms ease-out'`처럼 원래의 하드코딩 리터럴로 완전히 되돌려도 우연히 같은
+// 문자열이 나와 그 테스트를 통과한다(리뷰가 실측 — "우연히 같은 값"이 실제로
+// 원래 하드코딩값과 정확히 일치했다). 런타임 값 비교만으로는 "토큰을 참조하는가"
+// 자체를 알 수 없다 — 소스가 실제로 `DUR_BASE` 식별자를 쓰는지 직접 봐야 한다
+// (tokens.test.ts·CardTile.test.tsx가 index.css를 readFileSync로 읽어 검증한
+// 것과 같은 기법을 컴포넌트 소스 자체에 적용한다).
+describe('슬라이드업 duration이 소스에서 실제로 DUR_BASE를 참조한다 (Fix Round 2 — 런타임 값만으로는 값이 우연히 같은 경우를 못 잡는다)', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFileSync(join(here, 'ChoiceSheet.tsx'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '')
+  // 애니메이션을 선언하는 그 줄 하나만 뽑는다 — 파일 전체가 아니라 이 값의 실제
+  // 출처가 되는 줄 자체를 본다.
+  const animationLine = src.split('\n').find(line => line.includes('choice-sheet-slide-up')) ?? ''
+
+  it('애니메이션 선언 줄을 찾을 수 있다 (전제 확인)', () => {
+    expect(animationLine, 'choice-sheet-slide-up을 포함하는 줄을 못 찾았다').not.toBe('')
+  })
+
+  it('그 줄이 `${DUR_BASE}ms` 형태로 식별자를 실제로 참조한다', () => {
+    expect(animationLine).toMatch(/\$\{DUR_BASE\}ms/)
+  })
+
+  it('그 줄에 숫자 리터럴 duration이 하드코딩돼 있지 않다(예: 240ms로 되돌리는 회귀 방지)', () => {
+    expect(animationLine).not.toMatch(/\d+ms/)
+  })
+})
 
   // 직접 확인 요청 — 실제 콘텐츠에서 가장 긴 선택지 텍스트로도 시트가 깨지지 않는지.
   // 하드코딩한 문자열이 아니라 loadEvents()에서 실제로 가장 긴 라벨을 유도한다.
