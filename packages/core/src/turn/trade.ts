@@ -85,11 +85,24 @@ export function canAverageDown(state: GameState, stockId: string): { ok: boolean
   return { ok: true }
 }
 
+/**
+ * **계약: 이 함수는 던지지 않는다.** 조건이 안 맞으면 상태를 그대로 돌려준다 —
+ * `buy`/`sell`과 달리 호출부가 `guard()`(GameError를 삼키는 통로) 없이 부른다
+ * (app store.ts의 `doAverageDown`). 그래서 여기서 새는 예외는 그대로 런타임 크래시다.
+ *
+ * 최종 리뷰 m1 — 그 계약이 깨져 있었다. `budget`이 `NaN`이면
+ * `Math.min(NaN, cash) === NaN` → `maxBuyQty`가 `NaN`을 돌려주고 → `NaN < 1`이
+ * **false**라 조기 반환을 그냥 통과해 → `buy(state, id, NaN)`이 `BAD_QTY`를 던졌다.
+ * `NaN`과의 비교는 전부 false이므로 부등식 가드는 원리적으로 `NaN`을 막지 못한다.
+ * 그래서 두 겹으로 막는다: 입력(`budget`)의 유한성과, 출력(`qty`)의 정수성 —
+ * 후자는 `state.player.cash` 자체가 오염된 경우까지 함께 접는다.
+ */
 export function averageDown(state: GameState, stockId: string, budget: number): GameState {
   if (!canAverageDown(state, stockId).ok) return state
+  if (!Number.isFinite(budget)) return state
   const capped = Math.min(budget, state.player.cash)
   const qty = maxBuyQty({ ...state, player: { ...state.player, cash: capped } }, stockId)
-  if (qty < 1) return state
+  if (!Number.isInteger(qty) || qty < 1) return state
   return buy(state, stockId, qty)
 }
 

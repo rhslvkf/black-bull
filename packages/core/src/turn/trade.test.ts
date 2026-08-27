@@ -305,6 +305,46 @@ describe('averageDown', () => {
     })
     expect(averageDown(s, 'sjc', 100)).toEqual(s)
   })
+
+  // 최종 리뷰 m1 — averageDown의 계약은 "던지지 않고 상태를 그대로 돌려준다"이고,
+  // app store.ts의 `doAverageDown`이 그 계약을 믿고 `guard()`(GameError를 삼키는 통로)
+  // 없이 부른다. 그런데 `budget`이 NaN이면 계약이 깨져 `BAD_QTY`가 그대로 새어나왔다:
+  //   Math.min(NaN, cash) === NaN → maxBuyQty가 NaN → `NaN < 1`이 **false**라 조기
+  //   반환을 통과 → buy(state, id, NaN)이 던진다.
+  // NaN과의 비교는 전부 false이므로 부등식 가드로는 원리적으로 못 막는다.
+  describe('숫자가 아닌 예산에도 계약을 지킨다 (최종 리뷰 m1 — 런타임 크래시 경로)', () => {
+    /** 물타기 조건(보유·평단 이하·현금 충분)을 전부 만족하는 상태 — 여기서 막히는
+     *  이유가 "조건 미달"이 아니라 "예산이 숫자가 아니다"임을 분명히 하기 위해서다. */
+    const ready = () => makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+
+    it('전제 확인: 같은 상태에서 정상 예산이면 실제로 물타기가 일어난다', () => {
+      const s = ready()
+      expect(averageDown(s, 'sjc', 500_000)).not.toEqual(s)   // 이 전제가 없으면 아래가 공허하다
+    })
+
+    for (const [label, budget] of [
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+    ] as const) {
+      it(`예산이 ${label}이면 던지지 않고 상태가 그대로다`, () => {
+        const s = ready()
+        expect(() => averageDown(s, 'sjc', budget)).not.toThrow()
+        expect(averageDown(s, 'sjc', budget)).toEqual(s)
+      })
+    }
+
+    it('현금 자체가 NaN으로 오염돼 있어도 던지지 않는다 (두 번째 겹 — qty의 정수성)', () => {
+      const base = ready()
+      const s = { ...base, player: { ...base.player, cash: Number.NaN } }
+      expect(() => averageDown(s, 'sjc', 500_000)).not.toThrow()
+      expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+    })
+  })
 })
 
 describe('카드 풀 재편', () => {

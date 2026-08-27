@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { GRADES, gradeMul, loadCards, type CardGrade } from '@bb/core'
+import { GRADES, gradeAp, gradeCashMul, gradeMul, loadCards, type CardGrade } from '@bb/core'
 import { CardTile } from './CardTile'
 
 // Ruling 18 — @testing-library/jest-dom을 추가하지 않는다. toHaveTextContent/toBeDisabled
@@ -210,5 +210,149 @@ describe('카드 프레스 피드백이 CSS에 존재한다 (§6 타격감, MU9)
   it('.card가 transform 트랜지션을 --dur-fast 토큰으로 건다(하드코딩 금지)', () => {
     const body = ruleBody('.card')
     expect(body).toMatch(/transform\s+var\(--dur-fast\)/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 최종 리뷰 M1 — 등급 표시가 통째로 미고정이었다.
+//
+// 리뷰어가 CardTile.tsx의 세 지점을 상수 'A'로 바꿔도 app 707개가 전부 green이었다:
+//   (1) `{slot.grade}`            → `{'A'}`                          (배지 글자)
+//   (2) `gradeMul(grade)` / `gradeCashMul(grade)` → `...('A')`       (효과 배율)
+//   (3) `cardApCost(card.id, slot.grade)` → `cardApCost(card.id, 'A')` (행동력 비용)
+// 기존 테스트가 전부 **등급 'A' 한 종류만** 렌더했기 때문이다 — A로 고정하는 뮤테이션은
+// A를 보는 테스트에게는 아무 변화가 없다. 단일 값 한 번 확인이 이 결함의 원인이었으므로,
+// 여기서는 E·D·C·B·A·S **여섯 등급 전부**를 실제로 렌더해 화면에 도달한 값을 본다.
+//
+// 기댓값은 CardTile.tsx를 다시 베끼지 않는다 — core의 gradeMul/gradeCashMul/gradeAp와
+// 카드 데이터(loadCards)에서 유도하고, 표기 규칙(§3.1 — 소수 첫째 자리·부호 명시,
+// 천단위 구분자 + "원")은 이 파일이 독립적으로 다시 적는다(CardTile.tsx의 fmtDelta/
+// fmtCash를 import하면 그 함수가 통째로 틀려도 같이 틀려서 통과한다).
+describe('등급 6종이 각각 다른 화면으로 도달한다 (최종 리뷰 M1)', () => {
+  const overtime = CARDS.find(c => c.id === 'overtime')!
+  const cashEffect = overtime.effects.find(e => e.type === 'cash')
+  const condEffect = overtime.effects.find(e => e.type === 'condition')
+  const analyzeStat = analyze.effects.find(e => e.type === 'stat')
+
+  // 이 스위트의 전제 — 데이터가 바뀌어 전제가 깨지면 조용히 무의미해지지 않고 여기서 터진다.
+  it('전제: overtime은 현금 보상 + 컨디션 대가를 가진 행동 카드이고, analyze는 스탯 보상을 가진다', () => {
+    expect(cashEffect?.type).toBe('cash')
+    expect(condEffect?.type).toBe('condition')
+    expect(analyzeStat?.type).toBe('stat')
+    expect(overtime.isRecovery).toBe(false)
+    expect(GRADES.length).toBe(6)
+  })
+
+  // §3.1 표기 규칙을 테스트가 스스로 다시 적는다.
+  const round1 = (n: number): number => Math.round(n * 10) / 10
+  const signed = (n: number): string => `${round1(n) >= 0 ? '+' : ''}${round1(n).toFixed(1)}`
+  const signedWon = (n: number): string => {
+    const r = Math.round(n)
+    return `${r >= 0 ? '+' : ''}${r.toLocaleString('ko-KR')}원`
+  }
+
+  interface Shot {
+    badgeText: string
+    badgeColor: string
+    summary: string
+    ap: string
+    costs: string
+  }
+
+  /** 카드 한 장을 등급 g로 렌더해 **화면에 실제로 그려진 문자열**만 뽑는다. */
+  function shoot(cardId: string, g: CardGrade): Shot {
+    const { container, unmount } = render(<CardTile slot={{ cardId, grade: g }} />)
+    const root = container.querySelector(`[data-testid="slot-card-${cardId}"]`)
+    if (!root) throw new Error(`${cardId} 타일이 렌더되지 않았다`)
+    const badge = root.querySelector('[data-testid=grade-badge]')
+    if (!badge) throw new Error(`${cardId}(${g}) 등급 배지가 없다`)
+    const shot: Shot = {
+      badgeText: badge.textContent ?? '',
+      badgeColor: getComputedStyle(badge).backgroundColor,
+      summary: root.querySelector('[data-testid=effect-summary]')?.textContent ?? '',
+      ap: root.querySelector('[data-testid=ap-cost]')?.textContent ?? '',
+      costs: Array.from(root.querySelectorAll('[data-testid^="cost-"]')).map(n => n.textContent).join(' | '),
+    }
+    unmount()
+    return shot
+  }
+
+  const shotsOf = (cardId: string): Map<CardGrade, Shot> =>
+    new Map(GRADES.map(g => [g, shoot(cardId, g)]))
+
+  it('배지 글자가 등급마다 그 등급 자신이다 (뮤테이션 1: `{slot.grade}` → `{\'A\'}`)', () => {
+    for (const g of GRADES) {
+      expect(shoot('overtime', g).badgeText, `등급 ${g}의 배지 글자`).toBe(g)
+    }
+  })
+
+  it('배지 색 토큰이 등급마다 그 등급 자신을 가리킨다', () => {
+    for (const g of GRADES) {
+      expect(shoot('overtime', g).badgeColor, `등급 ${g}의 배지 색`).toBe(`var(--grade-${g})`)
+    }
+  })
+
+  it('현금 보상이 등급마다 gradeCashMul 곡선을 그대로 탄다 (뮤테이션 2: cashMul 고정)', () => {
+    if (cashEffect?.type !== 'cash') throw new Error('전제가 깨졌다')
+    for (const g of GRADES) {
+      const expected = signedWon(cashEffect.delta * gradeCashMul(g))
+      expect(shoot('overtime', g).summary, `등급 ${g}의 현금 보상`).toBe(`현금 ${expected}`)
+    }
+  })
+
+  it('컨디션 대가가 등급마다 gradeMul 곡선을 그대로 탄다 (뮤테이션 2: mul 고정)', () => {
+    if (condEffect?.type !== 'condition') throw new Error('전제가 깨졌다')
+    for (const g of GRADES) {
+      const expected = signed(condEffect.delta * gradeMul(g))
+      expect(shoot('overtime', g).costs, `등급 ${g}의 컨디션 대가`).toBe(`컨디션 ${expected}`)
+    }
+  })
+
+  it('스탯 보상도 등급마다 gradeMul 곡선을 그대로 탄다', () => {
+    if (analyzeStat?.type !== 'stat') throw new Error('전제가 깨졌다')
+    for (const g of GRADES) {
+      const expected = signed(analyzeStat.delta * gradeMul(g))
+      expect(shoot('analyze', g).summary, `등급 ${g}의 분석 보상`).toBe(`분석 ${expected}`)
+    }
+  })
+
+  it('행동력 비용이 등급마다 gradeAp 그대로다 (뮤테이션 3: cardApCost의 등급 인자 고정)', () => {
+    for (const g of GRADES) {
+      expect(shoot('overtime', g).ap, `등급 ${g}의 행동력 비용`).toBe(`⚡${gradeAp(g)}`)
+    }
+  })
+
+  // gradeAp는 E1 D1 C2 B2 A3 S3 — 6개가 서로 다를 수 없다(등급 3쌍이 같은 비용을 공유한다).
+  // 그래서 "전부 다르다"가 아니라 "상수가 아니다"를 못박는다. 위 테스트가 이미 정확한
+  // 값을 보지만, 등급 인자를 상수로 바꾸는 뮤테이션이 정확히 이 성질을 죽인다.
+  it('행동력 비용은 등급에 따라 실제로 달라진다 — 최저 등급과 최고 등급이 같지 않다', () => {
+    expect(shoot('overtime', 'E').ap).not.toBe(shoot('overtime', 'S').ap)
+  })
+
+  it('여섯 등급이 서로 다른 화면을 낸다 — 두 등급이 같은 타일을 그리면 red', () => {
+    for (const cardId of ['overtime', 'analyze']) {
+      const shots = shotsOf(cardId)
+      const signatures = GRADES.map(g => JSON.stringify(shots.get(g)))
+      expect(new Set(signatures).size, `${cardId}의 등급별 타일이 중복됐다: ${signatures.join('\n')}`)
+        .toBe(GRADES.length)
+    }
+  })
+
+  // 위 '서로 다르다'만으로는 방향(등급이 오를수록 커진다)까지는 못 본다 — §2.2의
+  // 핵심 규칙은 "등급이 오르면 **보상과 대가가 함께** 커진다"이므로 그 단조성을 본다.
+  it('등급이 오를수록 보상과 대가가 함께 커진다 (§2.2)', () => {
+    if (cashEffect?.type !== 'cash' || condEffect?.type !== 'condition') throw new Error('전제가 깨졌다')
+    const num = (s: string): number => Number(s.replace(/[^0-9.-]/g, ''))
+    let prevGain = -Infinity
+    let prevCost = -Infinity
+    for (const g of GRADES) {
+      const s = shoot('overtime', g)
+      const gain = num(s.summary)   // 현금 보상(양수)
+      const cost = -num(s.costs)    // 컨디션 대가의 크기(양수)
+      expect(gain, `등급 ${g}의 현금 보상이 이전 등급보다 크지 않다`).toBeGreaterThan(prevGain)
+      expect(cost, `등급 ${g}의 컨디션 대가가 이전 등급보다 크지 않다`).toBeGreaterThan(prevCost)
+      prevGain = gain
+      prevCost = cost
+    }
   })
 })

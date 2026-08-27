@@ -71,9 +71,15 @@ export function HomeScreen() {
             번아웃이다. 이번 주에 고른 카드는 실행되지 않는다 (남은 {s.player.burnoutTurns}주).
           </p>
         )}
+        {/* 카드를 한 장도 고르지 않아도 턴은 넘어간다 — 스펙 §2.4가 "'아무것도 안 한다'는
+            선택은 카드를 고르지 않고 턴을 넘기는 것으로 표현한다"고 명시했고, core의
+            advanceTurn(s, [])도 그것을 정상 경로로 처리한다. 예전에는 여기 disabled에
+            `picked.length === 0`이 함께 걸려 있어서 그 선택 자체가 화면에서 불가능했다
+            (최종 리뷰 M3). 남는 차단 조건은 `blocked` 하나 — 선택지가 대기 중이면
+            core가 CHOICE_PENDING으로 거부하므로 눌러도 아무 일이 안 일어난다. */}
         <button
           className="next-turn" data-testid="next-turn"
-          disabled={picked.length === 0 || blocked}
+          disabled={blocked}
           onClick={go}
         >
           한 주 넘기기

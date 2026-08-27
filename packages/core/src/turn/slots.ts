@@ -45,6 +45,12 @@ export function rerollCount(state: GameState): number {
  *  (회복 슬롯은 항상 열려 있어야 한다는 불변식과, 리롤은 '뽑기 운'을 완화하는
  *  수단이지 회복 접근성을 흔드는 수단이 아니라는 설계 의도 둘 다 때문이다). */
 export function rerollSlots(state: GameState): GameState {
+  // 최종 리뷰 m2 — 이 함수만 status 가드가 없어서, 게임이 끝난 뒤에 불러도 슬롯을
+  // 다시 굴리고 **rng를 소비했다**(state.rng가 바뀐다). 상태를 던지지 않고 그대로
+  // 돌려주는 계약은 events/engine.ts의 `applyEvents`와 같으므로 그 모양을 따른다
+  // (canBuy/canSell/canAverageDown은 판정 객체를, advanceTurn은 NOT_PLAYING을 던진다 —
+  // 여기는 던질 수 없는 자리다: app store.ts의 `doReroll`이 guard 없이 부른다).
+  if (state.status !== 'playing') return state
   if (state.rerollsLeft <= 0) return state
   const cards = loadCards().filter(c => !c.isRecovery)
   const [action, rng] = draw(cards, BALANCE.slots.action, state, state.rng)

@@ -55,9 +55,25 @@ describe('HomeScreen', () => {
     expect(buttons).toHaveLength(BALANCE.slots.action + BALANCE.slots.recovery)
     expect(screen.queryByTestId('slot-card-forum')).toBeNull()   // 슬롯 밖 카드는 아예 없다
   })
-  it('카드를 고르기 전에는 턴 넘기기가 비활성이다', () => {
+  // 최종 리뷰 M3 — 예전에는 여기서 "카드를 고르기 전에는 턴 넘기기가 비활성이다"를
+  // 요구했다. 그건 스펙 §2.4 위반이었다: "'아무것도 안 한다'는 선택은 카드를 고르지
+  // 않고 턴을 넘기는 것으로 표현한다". core의 advanceTurn(s, [])도 그것을 정상
+  // 경로로 처리한다(빈 배열은 NO_AP도 NOT_IN_SLOTS도 아니다). 스펙을 따르도록 뒤집는다.
+  it('카드를 한 장도 고르지 않아도 턴을 넘길 수 있다 (스펙 §2.4 "아무것도 안 한다")', () => {
     render(<HomeScreen />)
-    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
+    expect(useGame.getState().picked).toEqual([])                       // 정말로 0장이다
+    const btn = screen.getByTestId('next-turn')
+    expect(btn.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(btn)
+    expect(useGame.getState().state!.turn).toBe(2)
+  })
+  it('0장으로 넘긴 턴에는 어떤 카드 효과도 적용되지 않는다 (아무것도 안 한 것이 맞다)', () => {
+    render(<HomeScreen />)
+    const before = useGame.getState().state!.player.stats
+    fireEvent.click(screen.getByTestId('next-turn'))
+    const after = useGame.getState().state!.player.stats
+    // 카드가 주는 스탯 성장은 없다. (급여·시세 등 턴 진행 자체의 효과는 별개다.)
+    expect(after).toEqual(before)
   })
   it('카드를 고르면 활성화되고 턴이 넘어간다', () => {
     render(<HomeScreen />)
@@ -109,7 +125,9 @@ describe('HomeScreen', () => {
     // (이쪽은 disabled가 실제 방어선이 맞다 — CardGrid에서 disabled={!ok}를 지우면
     //  이 단언이 'card picked'로 실패한다. 보고서 §7 뮤테이션 2 참고.)
     expect(screen.getByTestId('slot-card-analyze').classList.contains('picked')).toBe(false)
-    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
+    // 최종 리뷰 M3 이후 '턴 넘기기'는 0장에서도 활성이므로(스펙 §2.4), 여기서 확인할
+    // 것은 버튼의 disabled가 아니라 **잠긴 카드가 선택 목록에 들어가지 않았다**는 것이다.
+    expect(useGame.getState().picked).toEqual([])
   })
 })
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { BALANCE } from '@bb/core'
-import { renderWithState, setState } from '../testUtils'
+import { currentState, renderWithState, setState } from '../testUtils'
 import { won } from '../format'
 import { matchMediaMock } from '../design/testUtils'
 
@@ -135,5 +135,78 @@ describe('롤업이 정확한 목표값에 수렴한다 (Fix Round 1 Major 2)', 
     }
     expect(el.getAttribute('data-value')).toBe('2345678') // 정확 일치
     expect(el.textContent).toBe(won(2_345_678))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 최종 리뷰 M2 — 총자산 표시가 미고정이었다.
+//
+// 리뷰어가 TopBar.tsx의 `totalAssets(s)`를 `s.player.cash`로 바꿔도 app 707개가 전부
+// green이었다. 위 테스트가 전부 **현금만 있고 주식도 대출도 없는 상태**를 썼기 때문이다 —
+// 그 상태에서는 두 값이 정의상 같아서 어떤 단언도 둘을 구별할 수 없다.
+//
+// core의 정의(accounting.ts): totalAssets = cash + 보유 평가금액 − 대출.
+// 그러니 **세 항이 전부 0이 아닌 상태**를 만들어야 표시가 실제로 고정된다.
+describe('총자산은 현금이 아니라 총자산이다 (최종 리뷰 M2)', () => {
+  const CASH = 10_000_000
+  const QTY = 100
+  const PRICE = 50_000
+  const HOLDING_VALUE = QTY * PRICE // 5,000,000
+
+  /** 현금·보유주식·대출이 모두 0이 아닌 상태를 만들고, TopBar가 그린 자산 표시를 돌려준다. */
+  function renderWithPortfolio(loan: number): { text: string; value: number; expected: number } {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    renderWithState({ player: { cash: CASH, loan } })
+    const s = currentState()
+    const stock = s.stocks[0]
+    if (!stock) throw new Error('테스트 전제가 깨졌다: 종목이 하나도 없다')
+    setState({
+      stocks: s.stocks.map(x => (x.id === stock.id ? { ...x, price: PRICE } : x)),
+      player: { holdings: [{ stockId: stock.id, qty: QTY, avgCost: 40_000, heldTurns: 1 }] },
+    })
+    const el = screen.getByTestId('topbar-assets')
+    return {
+      text: el.textContent ?? '',
+      value: Number(el.getAttribute('data-value')),
+      expected: CASH + HOLDING_VALUE - loan,
+    }
+  }
+
+  it('전제 확인: 보유 평가금액이 0이 아니어서 현금과 총자산이 실제로 다르다', () => {
+    expect(HOLDING_VALUE).toBeGreaterThan(0)
+    const { expected } = renderWithPortfolio(0)
+    expect(expected).not.toBe(CASH)
+  })
+
+  it('주식을 보유하면 현금이 아니라 현금 + 평가금액을 보여준다 (뮤테이션: totalAssets → player.cash)', () => {
+    const { text, value, expected } = renderWithPortfolio(0)
+    expect(value).toBe(expected)          // 15,000,000
+    expect(text).toBe(won(expected))
+    expect(text).not.toBe(won(CASH))      // 현금만 찍으면 여기서 red
+  })
+
+  it('대출이 있으면 총자산에서 빠진다 (core totalAssets의 정의 그대로)', () => {
+    const LOAN = 3_000_000
+    const { text, value, expected } = renderWithPortfolio(LOAN)
+    expect(value).toBe(expected)          // 12,000,000
+    expect(text).toBe(won(expected))
+    // 대출을 안 빼면(= cash + 평가금액) 15,000,000이 찍힌다.
+    expect(value).not.toBe(CASH + HOLDING_VALUE)
+    // 현금만 찍어도(= 10,000,000) red여야 한다.
+    expect(value).not.toBe(CASH)
+  })
+
+  it('보유 수량이 바뀌면 표시도 따라 바뀐다 — 표시가 상태에 묶여 있다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    renderWithState({ player: { cash: CASH } })
+    const s = currentState()
+    const stock = s.stocks[0]
+    if (!stock) throw new Error('테스트 전제가 깨졌다: 종목이 하나도 없다')
+    const stocks = s.stocks.map(x => (x.id === stock.id ? { ...x, price: PRICE } : x))
+    setState({ stocks, player: { holdings: [{ stockId: stock.id, qty: 10, avgCost: 40_000, heldTurns: 1 }] } })
+    const el = screen.getByTestId('topbar-assets')
+    expect(Number(el.getAttribute('data-value'))).toBe(CASH + 10 * PRICE)
+    setState({ stocks, player: { holdings: [{ stockId: stock.id, qty: 40, avgCost: 40_000, heldTurns: 1 }] } })
+    expect(Number(el.getAttribute('data-value'))).toBe(CASH + 40 * PRICE)
   })
 })

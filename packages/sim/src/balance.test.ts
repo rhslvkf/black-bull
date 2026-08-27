@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { playOne, runBatch } from './runner'
 import { act, apCostOf, CARD_PREF, RECOVERY_AT, recoveryAt } from './strategies'
 import {
-  BALANCE, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
+  BALANCE, ENDING_IDS, initGame, advanceTurn, resolveChoice, loadEvents, loadCards, Rand, createRng,
   buy, maxBuyQty, priceOf, type GameState,
 } from '@bb/core'
 import type { Strategy } from './strategies'
@@ -423,12 +423,111 @@ describe('runBatch', () => {
     // 엔딩이 300판 중 1~3판뿐인 동전던지기였다 — 게이트를 우회한 것이지 결함을 고친 게
     // 아니었다. 시드 창은 앞으로도 갈아끼우지 않는다.
     //
-    // Task 24에서 원인(시장 기대수익률 음수 + 엔딩 경계가 3년치 월급을 무시한 시드머니
-    // 기준)을 고친 뒤 단언을 원래 값인 4종으로 되돌렸다. 현재 실측: savings/breakeven/
-    // bank/wise/kimheir 5종, 최다 33%.
+    // **다양성(몇 종이 나오는가)은 이 테스트가 더 이상 재지 않는다** — 아래
+    // '엔딩 도달 가능성 조사'가 집합 자체를 못박는다(최종 리뷰 M5). 여기 남은 것은
+    // 쏠림 하나다.
     const r = batch(300, 'random')
-    expect(Object.keys(r.endingCounts).length).toBeGreaterThanOrEqual(4)
     expect(Math.max(...Object.values(r.endingCounts)) / r.runs).toBeLessThan(0.7)
+  })
+})
+
+/**
+ * 엔딩 도달 가능성 조사 — 최종 리뷰 M5 / Ruling 48.
+ *
+ * 예전 게이트는 `Object.keys(endingCounts).length >= 4` 하나였다. 그 부등식은 **상단
+ * 붕괴를 못 본다**: 실측 5종 중 하나(`wise`)를 도달 불가로 만들어도 4종이 남아
+ * sim 27/27이 그대로 green이었다(리뷰어 실측). 8종 중 3종이 이미 0판인 상태에서
+ * "4종 이상"은 두 칸의 여유를 그냥 내주는 문턱이었다.
+ *
+ * 그래서 부등식을 버리고 **집합을 그대로 못박는다** — 지금 실제로 도달 가능한 5종이
+ * 정확히 그 5종이어야 하고, **위로든(새로 하나가 열림) 아래로든(하나가 닫힘)** 달라지면
+ * red다. 조사 표본은 아래 CENSUS 표(전략 7종 · 총 3,560판, 이 파일의 다른 게이트가
+ * 이미 계산해 둔 배치를 그대로 재사용하므로 추가 비용이 없다).
+ *
+ * 밸런스 상수는 이 태스크에서 하나도 바꾸지 않았다 — 게임플레이가 아니라 게이트가
+ * 현실을 보게 만드는 작업이다.
+ */
+describe('엔딩 도달 가능성 조사 (최종 리뷰 M5, Ruling 48)', () => {
+  /** 이 조사가 훑는 배치 목록. 전부 이 파일의 다른 게이트가 이미 도는 (runs, strategy)
+   *  조합이라 `batch`의 메모가 그대로 먹는다 — 조사 자체의 추가 실행 비용은 0이다. */
+  const CENSUS = [
+    [500, 'cash'], [500, 'labor'], [500, 'seedhold'], [500, 'buyhold'], [500, 'panic'],
+    [300, 'random'], [300, 'panic'], [200, 'random'], [200, 'buyhold'], [60, 'momentum'],
+  ] as const satisfies readonly (readonly [number, Strategy])[]
+
+  /** 지금 **실제로 도달 가능한** 엔딩. 실측(2026-08-27, 아래 조사 3,560판)이 출처다. */
+  const REACHABLE = ['bank', 'breakeven', 'kimheir', 'savings', 'wise'] as const
+  /** 지금 **도달 불가능한** 엔딩. 조용히 통과시키지 않고 이름을 적어 남긴다 — 원인과
+   *  판정은 아래 '도달 불가 3종' 테스트의 주석에 있다. */
+  const UNREACHABLE = ['fire', 'legend', 'super'] as const
+
+  /** 조사 전체의 엔딩별 판수 합계. */
+  function census(): { counts: Record<string, number>; runs: number } {
+    const counts: Record<string, number> = {}
+    let runs = 0
+    for (const [n, st] of CENSUS) {
+      const r = batch(n, st)
+      runs += r.runs
+      for (const [id, c] of Object.entries(r.endingCounts)) counts[id] = (counts[id] ?? 0) + c
+    }
+    return { counts, runs }
+  }
+
+  it('조사 표본이 실제로 크다 — 표본이 쪼그라들면 아래 두 게이트가 공허해진다', () => {
+    const { runs } = census()
+    expect(runs).toBe(3560)
+  })
+
+  it('분류표가 엔딩 전수를 덮는다 — 새 엔딩을 추가하면 분류를 강요당한다', () => {
+    expect([...REACHABLE, ...UNREACHABLE].sort()).toEqual([...ENDING_IDS].sort())
+  })
+
+  it('도달 가능한 엔딩 집합이 정확히 그 5종이다 (위로도 아래로도 달라지면 red)', () => {
+    const { counts } = census()
+    // `Object.keys`는 0판인 엔딩을 애초에 담지 않지만, 어떤 이유로든 0이 기록되는
+    // 구현으로 바뀌어도 이 게이트가 헐거워지지 않도록 0을 명시적으로 걸러낸다.
+    const observed = Object.entries(counts).filter(([, n]) => n > 0).map(([id]) => id).sort()
+    expect(observed, `조사 실측: ${JSON.stringify(counts)}`).toEqual([...REACHABLE].sort())
+  })
+
+  it('도달 가능한 5종은 전부 실제로 판수가 있다 — 목록만 적어두고 0판이면 red', () => {
+    const { counts } = census()
+    for (const id of REACHABLE) {
+      expect(counts[id] ?? 0, `${id}가 조사 3,560판에서 한 번도 안 나왔다`).toBeGreaterThan(0)
+    }
+  })
+
+  // ── 도달 불가 3종 — 조용히 통과시키지 않고 이름을 적어 남긴다 ──────────────────
+  //
+  // `legend`(파산) · `fire`(자산 10억 이상 + 퇴사) · `super`(자산 5억 이상 + 재직)는
+  // 조사 3,560판에서 **한 판도 나오지 않는다**. 최종 리뷰 M4가 원인을 확정했다:
+  //
+  //   **`takeLoan` 호출부가 어디에도 없다.** core에 신용거래(`takeLoan`/강제청산)가
+  //   구현돼 있지만 그것을 부르는 진입점이 UI에도 sim 전략에도 없어서, 레버리지 없이
+  //   3년 만에 5억·10억에 닿는 경로가 없고(상단 3종), 동시에 파산도 원리적으로
+  //   일어나지 않는다(`legend`). 실제로 sim의 `bankruptRate`는 항상 0이고,
+  //   '신용을 쓰지 않는 sim 전략에서는 파산이 원리적으로 발생하지 않는다'(Ruling 16)가
+  //   그 사실을 이미 별도로 고정하고 있다.
+  //
+  // 이것을 고치는 것은 **게임플레이 기능 추가**(신용 진입점 신설)이고 밸런스·장르
+  // 감각이 걸린 설계 결정이라 **사용자 결정 대기** 상태다. 그때까지 이 사실이
+  // 게이트 밑으로 사라지지 않도록, 여기에 이름을 적어 못박는다 — 셋 중 하나라도
+  // 도달 가능해지면(=신용 진입점이 생기면) 이 테스트가 red가 되어 **위 REACHABLE
+  // 목록을 함께 갱신하라고 알린다.** 그게 이 테스트의 목적이다.
+  it('도달 불가 3종(legend·fire·super)은 조사 3,560판에서 0판이다 — 원인은 takeLoan 호출부 부재(사용자 결정 대기, M4)', () => {
+    const { counts } = census()
+    for (const id of UNREACHABLE) {
+      expect(counts[id] ?? 0, `${id}가 도달 가능해졌다 — REACHABLE 목록을 갱신해라`).toBe(0)
+    }
+  })
+
+  it('파산이 실제로 0건이다 — legend가 0판인 이유가 판정 버그가 아니라 파산 부재임을 확인한다', () => {
+    // legend는 `bankrupt || assets <= 0`일 때만 나온다. 파산율이 0이 아닌데 legend가
+    // 0판이면 그건 도달 불가가 아니라 **판정 버그**다 — 둘을 구별해 둔다.
+    for (const [n, st] of CENSUS) {
+      const r = batch(n, st)
+      expect(r.bankruptRate, `${st} ${n}판의 파산율`).toBe(0)
+    }
   })
 })
 

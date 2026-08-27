@@ -140,6 +140,36 @@ describe('리롤', () => {
     const s = { ...makeState({}), rerollsLeft: 0 }
     expect(rerollSlots(s)).toEqual(s)
   })
+
+  // 최종 리뷰 m2 — 다른 상태 변경 함수는 전부 status를 먼저 본다(advanceTurn은
+  // NOT_PLAYING을 던지고, canBuy/canSell/canAverageDown은 ok:false를, applyEvents는
+  // 상태를 그대로 돌려준다). rerollSlots만 그 가드가 없어서, **게임이 끝난 뒤에도**
+  // 슬롯을 다시 굴리고 rng를 소비했다. rng 소비는 조용한 오염이다 — 끝난 판의 화면에서
+  // 리롤을 누른 만큼 그 뒤 이어지는 어떤 굴림도 달라진다.
+  describe('게임이 끝난 뒤에는 아무것도 하지 않는다 (최종 리뷰 m2)', () => {
+    const ended = (status: 'ended') => ({ ...makeState({ status, rng: createRng(3) }), rerollsLeft: 2 })
+
+    it('전제 확인: 같은 상태가 playing이면 리롤이 실제로 일어난다', () => {
+      const s = { ...makeState({ rng: createRng(3) }), rerollsLeft: 2 }
+      expect(s.status).toBe('playing')
+      expect(rerollSlots(s)).not.toEqual(s)   // 이 전제가 없으면 아래가 공허하다
+    })
+
+    it('끝난 판에서는 상태가 통째로 그대로다', () => {
+      const s = ended('ended')
+      expect(rerollSlots(s)).toEqual(s)
+    })
+
+    it('끝난 판에서는 rng를 소비하지 않는다 (조용한 오염 — 이 게이트의 핵심)', () => {
+      const s = ended('ended')
+      expect(rerollSlots(s).rng).toEqual(s.rng)
+    })
+
+    it('끝난 판에서는 남은 리롤 횟수도 줄지 않는다', () => {
+      const s = ended('ended')
+      expect(rerollSlots(s).rerollsLeft).toBe(2)
+    })
+  })
 })
 
 describe('gradeOfSlot', () => {
