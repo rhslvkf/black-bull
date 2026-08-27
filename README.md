@@ -272,6 +272,38 @@ SVG가 자리를 채우고 이미지가 한 장 들어올 때마다 그 자리�
 슬롯 규격(비율·개수)의 정본은 스펙 §5이고, 키 문자열의 정본은
 `packages/app/src/art/keys.ts`의 `ArtKey` 유니온이다.
 
+## 레이아웃 감사 (`scripts/layout-audit.mjs`)
+
+홈 화면의 세로 예산은 **단위 테스트로 증명되지 않는다** — jsdom은 레이아웃을 계산하지
+않는다. `packages/app/src/design/layout.test.tsx`가 지키는 것은 *구조*(축소 사슬,
+성장 창구가 없다는 것, 조작부가 스크롤 밖에 있다는 것)이고, **실제 픽셀은 실브라우저로
+잰다.**
+
+```bash
+pnpm --filter @bb/app build && pnpm --filter @bb/app preview   # 다른 터미널
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/            # 390×844
+node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/ --height 667  # 짧은 기기
+```
+
+한 판(기본 156턴)을 자동으로 끝까지 돌면서 매 턴 **두 번**(카드 고르기 전/후)
+`한 주 넘기기` 버튼의 `getBoundingClientRect().bottom`과 `window.innerHeight`를 비교한다.
+버튼이 화면 밖이거나 탭바에 덮이거나 스탯 칩이 가로로 넘치면 **종료 코드 1**이다.
+
+> **왜 이 지표인가.** 예전에는 `document.documentElement.scrollHeight`로 쟀는데,
+> `.app { height: 100dvh; overflow: hidden }` 아래에서 그 값은 뷰포트를 넘을 수가 없어
+> **어떤 레이아웃에서도 통과하는 무효한 지표**였다. 그 사이 실제로는 여러 턴에서 버튼이
+> 화면 밖에 있었다. 지표를 고를 때는 "실패할 수 있는가"를 먼저 확인한다.
+
+**Playwright는 선택적 외부 의존이다** — 무거운 브라우저 의존성을 `package.json`에
+올리지 않았고 CI 게이트도 아니다(별개 결정). 없으면 스크립트가 안내와 함께 비영점 종료한다.
+
+```bash
+npm i -g playwright && npx playwright install chromium
+# 경로가 특이하면:
+PLAYWRIGHT_MODULE=<playwright의 index.mjs> PLAYWRIGHT_CHROMIUM=<크롬 실행파일> \
+  node packages/app/scripts/layout-audit.mjs --url http://localhost:4173/
+```
+
 ## 상장법인목록 갱신
 
 `packages/core/data/listed-companies.json`은 KRX 상장법인 **회사명만** 뽑아 담은 배열이다
