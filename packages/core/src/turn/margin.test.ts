@@ -68,6 +68,70 @@ describe('margin', () => {
     const after = checkMarginCall(s)
     expect(after.trackers.lossCuts).toBe(before + 1)
   })
+  // 최종 리뷰 m3 — 강제청산은 수수료·거래세를 실제로 떼면서(proceeds 계산이 그 증거)
+  // 그 금액을 트래커에 적지 않았다. 잔고증명서(§5)가 보여주는 '수수료·세금' 합계가
+  // 강제청산분만큼 조용히 모자랐다는 뜻이다.
+  describe('강제청산의 수수료·세금이 트래커에 잡힌다 (최종 리뷰 m3)', () => {
+    /** 담보가 무너져 실제로 반대매매가 일어나는 상태. 위 '담보 붕괴 시 전량 청산' 케이스와
+     *  같은 수치(gross 200,000 → fee 30 · tax 360)를 그대로 쓴다. */
+    function collapsed() {
+      let s = tiered()
+      s = takeLoan(s, 2_000_000)
+      s = buy(s, 's1', 400)
+      s.stocks[0]!.price = 500
+      return s
+    }
+
+    it('전제 확인: 이 상태에서 실제로 강제청산이 일어난다', () => {
+      const s = collapsed()
+      const after = checkMarginCall(s)
+      expect(after.flags['marginCalled']).toBe(true)
+      expect(s.player.holdings.length).toBeGreaterThan(0)   // 팔 것이 있었다
+      expect(after.player.holdings).toHaveLength(0)
+    })
+
+    it('feesPaid·taxPaid가 실제로 커진다 (트래커 값이 변한다)', () => {
+      const s = collapsed()
+      const after = checkMarginCall(s)
+      expect(after.trackers.feesPaid).toBeGreaterThan(s.trackers.feesPaid)
+      expect(after.trackers.taxPaid).toBeGreaterThan(s.trackers.taxPaid)
+    })
+
+    it('커진 폭이 청산 대금에서 실제로 뗀 금액과 정확히 같다', () => {
+      const s = collapsed()
+      // 기댓값을 margin.ts에서 베끼지 않고, 청산 대상 보유분에서 직접 계산한다.
+      const gross = s.player.holdings.reduce(
+        (a, h) => a + h.qty * s.stocks.find(x => x.id === h.stockId)!.price, 0)
+      expect(gross).toBe(200_000)          // 위 '전량 청산' 케이스와 같은 수치임을 못박는다
+      const after = checkMarginCall(s)
+      expect(after.trackers.feesPaid - s.trackers.feesPaid).toBe(fee(gross))   // 30
+      expect(after.trackers.taxPaid - s.trackers.taxPaid).toBe(tax(gross))     // 360
+    })
+
+    it('청산 대금(현금·대출 잔액)과 트래커가 같은 금액을 가리킨다', () => {
+      // 트래커에 적힌 수수료·세금만큼이 실제로 대금에서 빠져 있어야 한다 —
+      // 트래커에 아무 숫자나 더하는 구현과 구별하는 지점이다.
+      const s = collapsed()
+      const gross = s.player.holdings.reduce(
+        (a, h) => a + h.qty * s.stocks.find(x => x.id === h.stockId)!.price, 0)
+      const after = checkMarginCall(s)
+      const feeDelta = after.trackers.feesPaid - s.trackers.feesPaid
+      const taxDelta = after.trackers.taxPaid - s.trackers.taxPaid
+      const proceeds = gross - feeDelta - taxDelta
+      // 상환 후 남은 현금 + 갚은 금액 = 청산 전 현금 + 실수령 대금
+      const repaid = s.player.loan - after.player.loan
+      expect(after.player.cash + repaid).toBe(s.player.cash + proceeds)
+    })
+
+    it('청산이 일어나지 않으면 트래커도 그대로다 (무조건 더하는 구현과 구별)', () => {
+      const s = buy(takeLoan(tiered(), 500_000), 's1', 10)
+      const after = checkMarginCall(s)
+      expect(after.player.holdings).toHaveLength(1)   // 청산 안 됨
+      expect(after.trackers.feesPaid).toBe(s.trackers.feesPaid)
+      expect(after.trackers.taxPaid).toBe(s.trackers.taxPaid)
+    })
+  })
+
   it('현금 부족 상환은 거부된다', () => {
     let s = takeLoan(tiered(), 2_700_000)
     s = buy(s, 's1', 500)

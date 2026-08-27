@@ -1,12 +1,12 @@
 [
-  { "id": "sjc",  "name": "삼정전자",       "sector": "반도체",  "tierGate": 0, "initialPrice": 71000, "fundamental": 78000, "volatility": 0.030, "beta": 1.0, "hype": 0.10 },
-  { "id": "ecp",  "name": "에코프로형제",   "sector": "2차전지", "tierGate": 1, "initialPrice": 92000, "fundamental": 41000, "volatility": 0.085, "beta": 1.3, "hype": 0.95 },
-  { "id": "bio",  "name": "한알바이오",     "sector": "바이오",  "tierGate": 1, "initialPrice": 23500, "fundamental": 19000, "volatility": 0.075, "beta": 0.9, "hype": 0.80 },
-  { "id": "shp",  "name": "HD한국조선해왕", "sector": "조선",   "tierGate": 0, "initialPrice": 132000,"fundamental": 145000,"volatility": 0.042, "beta": 1.1, "hype": 0.25 },
-  { "id": "gam",  "name": "배그래프톤",     "sector": "게임",    "tierGate": 1, "initialPrice": 41000, "fundamental": 38000, "volatility": 0.055, "beta": 1.0, "hype": 0.45 },
-  { "id": "bnk",  "name": "KB금융지붕",     "sector": "금융",    "tierGate": 0, "initialPrice": 68000, "fundamental": 74000, "volatility": 0.022, "beta": 0.6, "hype": 0.05 },
-  { "id": "ent",  "name": "하입엔터",       "sector": "엔터",    "tierGate": 1, "initialPrice": 185000,"fundamental": 160000,"volatility": 0.060, "beta": 1.0, "hype": 0.60 },
-  { "id": "def",  "name": "두산로보뭐시기", "sector": "방산",    "tierGate": 2, "initialPrice": 78000, "fundamental": 32000, "volatility": 0.095, "beta": 1.2, "hype": 1.00 },
+  { "id": "sjc",  "name": "윤슬반도체",     "sector": "반도체",  "tierGate": 0, "initialPrice": 71000, "fundamental": 78000, "volatility": 0.030, "beta": 1.0, "hype": 0.10 },
+  { "id": "ecp",  "name": "청람소재",       "sector": "2차전지", "tierGate": 1, "initialPrice": 92000, "fundamental": 41000, "volatility": 0.085, "beta": 1.3, "hype": 0.95 },
+  { "id": "bio",  "name": "나린바이오",     "sector": "바이오",  "tierGate": 1, "initialPrice": 23500, "fundamental": 19000, "volatility": 0.075, "beta": 0.9, "hype": 0.80 },
+  { "id": "shp",  "name": "해솔중공업",     "sector": "조선",   "tierGate": 0, "initialPrice": 132000,"fundamental": 145000,"volatility": 0.042, "beta": 1.1, "hype": 0.25 },
+  { "id": "gam",  "name": "도깨비게임즈",   "sector": "게임",    "tierGate": 1, "initialPrice": 41000, "fundamental": 38000, "volatility": 0.055, "beta": 1.0, "hype": 0.45 },
+  { "id": "bnk",  "name": "한들금융지주",   "sector": "금융",    "tierGate": 0, "initialPrice": 68000, "fundamental": 74000, "volatility": 0.022, "beta": 0.6, "hype": 0.05 },
+  { "id": "ent",  "name": "반딧불엔터",     "sector": "엔터",    "tierGate": 1, "initialPrice": 185000,"fundamental": 160000,"volatility": 0.060, "beta": 1.0, "hype": 0.60 },
+  { "id": "def",  "name": "무쇠정밀",       "sector": "방산",    "tierGate": 2, "initialPrice": 78000, "fundamental": 32000, "volatility": 0.095, "beta": 1.2, "hype": 1.00 },
   { "id": "lev",  "name": "레버리지ETF",    "sector": "금융",    "tierGate": 4, "initialPrice": 15000, "fundamental": 15000, "volatility": 0.020, "beta": 2.0, "hype": 0.00, "etf": "lev" },
   { "id": "inv",  "name": "곱버스ETF",      "sector": "금융",    "tierGate": 4, "initialPrice": 4200,  "fundamental": 4200,  "volatility": 0.020, "beta": -2.0,"hype": 0.00, "etf": "inv" }
 ]

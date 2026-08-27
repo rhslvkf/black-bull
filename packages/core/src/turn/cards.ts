@@ -1,9 +1,11 @@
 import raw from '../../data/cards.json'
-import type { ActionCardDef, GameState } from '../types'
+import type { ActionCardDef, GameState, CardGrade, Effect } from '../types'
+import { BALANCE } from '../balance'
 import { GameError } from '../error'
 import { isShaken } from '../mental/mental'
 import { evalCondition } from './conditions'
 import { applyEffects } from './effects'
+import { gradeAp, gradeCashMul, gradeMul } from './grade'
 
 export function loadCards(): ActionCardDef[] { return raw as ActionCardDef[] }
 
@@ -30,13 +32,40 @@ export function isCardAvailable(state: GameState, card: ActionCardDef): boolean 
   return cardLockReason(state, card) === null
 }
 
-export function playCard(state: GameState, cardId: string): GameState {
+/** 이번 턴 쓸 수 있는 행동력. 체력이 오를수록, 퇴사했을수록 늘어나되 상한이 있다. */
+export function actionPoints(state: GameState): number {
+  const a = BALANCE.action
+  const raw = a.base + Math.floor(state.player.stats.stamina / a.staminaPerAp)
+    + (state.player.employed ? 0 : a.unemployedBonus)
+  return Math.min(a.max, raw)
+}
+
+/** 카드 한 장의 행동력 소모. 회복 카드는 등급과 무관하게 0이다 — 행동력이
+ *  바닥나도 회복만은 항상 가능해야 한다는 교착 방지 불변식 때문이다. */
+export function cardApCost(cardId: string, grade: CardGrade): number {
+  const card = loadCards().find(c => c.id === cardId)
+  return card?.isRecovery ? 0 : gradeAp(grade)
+}
+
+/**
+ * 카드 한 장을 낸다. `grade`는 그 카드가 이번 턴 슬롯에 뽑힌 등급이고(호출자가
+ * `gradeOfSlot`으로 얻는다), 효과와 **비용 양쪽**에 `gradeMul(grade)`가 곱해진다.
+ * 비용을 빼먹으면 상위 등급이 대가 없이 몇 배의 보상만 주는 카드가 된다.
+ */
+export function playCard(state: GameState, cardId: string, grade: CardGrade): GameState {
   const card = loadCards().find(c => c.id === cardId)
   if (!card) throw new GameError('NO_CARD')
   if (!isCardAvailable(state, card)) throw new GameError('CARD_LOCKED')
 
-  let s = state
-  if (card.cost?.money) s = applyEffects(s, [{ type: 'cash', delta: -card.cost.money }])
-  if (card.cost?.condition) s = applyEffects(s, [{ type: 'condition', delta: -card.cost.condition }])
-  return applyEffects(s, card.effects)
+  const mul = gradeMul(grade)
+  // 현금만 별도 곡선을 쓴다 — 근거는 BALANCE.grade.cashMul 주석.
+  const cashMul = gradeCashMul(grade)
+  // 비용은 한 번에 모아 **효과와 같은 배율**로 적용한다. money·condition을 따로 두 번
+  // 호출하면 한쪽에만 배율을 빠뜨리는 변경이 조용히 가능해지는데, cards.json에
+  // cost.condition을 가진 카드가 아직 없어 그 실수를 잡을 테스트를 쓸 수도 없다
+  // (뮤테이션 MU6 무탐지 — 보고서 참고). 경로를 하나로 합쳐 그 틈 자체를 없앤다.
+  const costs: Effect[] = []
+  if (card.cost?.money) costs.push({ type: 'cash', delta: -card.cost.money })
+  if (card.cost?.condition) costs.push({ type: 'condition', delta: -card.cost.condition })
+  return applyEffects(applyEffects(state, costs, mul, cashMul), card.effects, mul, cashMul)
 }

@@ -49,11 +49,21 @@ export function checkMarginCall(state: GameState): GameState {
 
   let proceeds = 0
   let lossCutCount = 0
+  // 최종 리뷰 m3 — 강제청산도 수수료·거래세를 **실제로 뗀다**(바로 아래 proceeds
+  // 계산이 그 증거다). 그런데 그 금액이 트래커에 안 잡혀서, 잔고증명서(§5)의
+  // '수수료·세금' 합계가 강제청산분만큼 조용히 모자랐다. 반대매매는 플레이어가 낸
+  // 주문이 아니지만 **돈은 똑같이 나간다** — 나간 돈을 적는 자리가 트래커다.
+  // (`tradeCount`는 올리지 않는다. 그건 '플레이어가 몇 번 매매했는가'를 세는 값이고,
+  //  강제청산은 플레이어의 매매가 아니다 — sell()과 달리 여기서는 그 축이 다르다.)
+  let feesTotal = 0
+  let taxTotal = 0
   for (const h of state.player.holdings) {
     const gross = h.qty * priceOf(state, h.stockId)
     const feeAmt = fee(gross)
     const taxAmt = tax(gross)
     proceeds += gross - feeAmt - taxAmt
+    feesTotal += feeAmt
+    taxTotal += taxAmt
     const price = priceOf(state, h.stockId)
     if (price < h.avgCost) lossCutCount++
   }
@@ -62,7 +72,12 @@ export function checkMarginCall(state: GameState): GameState {
   return {
     ...state,
     player: { ...state.player, holdings: [], cash: cash - repaid, loan: loan - repaid },
-    trackers: { ...state.trackers, lossCuts: state.trackers.lossCuts + lossCutCount },
+    trackers: {
+      ...state.trackers,
+      lossCuts: state.trackers.lossCuts + lossCutCount,
+      feesPaid: state.trackers.feesPaid + feesTotal,
+      taxPaid: state.trackers.taxPaid + taxTotal,
+    },
     flags: { ...state.flags, marginCalled: true },
   }
 }

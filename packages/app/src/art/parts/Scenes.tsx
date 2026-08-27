@@ -18,8 +18,11 @@ export function makeScene(tone: string, glyph: string, label: string) {
           </linearGradient>
         </defs>
         <rect width="160" height="100" rx="12" fill={`url(#${gradientId})`} />
-        <text x="80" y="52" textAnchor="middle" fontSize="30">{glyph}</text>
-        <text x="80" y="76" textAnchor="middle" fontSize="11" fill="#e6edf3" opacity="0.9">{label}</text>
+        {/* data-role: 리뷰 Fix Round 1(Major 2) — glyph(시각 정체성)와 label(한국어 설명)을
+            구분해야, 엔딩 8종의 "실제로 다르게 보이는가" 테스트가 이미 다른 테스트가 보장하는
+            label 텍스트에 기대지 않고 tone/glyph만으로 판정할 수 있다. */}
+        <text data-role="glyph" x="80" y="52" textAnchor="middle" fontSize="30">{glyph}</text>
+        <text data-role="label" x="80" y="76" textAnchor="middle" fontSize="11" fill="#e6edf3" opacity="0.9">{label}</text>
       </svg>
     )
   }

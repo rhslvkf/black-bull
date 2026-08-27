@@ -2,11 +2,24 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { HomeScreen } from './HomeScreen'
 import { Hud } from '../components/Hud'
+import { CharacterStage } from '../components/CharacterStage'
 import { useGame } from '../store/store'
-import { BALANCE } from '@bb/core'
+import { BALANCE, loadCards } from '@bb/core'
+import { pinSlots } from '../testkit'
 import { won, pct, yearWeek } from '../format'
 
-beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+// 회복 카드 목록을 하드코딩하면 카드 풀이 바뀔 때마다 손으로 맞춰야 한다(재발 이력 있음 —
+// hodl이 회복 카드로 편입되면서 3개짜리 리터럴이 낡았다). loadCards()에서 유도해 이 파일의
+// 세 테스트가 항상 실제 데이터를 따라가게 한다.
+const RECOVERY_TESTIDS = loadCards().filter(c => c.isRecovery).map(c => `slot-card-${c.id}`)
+
+// Task 6부터 카드 목록은 이번 턴 슬롯 4장(행동 3 + 회복 1)에서 나온다. 어떤 카드가
+// 뽑히는지는 시드가 정하므로, 테스트가 클릭할 카드를 매 판 슬롯에 꽂아 둔다.
+// (첫 칸을 overtime으로 두는 것은 아래 '흔들리지 않을 때 첫 카드' 테스트가 기댄다.)
+beforeEach(() => {
+  localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1)
+  pinSlots(['overtime', 'analyze', 'news'])
+})
 
 describe('format', () => {
   it('won은 천단위 구분과 원을 붙인다', () => expect(won(84_320_000)).toBe('84,320,000원'))
@@ -18,28 +31,53 @@ describe('format', () => {
   })
 })
 
+// Task 12 — Hud는 게이지(+위험 배지)만 남기고 연차·주차/티어명/총자산/투자수익률
+// 네 항목을 걷어냈다(중복이었다 — TopBar.test.tsx가 연차·주차·총자산을,
+// CharacterStage.test.tsx가 티어명·투자수익률을 이미 고정한다). 이 테스트는 그
+// 트리밍 뒤에도 게이지 자체는 남아 있는지만 본다.
 describe('Hud', () => {
-  it('자산과 게이지를 보여준다', () => {
+  it('게이지를 보여준다', () => {
     render(<Hud />)
-    expect(screen.getByText('3,000,000원')).toBeDefined()
     expect(screen.getByTestId('gauge-mental')).toBeDefined()
     expect(screen.getByTestId('gauge-condition')).toBeDefined()
-    expect(screen.getByText('주린이')).toBeDefined()
   })
 })
 
 describe('HomeScreen', () => {
-  it('행동 카드가 렌더된다', () => {
+  it('이번 턴 슬롯 카드만 렌더된다 (행동 3 + 회복 1)', () => {
+    // Ruling 12 — 예전에는 loadCards() 11장을 전부 그려서, 슬롯 밖 8장이 눌러도 아무
+    // 일이 없는 죽은 버튼이었다(core가 NOT_IN_SLOTS로 거부하고 스토어가 삼킨다).
     render(<HomeScreen />)
-    expect(screen.getAllByTestId(/^card-/).length).toBeGreaterThan(5)
+    // Ruling 21(Task 12) 이후 카드 버튼 testid는 `slot-card-*`라 컨테이너(`card-list`)와
+    // 더 이상 접두사가 겹치지 않는다. within은 이제 필수는 아니지만, "이 목록 안의
+    // 카드만 센다"는 의도를 명시적으로 남기기 위해 그대로 둔다.
+    const buttons = within(screen.getByTestId('card-list')).getAllByTestId(/^slot-card-/)
+    expect(buttons).toHaveLength(BALANCE.slots.action + BALANCE.slots.recovery)
+    expect(screen.queryByTestId('slot-card-forum')).toBeNull()   // 슬롯 밖 카드는 아예 없다
   })
-  it('카드를 고르기 전에는 턴 넘기기가 비활성이다', () => {
+  // 최종 리뷰 M3 — 예전에는 여기서 "카드를 고르기 전에는 턴 넘기기가 비활성이다"를
+  // 요구했다. 그건 스펙 §2.4 위반이었다: "'아무것도 안 한다'는 선택은 카드를 고르지
+  // 않고 턴을 넘기는 것으로 표현한다". core의 advanceTurn(s, [])도 그것을 정상
+  // 경로로 처리한다(빈 배열은 NO_AP도 NOT_IN_SLOTS도 아니다). 스펙을 따르도록 뒤집는다.
+  it('카드를 한 장도 고르지 않아도 턴을 넘길 수 있다 (스펙 §2.4 "아무것도 안 한다")', () => {
     render(<HomeScreen />)
-    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
+    expect(useGame.getState().picked).toEqual([])                       // 정말로 0장이다
+    const btn = screen.getByTestId('next-turn')
+    expect(btn.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(btn)
+    expect(useGame.getState().state!.turn).toBe(2)
+  })
+  it('0장으로 넘긴 턴에는 어떤 카드 효과도 적용되지 않는다 (아무것도 안 한 것이 맞다)', () => {
+    render(<HomeScreen />)
+    const before = useGame.getState().state!.player.stats
+    fireEvent.click(screen.getByTestId('next-turn'))
+    const after = useGame.getState().state!.player.stats
+    // 카드가 주는 스탯 성장은 없다. (급여·시세 등 턴 진행 자체의 효과는 별개다.)
+    expect(after).toEqual(before)
   })
   it('카드를 고르면 활성화되고 턴이 넘어간다', () => {
     render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     const btn = screen.getByTestId('next-turn')
     expect(btn.hasAttribute('disabled')).toBe(false)
     fireEvent.click(btn)
@@ -49,24 +87,31 @@ describe('HomeScreen', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 10 } } })
     render(<HomeScreen />)
-    expect(screen.getByTestId('card-analyze').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('slot-card-analyze').hasAttribute('disabled')).toBe(true)
   })
-  it('흔들림에서도 회복 카드는 열려 있고 최상단에 온다 (스펙 §3.3)', () => {
+  it('회복 카드 유도 목록이 비어있지 않다 (loadCards() 기준 4개)', () => {
+    // 아래 세 테스트가 RECOVERY_TESTIDS로 toContain/not.toContain을 검사하므로, 이 목록이
+    // 비면 toContain은 항상 실패하고 not.toContain은 항상 통과해 전부 무의미해진다.
+    expect(RECOVERY_TESTIDS.length).toBe(4)
+  })
+  it('흔들림에서도 회복 슬롯 카드는 열려 있고 최상단에 온다 (스펙 §3.3)', () => {
+    // 화면에 뜨는 회복 카드는 이번 턴 회복 슬롯 한 장뿐이다 — 4종 전부를 찾던 예전
+    // 단언은 슬롯 기반 렌더에서 성립하지 않는다. 그 한 장이 열려 있는지를 본다.
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 5 } } })
     render(<HomeScreen />)
-    for (const id of ['rest', 'exercise', 'drink']) {
-      expect(screen.getByTestId(`card-${id}`).hasAttribute('disabled')).toBe(false)
-    }
-    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).toContain(first.getAttribute('data-testid'))
+    const recoveryId = `slot-card-${useGame.getState().state!.slots.recovery.cardId}`
+    expect(RECOVERY_TESTIDS).toContain(recoveryId)
+    expect(screen.getByTestId(recoveryId).hasAttribute('disabled')).toBe(false)
+    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^slot-card-/)[0]!
+    expect(first.getAttribute('data-testid')).toBe(recoveryId)
   })
   it('퇴사 상태면 카드 2장을 고를 수 있다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, employed: false } } })
     render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-hodl'))
-    fireEvent.click(screen.getByTestId('card-news'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-news'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().state!.turn).toBe(2)
     expect(useGame.getState().state!.player.stats.info).toBeGreaterThan(0)
@@ -75,34 +120,36 @@ describe('HomeScreen', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 10 } } })
     render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-analyze')) // 잠긴 카드
+    fireEvent.click(screen.getByTestId('slot-card-analyze')) // 잠긴 카드
     // 부분 문자열 단언은 'unpicked' 같은 클래스도 통과시키므로 classList로 정확히 본다.
     // (이쪽은 disabled가 실제 방어선이 맞다 — CardGrid에서 disabled={!ok}를 지우면
     //  이 단언이 'card picked'로 실패한다. 보고서 §7 뮤테이션 2 참고.)
-    expect(screen.getByTestId('card-analyze').classList.contains('picked')).toBe(false)
-    expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('slot-card-analyze').classList.contains('picked')).toBe(false)
+    // 최종 리뷰 M3 이후 '턴 넘기기'는 0장에서도 활성이므로(스펙 §2.4), 여기서 확인할
+    // 것은 버튼의 disabled가 아니라 **잠긴 카드가 선택 목록에 들어가지 않았다**는 것이다.
+    expect(useGame.getState().picked).toEqual([])
   })
 })
 
 describe('CardGrid 정렬 — 흔들림 여부에 따라 실제로 순서가 달라지는가', () => {
   it('흔들리지 않을 때는 카드 원본 순서를 유지한다 (첫 카드는 회복 카드가 아니다)', () => {
     render(<HomeScreen />)
-    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(first.getAttribute('data-testid')).toBe('card-overtime')
+    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^slot-card-/)[0]!
+    expect(first.getAttribute('data-testid')).toBe('slot-card-overtime')
   })
   it('멘탈 30(경계 바로 위, 비흔들림)에서는 회복 카드가 최상단이 아니다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 30 } } })
     render(<HomeScreen />)
-    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).not.toContain(first.getAttribute('data-testid'))
+    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^slot-card-/)[0]!
+    expect(RECOVERY_TESTIDS).not.toContain(first.getAttribute('data-testid'))
   })
   it('멘탈 29(경계, 흔들림)에서는 회복 카드가 최상단으로 온다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, mental: 29 } } })
     render(<HomeScreen />)
-    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^card-/)[0]!
-    expect(['card-rest', 'card-exercise', 'card-drink']).toContain(first.getAttribute('data-testid'))
+    const first = within(screen.getByTestId('card-list')).getAllByTestId(/^slot-card-/)[0]!
+    expect(RECOVERY_TESTIDS).toContain(first.getAttribute('data-testid'))
   })
 })
 
@@ -206,7 +253,7 @@ describe('선택지 대기 시 턴 넘기기 차단 (Major #2)', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: 'dummy' }] } })
     render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(true)
     expect(screen.getByText('먼저 마주한 상황부터 정리해야 한다.')).toBeDefined()
   })
@@ -226,7 +273,7 @@ describe('선택지 대기 시 턴 넘기기 차단 (Major #2)', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, pendingChoices: [{ eventId: 'dummy' }] } })
     render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().state!.turn).toBe(1)
 
@@ -243,29 +290,38 @@ describe('선택지 대기 시 턴 넘기기 차단 (Major #2)', () => {
   })
 })
 
+// Task 12 — ROI 표시가 Hud(hud-roi)에서 CharacterStage(char-roi)로 옮겨갔다(중복 제거,
+// Hud 트리밍 근거는 위 'Hud' describe 주석 참고). 계산 자체(investmentRoi)는 그대로이므로
+// 같은 경계값 검증을 char-roi에 대해 다시 못박는다 — CharacterStage.test.tsx의
+// '수익률 배지 색(MU9)' 스위트는 일반적인 up/down/neutral만 보므로, 여기 있던 ±0.01%
+// 정밀 경계값 검증까지 흡수하지는 않는다(그 스위트를 대체하지 않고 보완한다).
 describe('수익률 0%는 중립 (Ruling 58, Minor #1)', () => {
-  it('roi가 정확히 0일 때 hud-roi는 up도 down도 아닌 neutral이다', () => {
+  it('roi가 정확히 0일 때 char-roi는 up도 down도 아닌 neutral이다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, cash: 3_000_000 } } }) // (3M-3M)/3M = 0
-    render(<Hud />)
-    expect(screen.getByTestId('hud-roi').className).toBe('neutral')
+    render(<CharacterStage />)
+    expect(screen.getByTestId('char-roi').className).toContain('neutral')
   })
   it('roi가 +0.01%(경계 바로 위)면 up이다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, cash: 3_000_300 } } }) // +0.01%
-    render(<Hud />)
-    expect(screen.getByTestId('hud-roi').className).toBe('up')
+    render(<CharacterStage />)
+    expect(screen.getByTestId('char-roi').className).toContain('up')
   })
   it('roi가 -0.01%(경계 바로 아래)면 down이다', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, cash: 2_999_700 } } }) // -0.01%
-    render(<Hud />)
-    expect(screen.getByTestId('hud-roi').className).toBe('down')
+    render(<CharacterStage />)
+    expect(screen.getByTestId('char-roi').className).toContain('down')
   })
 })
 
-// 최종 리뷰 C1 — HUD 수익률의 기준선이 무매매 기준선인지, 화면 문자열로 고정한다.
-describe('HUD 수익률 기준선 (최종 리뷰 C1)', () => {
+// 최종 리뷰 C1 — 수익률의 기준선이 무매매 기준선인지, 화면 문자열로 고정한다.
+// (Task 12: 이 계산을 보여주는 화면이 Hud에서 CharacterStage로 옮겨갔다. "기준선을
+// 화면에 밝히는" 별도 텍스트(구 hud-baseline)는 새 레이아웃(스펙 §3.1 다이어그램에
+// 없다)에서 표시할 자리가 없어 함께 걷어냈다 — 대신 이 계산이 실제로 옳은 퍼센트를
+// 내는지(핵심 회귀: 옛 식이면 +1049.2%가 찍혔다)는 아래에서 계속 고정한다.)
+describe('수익률 기준선 (최종 리뷰 C1)', () => {
   it('월급만 3년 받은 무매매 판의 수익률은 세 자릿수가 아니다', () => {
     const s = useGame.getState().state!
     const netPayroll = BALANCE.employedNet * 39
@@ -274,16 +330,10 @@ describe('HUD 수익률 기준선 (최종 리뷰 C1)', () => {
       player: { ...s.player, cash: BALANCE.seedMoney + netPayroll, holdings: [] },
       trackers: { ...s.trackers, netPayroll },
     } })
-    render(<Hud />)
+    render(<CharacterStage />)
     // 옛 식이라면 여기가 '+1049.2%'였다.
-    expect(screen.getByTestId('hud-roi').textContent).toContain('+0.0%')
-    expect(screen.getByTestId('hud-roi').className).toBe('neutral')
-  })
-  it('기준선을 화면에 밝혀 수익률이 무엇 대비인지 알 수 있다', () => {
-    const s = useGame.getState().state!
-    useGame.setState({ state: { ...s, trackers: { ...s.trackers, netPayroll: 1_460_000 } } })
-    render(<Hud />)
-    expect(screen.getByTestId('hud-baseline').textContent).toBe('무매매 기준선 4,460,000원')
+    expect(screen.getByTestId('char-roi').textContent).toContain('+0.0%')
+    expect(screen.getByTestId('char-roi').className).toContain('neutral')
   })
 })
 
@@ -330,7 +380,7 @@ describe('강제 스킵·번아웃 표시 (최종 리뷰 M4)', () => {
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, burnoutTurns: 2 } } })
     const { rerender } = render(<HomeScreen />)
-    fireEvent.click(screen.getByTestId('card-analyze'))
+    fireEvent.click(screen.getByTestId('slot-card-analyze'))
     fireEvent.click(screen.getByTestId('next-turn'))
     const after = useGame.getState().state!
     expect(after.player.stats.analysis).toBe(0)     // 효과는 실제로 증발한다
@@ -343,11 +393,13 @@ describe('강제 스킵·번아웃 표시 (최종 리뷰 M4)', () => {
 // 최종 리뷰 Minor 12 — 잠긴 카드에 자물쇠 아이콘만 붙어 이유를 알 수 없었다.
 describe('잠긴 카드는 이유를 말한다 (최종 리뷰 Minor 12)', () => {
   it('티어 부족은 티어 때문이라고 쓴다', () => {
+    pinSlots(['report', 'study', 'analyze'])
     render(<HomeScreen />)   // 새 판 = 티어 0, `리포트 정독`은 티어 2 필요
-    expect(screen.getByTestId('card-report').hasAttribute('disabled')).toBe(true)
+    expect(screen.getByTestId('slot-card-report').hasAttribute('disabled')).toBe(true)
     expect(screen.getByTestId('card-lock-report').textContent).toContain('티어')
   })
   it('돈 부족과 흔들림은 서로 다른 문구다', () => {
+    pinSlots(['report', 'study', 'analyze'])
     const s = useGame.getState().state!
     useGame.setState({ state: { ...s, player: { ...s.player, cash: 0, mental: BALANCE.mental.shakenMax } } })
     render(<HomeScreen />)

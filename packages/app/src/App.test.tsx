@@ -1,10 +1,20 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import App from './App'
 import { useGame } from './store/store'
 import { loadEvents } from '@bb/core'
+import { pinSlots } from './testkit'
+import { DUR_BASE } from './design/motion'
+import { matchMediaMock } from './design/testUtils'
 
-beforeEach(() => { localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1) })
+// 카드 목록이 슬롯에서 나오므로(Task 6) 테스트가 클릭할 카드를 매 판 꽂아 둔다.
+beforeEach(() => {
+  localStorage.clear(); useGame.getState().reset(); useGame.getState().newGame(1)
+  pinSlots(['overtime', 'analyze', 'news'])
+})
 
 // 리뷰 M-3: advance.ts의 5단계(이벤트/pendingChoices)가 7단계(settleTier/cutscene)보다
 // 먼저 실행되므로, 한 번의 advanceTurn 안에서 승급/강등과 이벤트가 동시에 뽑히면
@@ -84,21 +94,90 @@ describe('고른 카드는 탭을 옮겨도 남는다 (최종 리뷰 Minor 8)', 
   it('시세 탭에 다녀와도 선택이 유지된다', () => {
     render(<App />)
     goHome()
-    fireEvent.click(screen.getByTestId('card-hodl'))
-    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
+    expect(screen.getByTestId('slot-card-hodl').className).toContain('picked')
 
     act(() => { useGame.getState().setTab('market') })
-    expect(screen.queryByTestId('card-hodl')).toBeNull()   // 정말로 언마운트됐다
+    expect(screen.queryByTestId('slot-card-hodl')).toBeNull()   // 정말로 언마운트됐다
     act(() => { useGame.getState().setTab('home') })
 
-    expect(screen.getByTestId('card-hodl').className).toContain('picked')
+    expect(screen.getByTestId('slot-card-hodl').className).toContain('picked')
     expect(screen.getByTestId('next-turn').hasAttribute('disabled')).toBe(false)
   })
   it('턴을 넘기면 선택이 비워진다', () => {
     render(<App />)
     goHome()
-    fireEvent.click(screen.getByTestId('card-hodl'))
+    fireEvent.click(screen.getByTestId('slot-card-hodl'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().picked).toEqual([])
+  })
+})
+
+// Task 22 §6 "화면 전환 — 탭 전환 슬라이드". jsdom은 외부 CSS를 안 읽으므로(Ruling 20)
+// App.tsx가 인라인 style(animation)로 재생/생략을 결정한 값을 직접 본다.
+describe('탭 전환 슬라이드 (§6 화면 전환, MU11)', () => {
+  it('다른 탭으로 옮기면 본문 컨테이너에 슬라이드 애니메이션이 걸린다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain('tab-slide')
+  })
+
+  it('reduced-motion이면 탭을 옮겨도 애니메이션이 없다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toBe('')
+  })
+
+  // MU12 — duration이 motion.ts의 DUR_BASE(따라서 tokens.css --dur-base)에서
+  // 유도되는지 직접 본다. 하드코딩된 리터럴로 바뀌어도(우연히 같은 숫자가 아닌 한) 잡는다.
+  it('슬라이드 길이가 motion.ts의 DUR_BASE에서 유도된다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain(`${DUR_BASE}ms`)
+  })
+
+  // Fix Round 2(리뷰) — ChoiceSheet.test.tsx에서 실측된 함정과 동일하다: DUR_BASE가
+  // 마침 240이라 위 런타임 테스트는 '240ms' 하드코딩으로 되돌려도 통과한다. 소스가
+  // 실제로 DUR_BASE 식별자를 참조하는지 직접 본다.
+  it('슬라이드 duration이 소스에서 실제로 DUR_BASE를 참조한다(하드코딩 회귀 방지, Fix Round 2)', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.tsx'), 'utf-8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    const line = src.split('\n').find(l => l.includes('tab-slide')) ?? ''
+    expect(line, 'tab-slide를 포함하는 줄을 못 찾았다').not.toBe('')
+    expect(line).toMatch(/\$\{DUR_BASE\}ms/)
+    expect(line).not.toMatch(/\d+ms/)
+  })
+
+  it('탭 전환 슬라이드가 실제 탭 전환(다른 화면 렌더)과 함께 일어난다', () => {
+    // "애니메이션은 걸리지만 실제로는 탭이 안 바뀐다" 종류의 죽은 연출을 막는다.
+    render(<App />)
+    goHome()
+    expect(screen.queryByTestId('filter-all')).toBeNull()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain('tab-slide')
+    expect(screen.getByTestId('filter-all')).toBeDefined()
+  })
+
+  // Fix Round 1 Minor 2(리뷰) — 방향이 전혀 검증되지 않아 좌우를 뒤집어도 안 잡혔다.
+  // TAB_ORDER(홈=0·시세=1·계좌=2·도감=3) 기준으로 오른쪽 탭(인덱스 증가)으로 가면
+  // 오른쪽에서(+12px), 왼쪽 탭(인덱스 감소)으로 가면 왼쪽에서(-12px) 슬라이드가
+  // 시작돼야 한다 — index.css의 `--tab-slide-x` 커스텀 프로퍼티로 실측한다.
+  it('오른쪽 탭(시세, 인덱스 증가)으로 가면 오른쪽에서 슬라이드가 시작된다(+12px)', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.getPropertyValue('--tab-slide-x')).toBe('12px')
+  })
+
+  it('왼쪽 탭(홈, 인덱스 감소)으로 돌아가면 왼쪽에서 슬라이드가 시작된다(-12px)', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market')) // 0 → 1
+    fireEvent.click(screen.getByTestId('tab-home'))   // 1 → 0 (역방향)
+    expect(screen.getByTestId('tab-body').style.getPropertyValue('--tab-slide-x')).toBe('-12px')
   })
 })

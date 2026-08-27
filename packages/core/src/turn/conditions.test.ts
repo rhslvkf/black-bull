@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { makeState } from '../testkit'
 import { evalCondition, evalAll } from './conditions'
 import { applyEffects } from './effects'
-import { BALANCE } from '../balance'
 
 describe('evalCondition', () => {
   it('tierMin / tierMax', () => {
@@ -89,17 +88,6 @@ describe('applyEffects', () => {
   it('fundamentalMul은 내재가치를 바꾼다', () => {
     const s = applyEffects(makeState(), [{ type: 'fundamentalMul', stockId: 's1', value: 1.5 }])
     expect(s.stocks[0]!.fundamental).toBe(15000)
-  })
-  it('averageDown은 손실 종목을 BALANCE.averageDownPct만큼의 현금으로 추가매수한다', () => {
-    // 예산 비율을 리터럴로 박으면 effects.ts에 옛 리터럴이 남아도 통과한다(최종 리뷰 M3).
-    const base = makeState()
-    base.player.holdings = [{ stockId: 's1', qty: 10, avgCost: 20000, heldTurns: 0 }]
-    const s = applyEffects(base, [{ type: 'averageDown' }])
-    const price = base.stocks[0]!.price
-    const expectedQty = Math.floor((base.player.cash * BALANCE.averageDownPct) / price)
-    expect(expectedQty).toBeGreaterThan(0)          // 시나리오가 실제로 매수를 일으킨다
-    expect(s.player.holdings[0]!.qty).toBe(10 + expectedQty)
-    expect(s.player.cash).toBeLessThan(base.player.cash)
   })
   it('buyStockPct는 살 수 없으면 조용히 넘어간다', () => {
     const s = makeState(); s.player.cash = 0

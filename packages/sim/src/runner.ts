@@ -1,8 +1,14 @@
 import {
-  initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, cardsPerTurn, moodOf,
-  BALANCE, createRng, Rand, type Mood,
+  initGame, advanceTurn, resolveChoice, loadEvents, totalAssets, moodOf, isShaken,
+  GRADES, BALANCE, createRng, Rand, type Mood,
 } from '@bb/core'
-import { act, type Strategy } from './strategies'
+import { act, apCostOf, type Strategy } from './strategies'
+
+/** 등급을 숫자로 — E=0 … S=5. 후반 등급 상승을 재려면 순서가 있는 축이 필요하다. */
+const gradeIdx = (g: string): number => GRADES.findIndex(x => x === g)
+
+/** 초반/후반의 경계 턴. 156턴의 절반이다. `<= half`가 초반, 나머지가 후반. */
+const HALF_TURN = Math.floor(BALANCE.totalTurns / 2)
 
 export interface RunResult {
   ending: string; titles: string[]; assets: number
@@ -12,6 +18,24 @@ export interface RunResult {
   moodTurns: Record<Mood, number>
   /** 종목별 최종가 / 초기가. 시장이 종목에 무슨 짓을 했는지는 자산 분위수로는 안 보인다. */
   priceMul: Record<string, number>
+  /** 이 판에서 실제로 태운 행동력의 합과, 그것을 나눌 턴 수. */
+  apSpent: number
+  /** 이 판에서 쓴 리롤 횟수의 합. */
+  rerolls: number
+  /** 초반(1..HALF_TURN)/후반에 **플레이어가 마주한 슬롯 카드**(행동 3칸 + 회복 1칸)의
+   *  등급 인덱스 합과 장수. 낸 카드가 아니라 뽑힌 카드를 세는 이유는, 낸 카드만 세면
+   *  전략 취향이 등급 분포에 섞여 들어와 "스탯이 등급을 민다"는 설계를 못 재기 때문이다. */
+  gradeSumEarly: number; gradeCountEarly: number
+  gradeSumLate: number; gradeCountLate: number
+  /** 흔들림에 한 번이라도 들어갔는가 / 마지막 상태가 흔들림인가. */
+  everShaken: boolean; endedShaken: boolean
+  /** 카드 id별 사용 횟수. 전략이 실제로 서로 다른 카드를 쓰는지는 이걸로만 보인다. */
+  cardUse: Record<string, number>
+  /** 이 판이 한 번이라도 도달했던 총자산의 최고치(`trackers.peakAssets`).
+   *  최종 자산으로는 "대출 문턱에 닿아본 적이 있는가"를 못 본다 — 닿았다가 잃으면 사라진다. */
+  peakAssets: number
+  /** 이 판이 신용(대출)을 한 번이라도 썼는가. */
+  usedMargin: boolean
 }
 export interface BatchReport {
   runs: number; strategy: Strategy
@@ -31,6 +55,40 @@ export interface BatchReport {
   moodShare: Record<Mood, number>
   /** 한 판에서 그 표정을 한 번이라도 본 판의 비율. */
   moodReach: Record<Mood, number>
+  /** 턴당 실제로 태운 행동력의 평균. 예산이 남아도는 설계는 선택을 만들지 못한다 —
+   *  `BALANCE.action.base`와 비교해서 읽는다. */
+  avgApSpent: number
+  /** 초반/후반 슬롯 등급 인덱스(E=0…S=5)의 평균. 스탯이 등급 확률을 민다는 설계가
+   *  실제 플레이에서 성립하면 후반이 초반보다 확실히 높아야 한다. */
+  avgGradeIdxEarly: number
+  avgGradeIdxLate: number
+  /** 턴당 사용한 리롤 횟수의 평균. 게이트는 없고 튜닝 근거로 읽는다 —
+   *  0에 붙어 있으면 리롤이 죽은 자원이고, `BALANCE.reroll` 상한에 붙어 있으면
+   *  리롤이 슬롯 뽑기의 운을 통째로 지워버린 것이다. */
+  rerollUse: number
+  /**
+   * **멘탈 교착률.** 흔들림(멘탈 ≤ `BALANCE.mental.shakenMax`)에 **한 번이라도 들어간
+   * 판 중**, 끝내 빠져나오지 못하고 흔들림 상태로 끝난 판의 비율이다.
+   *
+   * 브리프의 권장 정의는 '전체 판 중 종료 시점에 흔들림인 판'이었는데, 그 정의는
+   * 흔들림에 아무도 안 들어가는 판(멘탈 시스템이 죽은 상태)에서 **0으로 통과한다** —
+   * 회복 슬롯이 일했다는 증거가 아니라 시스템이 없다는 증거인데도 그린이 된다.
+   * 조건부로 바꾸면 "들어간 판이 나올 수 있는가"라는 원래 질문을 그대로 잰다.
+   * 대신 분모가 0이면 공허하게 통과하므로, 게이트 쪽에서 `shakenRate`가 유의미한지를
+   * 함께 단언한다(balance.test.ts).
+   */
+  stuckInShakenRate: number
+  /** 카드 id별 사용 점유율(합 1). 전략별 카드 선택이 실제로 다른지는 이걸로만 보인다. */
+  cardUse: Record<string, number>
+  /** 판을 통틀어 도달한 총자산의 최고치와 그 중앙값. 대출 문턱(`BALANCE.loan.minTier`의
+   *  자산선)에 **원리적으로 닿는가**를 보는 자다 — Ruling 16. */
+  peakAssetsMax: number
+  peakAssetsMedian: number
+  /** 대출 문턱 이상까지 자산이 올라가 본 판의 비율. 신용 시스템이 살아 있는지는 이 값이
+   *  0을 벗어나는지로만 보인다. */
+  loanReachRate: number
+  /** 신용을 한 번이라도 쓴 판의 비율. sim 전략은 아무도 대출을 부르지 않으므로 0이다. */
+  marginRate: number
 }
 
 const events = loadEvents()
@@ -40,6 +98,10 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
   const rand = new Rand(createRng(seed ^ 0xabcdef))
 
   const moodTurns: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
+  const cardUse: Record<string, number> = {}
+  let apSpent = 0, rerolls = 0
+  let gradeSumEarly = 0, gradeCountEarly = 0, gradeSumLate = 0, gradeCountLate = 0
+  let everShaken = false
 
   for (let i = 0; i < BALANCE.totalTurns && s.status === 'playing'; i++) {
     // 대기 중인 선택지는 무작위로 해소
@@ -51,8 +113,20 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
                 : { ...s, pendingChoices: s.pendingChoices.slice(1) }
     }
     moodTurns[moodOf(s)]++   // 플레이어가 이 턴에 실제로 보는 표정
-    const { state, cards } = act(s, strategy, rand)
-    s = advanceTurn(state, cards.slice(0, cardsPerTurn(state)))
+    if (isShaken(s)) everShaken = true
+    const { state, cards, rerolls: usedRerolls } = act(s, strategy, rand)
+    rerolls += usedRerolls
+    // 리롤까지 끝난 뒤의 슬롯이 플레이어가 실제로 마주하는 이번 턴의 선택지다.
+    const early = state.turn <= HALF_TURN
+    for (const sl of [...state.slots.action, state.slots.recovery]) {
+      if (early) { gradeSumEarly += gradeIdx(sl.grade); gradeCountEarly++ }
+      else { gradeSumLate += gradeIdx(sl.grade); gradeCountLate++ }
+    }
+    // 예산은 `chooseCards`가 이미 걸었다 — 여기서 다시 거르지 않는다(Fix Round 1
+    // Minor 5). 넘치면 core의 advanceTurn이 NO_AP로 던져 조용히 지나가지 못한다.
+    apSpent += apCostOf(state, cards)
+    for (const id of cards) cardUse[id] = (cardUse[id] ?? 0) + 1
+    s = advanceTurn(state, cards)
   }
 
   const assets = Math.max(0, totalAssets(s))
@@ -67,6 +141,12 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     assets, shakenTurns: s.trackers.shakenTurns,
     bankrupt: s.ending?.endingId === 'legend', turns: s.turn,
     priceMul, moodTurns,
+    apSpent, rerolls,
+    gradeSumEarly, gradeCountEarly, gradeSumLate, gradeCountLate,
+    everShaken: everShaken || isShaken(s), endedShaken: isShaken(s),
+    cardUse,
+    peakAssets: s.trackers.peakAssets,
+    usedMargin: s.trackers.usedMargin,
   }
 }
 
@@ -81,6 +161,14 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
   let bankrupt = 0, shaken = 0, shakenRuns = 0
   const moodTotal: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
   const moodRuns: Record<Mood, number> = { normal: 0, shaken: 0, joy: 0 }
+  const cardTotal: Record<string, number> = {}
+  let apSpent = 0, rerolls = 0, turnsPlayed = 0
+  let gEarlySum = 0, gEarlyN = 0, gLateSum = 0, gLateN = 0
+  let everShakenRuns = 0, stuckRuns = 0
+  let loanReach = 0, marginRuns = 0
+  const peaks: number[] = []
+  // 대출 문턱의 자산선. loan.minTier는 티어 번호이고, 그 티어의 하한이 tierMins에 있다.
+  const loanFloor = BALANCE.tierMins[BALANCE.loan.minTier] ?? Infinity
 
   for (let i = 0; i < runs; i++) {
     const r = playOne(seed0 + i, strategy)
@@ -90,6 +178,16 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     shaken += r.shakenTurns
     if (r.shakenTurns > 0) shakenRuns++
     for (const [id, m] of Object.entries(r.priceMul)) (muls[id] ??= []).push(m)
+    apSpent += r.apSpent
+    rerolls += r.rerolls
+    turnsPlayed += r.turns
+    gEarlySum += r.gradeSumEarly; gEarlyN += r.gradeCountEarly
+    gLateSum += r.gradeSumLate; gLateN += r.gradeCountLate
+    if (r.everShaken) { everShakenRuns++; if (r.endedShaken) stuckRuns++ }
+    for (const [id, n] of Object.entries(r.cardUse)) cardTotal[id] = (cardTotal[id] ?? 0) + n
+    peaks.push(r.peakAssets)
+    if (r.peakAssets >= loanFloor) loanReach++
+    if (r.usedMargin) marginRuns++
     for (const t of r.titles) titleCounts[t] = (titleCounts[t] ?? 0) + 1
     for (const m of ['normal', 'shaken', 'joy'] as const) {
       moodTotal[m] += r.moodTurns[m]
@@ -116,6 +214,10 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     moodReach[m] = moodRuns[m] / runs
   }
 
+  const cardSum = Object.values(cardTotal).reduce((a, b) => a + b, 0)
+  const cardUse: Record<string, number> = {}
+  for (const [id, n] of Object.entries(cardTotal)) cardUse[id] = cardSum === 0 ? 0 : n / cardSum
+
   return {
     runs, strategy, endingCounts,
     bankruptRate: bankrupt / runs,
@@ -125,5 +227,17 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     avgShakenTurns: shaken / runs,
     shakenRate: shakenRuns / runs,
     priceMulMedian, priceUpRate, titleRate, moodShare, moodReach,
+    // 분모는 **실제로 돈 턴 수**다. 파산으로 일찍 끝난 판을 156턴으로 나누면
+    // 행동력을 안 쓴 것처럼 보인다.
+    avgApSpent: turnsPlayed === 0 ? 0 : apSpent / turnsPlayed,
+    avgGradeIdxEarly: gEarlyN === 0 ? 0 : gEarlySum / gEarlyN,
+    avgGradeIdxLate: gLateN === 0 ? 0 : gLateSum / gLateN,
+    rerollUse: turnsPlayed === 0 ? 0 : rerolls / turnsPlayed,
+    stuckInShakenRate: everShakenRuns === 0 ? 0 : stuckRuns / everShakenRuns,
+    cardUse,
+    peakAssetsMax: peaks.length === 0 ? 0 : Math.max(...peaks),
+    peakAssetsMedian: quantile([...peaks].sort((a, b) => a - b), 0.5),
+    loanReachRate: loanReach / runs,
+    marginRate: marginRuns / runs,
   }
 }

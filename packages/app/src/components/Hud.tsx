@@ -1,7 +1,5 @@
-import { BALANCE, TIER_NAMES, investmentRoi, isShaken, noTradeBaseline, totalAssets } from '@bb/core'
+import { BALANCE, isShaken } from '@bb/core'
 import { useGame } from '../store/store'
-import { won, pct, yearWeek } from '../format'
-import { Art } from '../art/Art'
 
 function Gauge({ id, label, value, tone, critical }: { id: string; label: string; value: number; tone: string; critical?: boolean }) {
   return (
@@ -13,44 +11,30 @@ function Gauge({ id, label, value, tone, critical }: { id: string; label: string
   )
 }
 
+/**
+ * Task 12 — 연차·주차/티어명/총자산/투자수익률 네 항목은 이미 `TopBar`(연차·주차·
+ * D-day·총자산)와 `CharacterStage`(티어·투자수익률)가 그린다. 예전 `Hud`가 같은
+ * 정보를 다시 그려 화면에 HUD가 두 벌 겹쳐 보였다 — 그 네 항목과, 그 항목들에
+ * 딸려 있던 예수금·무매매 기준선 텍스트·턴 진행바를 여기서 걷어낸다(각각
+ * `hud-row`/`hud-assets`/`hud-cash`/`hud-baseline`/`hud-bar`였다). 예수금은
+ * `AccountScreen`이 이미 보여준다.
+ *
+ * 남기는 것: 멘탈·컨디션 **게이지 자체**와, 그 게이지가 위험 구간일 때를 알리는
+ * 배지 둘(흔들림·번아웃/컨디션 바닥) — 배지는 다른 화면에 없는 정보이고 게이지의
+ * 위험색(critical)과 같은 판정에서 나오므로 게이지 표시의 일부로 본다.
+ * `Hud`는 App.tsx에서 탭 전환과 무관하게 전 화면에 걸쳐 렌더되므로(App.tsx 확인
+ * 완료 — 다른 탭에서 이 컴포넌트를 따로 쓰는 곳은 없다), 게이지는 홈뿐 아니라
+ * 시세·계좌·도감 탭에서도 계속 보인다 — 정보가 사라지지 않는다.
+ */
 export function Hud() {
   const s = useGame(st => st.state)
   if (!s) return null
-  const assets = totalAssets(s)
-  // 최종 리뷰 C1: 기준선은 시드머니가 아니라 **무매매 기준선**(시드 + 지금까지 받은
-  // 순월급)이다. 시드머니 기준으로 재면 3년치 월급 약 2,850만원이 통째로 '투자 수익'이
-  // 되어, 주식을 한 주도 안 산 판이 최종턴에 +1,000%를 넘게 표시된다. 엔딩 경계도 같은
-  // 기준선에 정박해 있으므로(BALANCE.endings) 이제 화면과 엔딩이 같은 잣대를 쓴다.
-  const roi = investmentRoi(s)
-  // Ruling 58: 0%는 상승도 하락도 아니다 — 중립으로 표시한다. (거래가 없던 턴 1부터
-  // "오르고 있다"로 오독되는 걸 막는다. 부호는 pct()가 이미 맞게 만들지만 색·아이콘은
-  // 여기서 별도로 삼분기해야 한다.)
-  const direction = roi > 0 ? 'up' : roi < 0 ? 'down' : 'neutral'
   const shaken = isShaken(s) // Ruling: core의 흔들림 판정을 재구현하지 않고 그대로 재사용한다
   // 강제 스킵 위험 구간(스펙 §2.5 '야근으로 장 못 봄'). 번아웃 중이면 확정이다.
   const tired = s.player.burnoutTurns > 0 || s.player.condition < BALANCE.condition.forcedSkipBelow
 
   return (
     <header className={`hud${shaken ? ' hud-shaken' : ''}`}>
-      <div className="hud-row">
-        <span className="hud-turn"><Art id="ui.calendar" size={14} /><span>{yearWeek(s.turn)}</span></span>
-        <span className="hud-tier"><Art id="ui.tier" size={13} /><span>{TIER_NAMES[s.player.tier]}</span></span>
-      </div>
-      <div className="hud-bar"><div style={{ width: `${(s.turn / BALANCE.totalTurns) * 100}%` }} /></div>
-      <div className="hud-assets">
-        <strong>{won(assets)}</strong>
-        <span className={direction} data-testid="hud-roi" title="아무 매매도 하지 않았을 때 대비">
-          {direction === 'neutral'
-            ? <span className="roi-dash" aria-hidden="true">–</span>
-            : <Art id={direction === 'up' ? 'ui.up' : 'ui.down'} size={11} />}
-          {' '}{pct(roi)}
-        </span>
-      </div>
-      <div className="hud-cash">
-        <Art id="ui.cash" size={12} /> 예수금 {won(s.player.cash)}
-        {s.player.loan > 0 && ` · 대출 ${won(s.player.loan)}`}
-      </div>
-      <div className="hud-baseline" data-testid="hud-baseline">무매매 기준선 {won(noTradeBaseline(s))}</div>
       <div className="hud-gauges">
         <Gauge id="mental" label="멘탈" value={s.player.mental} tone={shaken ? '#e05252' : '#5aa9e6'} critical={shaken} />
         <Gauge id="condition" label="컨디션" value={s.player.condition} tone={tired ? '#e05252' : '#e6b45a'} critical={tired} />

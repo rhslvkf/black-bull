@@ -158,14 +158,20 @@ describe('mental', () => {
   })
   it('저항은 감소 항에만 적용된다 (grit=10처럼 기본값에서 멀리 떨어진 값으로 전체-델타 저항과 구분)', () => {
     // 퇴사, 손실 30% 고정(악화 없음), 무신용, 저항 0.4(grit=10), mental 0에서 recoveryDelta=20.
-    // 올바른 구현(drop*resist + gain): -6*0.4 + 20 = 17.6 → round(0+17.6) = 18
-    // 잘못된 구현((drop+gain)*resist): (-6+20)*0.4 = 5.6 → round(0+5.6) = 6
+    // 올바른 구현(drop*resist + gain): lossHoldUnemployed*0.4 + 20
+    // 잘못된 구현((drop+gain)*resist): (lossHoldUnemployed+20)*0.4
     // 기본 grit=1(저항 0.94)에서는 두 식이 반올림 후 같은 정수로 겹칠 수 있어 이 케이스로 구분한다.
+    // 기대값은 BALANCE에서 유도한다 — 밸런싱으로 lossHoldUnemployed가 바뀌어도(Task 8에서
+    // −6 → −8) 이 테스트가 고정하는 것은 계속 '저항이 걸리는 자리'다.
     const s = losing(30, 0)
     s.prevLossPct = 30
     s.player.employed = false
     s.player.stats = { ...s.player.stats, grit: 10 }
-    expect(settleMental(s, 20).player.mental).toBe(18)
+    const resist = Math.max(0.2, 1 - 10 * BALANCE.mental.resistPer)
+    const right = Math.round(BALANCE.mental.lossHoldUnemployed * resist + 20)
+    const wrong = Math.round((BALANCE.mental.lossHoldUnemployed + 20) * resist)
+    expect(right, '두 식이 같은 값이면 이 케이스는 아무것도 구분하지 못한다').not.toBe(wrong)
+    expect(settleMental(s, 20).player.mental).toBe(right)
   })
   it('0~100으로 클램프된다', () => {
     const lo = losing(99, 3); lo.prevLossPct = 0
@@ -214,10 +220,17 @@ describe('mental', () => {
       expect(escaped).toBe(true)
     }
   })
-  it('신용 미사용 시 최악 순증가가 +14 이상이다', () => {
-    let s = losing(99, 0); s.prevLossPct = 99; s.player.employed = false
+  it('신용 미사용 시 최악의 한 턴에서도 회복 카드가 순증가를 만든다', () => {
+    // 스펙 §3.3 데드락 부재 보증의 수치 버전. 최악 조건(퇴사·손실 99% 고정·grit 0)에서
+    // 회복 20이 손실 고정감소를 이겨야 흔들림에서 빠져나올 길이 남는다.
+    // 기대값은 리터럴이 아니라 BALANCE에서 유도한다 — 예전에는 +14로 박혀 있어
+    // lossHoldUnemployed를 −6 → −8로 튜닝하자 곧바로 red가 됐다(Task 8).
+    const s = losing(99, 0); s.prevLossPct = 99; s.player.employed = false
+    s.player.stats = { ...s.player.stats, grit: 0 }
     const after = settleMental(s, 20)
-    expect(after.player.mental - 0).toBeGreaterThanOrEqual(14)
+    const expected = 20 + BALANCE.mental.lossHoldUnemployed   // 저항 1.0(grit 0), 악화 0
+    expect(expected, '회복 20이 최악의 감소를 못 이기면 탈출구가 없다').toBeGreaterThan(0)
+    expect(after.player.mental - 0).toBe(expected)
   })
 })
 

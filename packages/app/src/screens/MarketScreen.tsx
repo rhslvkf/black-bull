@@ -3,8 +3,14 @@ import { canBuy } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, pct } from '../format'
 import { Art } from '../art/Art'
+import { PriceChart } from '../components/PriceChart'
 import { StockDetail } from './StockDetail'
 import type { ArtKey } from '../art/keys'
+
+/** 시세 카드 스파크라인 치수. jsdom은 외부 CSS를 읽지 않으므로(Ruling 20) PriceChart에
+ *  props로 직접 내려 SVG width/height 속성으로 노출한다 — 테스트가 실측할 수 있다. */
+const SPARK_WIDTH = 56
+const SPARK_HEIGHT = 24
 
 export function MarketScreen() {
   const s = useGame(st => st.state)
@@ -46,6 +52,9 @@ export function MarketScreen() {
                 <span className="s-main">
                   <span className="s-name">{d.name}{locked && <Art id="ui.lock" size={11} />}</span>
                   <span className="s-sector">{d.sector}</span>
+                </span>
+                <span className="s-spark" data-testid={`spark-${d.id}`}>
+                  <PriceChart history={st.history} width={SPARK_WIDTH} height={SPARK_HEIGHT} />
                 </span>
                 <span className="s-quote">
                   <span className="s-price">{won(st.price)}</span>

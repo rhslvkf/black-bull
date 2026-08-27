@@ -1,21 +1,5 @@
-:root {
-  color-scheme: dark;
-  --bg: #0b0e13;
-  --panel: #151a22;
-  --panel-2: #1a212b;
-  --border: #262e3a;
-  --text: #e9edf3;
-  --muted: #8892a0;
-  --accent: #4f8ff7;
-  --accent-soft: #1c2a40;
-  --gold: #e6b45a;
-  --bull: #f0616d;
-  --bear: #4f8ff7;
-  --danger: #e05252;
-  --danger-soft: #2a1518;
-  --good: #3fb950;
-  --rumor: #c893ff;
-}
+/* 색·간격·타이포·모션 토큰은 design/tokens.css가 정의한다(Task 9). */
+@import './design/tokens.css';
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -28,14 +12,46 @@ body {
 button { font: inherit; cursor: pointer; }
 ul { list-style: none; padding: 0; margin: 0; }
 
+/* ---------- 모션: prefers-reduced-motion 전역 안전망 (§6, 이 태스크의 제1 제약) ----------
+ * 이 파일 전체(그리고 앞으로 추가될 CSS)가 개별 규칙마다 `@media (prefers-reduced-motion:
+ * reduce) { .foo { animation: none } }`를 반복해서 달지 않아도, 순수 CSS 트랜지션/애니메이션
+ * (JS가 인라인 style로 재생 여부를 결정하는 것들 — ChoiceSheet·CutsceneView·DialogueBox·
+ * App의 탭 슬라이드·가장자리 맥동 — 은 이미 각자 prefersReducedMotion()을 본다)은 전부
+ * 이 규칙 하나로 사실상 순간 종료된다. 개별 규칙에 이미 달려 있는 별도의
+ * `@media (prefers-reduced-motion: reduce) { animation: none }`(char-stage-shaken·
+ * stat-chip-flash·dialogue-caret 등)은 중복이지만 해가 없어 그대로 둔다 — 의도를 더
+ * 명시적으로 드러내는 문서 역할도 한다. `!important`가 필요한 이유: 이 규칙보다 CSS
+ * 소스에서 나중에 오거나 특이도가 높은 개별 transition/animation 선언이 이 안전망을
+ * 덮어쓰지 못하게 하기 위해서다(그러지 않으면 새 애니메이션을 추가할 때마다 이 규칙
+ * 뒤에 둬야 한다는 암묵적 순서 의존이 생긴다). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 세로 예산의 뼈대 (Task 24).
+ * 예전에는 `min-height: 100dvh`만 있고 `.body`가 `min-height: auto`(플렉스 기본값)라
+ * 내용이 길어지면 `.app` 자체가 뷰포트보다 커졌다 — 390x844에서 문서 scrollHeight가
+ * 954px까지 늘어났고, `position: fixed` 탭바가 그 위에 겹쳐 '한 주 넘기기' 버튼의
+ * 아래 72px과 카드 아래 줄을 가렸다(Task 14 리뷰 실측 924~941px과 같은 결함).
+ * 고치는 방법은 세 줄이다:
+ *   1) `height: 100dvh` — 앱은 정확히 뷰포트 한 장이다(넘치면 늘어나는 게 아니라 안에서 스크롤).
+ *   2) `.body { min-height: 0 }` — 플렉스 아이템이 내용 최소 크기 아래로 줄어들 수 있어야
+ *      `overflow-y: auto`가 실제로 동작한다. 이게 없으면 overflow 선언이 죽은 코드다.
+ *   3) 탭바를 흐름 안(`position: static`)으로 되돌린다 — 겹침이 구조적으로 불가능해진다. */
 .app {
   max-width: 480px;
   margin: 0 auto;
-  min-height: 100dvh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   position: relative;
+  overflow: hidden;
 }
 .app.start {
   align-items: center;
@@ -49,9 +65,30 @@ ul { list-style: none; padding: 0; margin: 0; }
   background: none; color: var(--muted); border: 1px solid var(--border);
   box-shadow: none; font-size: 14px; font-weight: 600; padding: 12px 20px; min-height: 44px;
 }
+/* §6 "타격감 — 흔들림 진입 시 화면 가장자리 맥동". App.tsx가 흔들림 진입 순간에만
+ * (useShakePulse, §6 "한 번" 맥동 + MU6 — 흔들림에서 벗어나면 즉시 꺼진다) 인라인
+ * style(animation)로 이 키프레임을 건다(Ruling 20과 같은 이유로 duration도 인라인).
+ * 여기서는 그 값이 가리키는 키프레임 자체만 정의한다 — ChoiceSheet·CutsceneView와
+ * 같은 분업이다. */
+@keyframes edge-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(224, 82, 82, 0); }
+  50% { box-shadow: inset 0 0 48px 10px rgba(224, 82, 82, .5); }
+}
+
+/* §6 "화면 전환 — 탭 전환 슬라이드". App.tsx가 탭이 바뀔 때마다 `.body`를 새 key로
+ * 다시 마운트하며 인라인 style(animation)로 이 키프레임을 건다(prefers-reduced-motion
+ * 이면 아예 안 건다). 시작 오프셋은 `--tab-slide-x`(App.tsx가 이동 방향에 따라 +12px/
+ * -12px로 인라인 지정, Fix Round 1 Minor 2)를 쓴다 — 방향과 무관하게 항상 오른쪽에서
+ * 들어오던 이전 버전은 왼쪽 탭으로 옮겨도 똑같이 오른쪽에서 슬라이드해 들어오는
+ * 결함이 있었다. */
+@keyframes tab-slide {
+  from { transform: translateX(var(--tab-slide-x, 12px)); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 .error-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
-  color: var(--bad); word-break: break-all; max-width: 320px;
+  color: var(--danger); word-break: break-all; max-width: 320px;
 }
 .app.start p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
 .app.start button {
@@ -60,34 +97,39 @@ ul { list-style: none; padding: 0; margin: 0; }
   box-shadow: 0 8px 24px -8px rgba(79, 143, 247, .6);
 }
 
-.body { flex: 1; overflow-y: auto; padding: 14px 14px 92px; }
+/* `min-height: 0`이 핵심이다(위 .app 주석). 하단 패딩 92px은 고정 탭바를 피하려던
+ * 임시방편이었는데, 탭바가 흐름 안으로 들어오면서 필요 없어졌다 — 그만큼이 그대로
+ * 세로 예산으로 돌아온다.
+ *
+ * 홈은 이 안을 정확히 채우고 **자기 안에서** 스크롤한다(.home-scroll) — 여유가 있는
+ * 턴에는 스크롤이 아예 생기지 않지만, 안내 문구가 붙는 턴에는 생긴다. 시세·계좌·도감은
+ * 예전처럼 이 컨테이너가 스크롤한다. */
+.body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; }
 
 /* ---------- HUD ---------- */
+/* `position: sticky; top: 0`이 있었지만 죽은 선언이었다(Fix Round 1) — `.hud`는
+ * `.app`(height: 100dvh, 스크롤하지 않는다)의 첫 플렉스 아이템이라 애초에 스크롤
+ * 밖으로 나갈 일이 없다. 스크롤하는 건 그 아래 `.body`(와 홈의 `.home-scroll`)다. */
 .hud {
-  position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, var(--panel), var(--bg));
-  padding: 10px 14px 12px;
+  /* §3.1 게이지 행 예산 28px에 맞춘 패딩(Task 24) — 예전 10/12는 실측 38px이었다. */
+  padding: 8px 14px 9px;
   border-bottom: 1px solid var(--border);
   transition: box-shadow .3s;
 }
 .hud.hud-shaken { box-shadow: inset 0 -3px 0 var(--danger); }
-.hud-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
-.hud-row > span { display: inline-flex; align-items: center; gap: 4px; }
-.hud-tier { font-weight: 600; color: var(--gold); }
-.hud-bar { height: 4px; background: var(--border); border-radius: 2px; margin: 8px 0 10px; overflow: hidden; }
-.hud-bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), #7db2ff); border-radius: 2px; transition: width .4s ease; }
-.hud-assets { display: flex; align-items: baseline; gap: 10px; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
-.hud-assets .up, .hud-assets .down { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 2px; }
 .up { color: var(--bull); }
 .down { color: var(--bear); }
 .neutral { color: var(--muted); }
-.roi-dash { font-weight: 700; }
-.hud-cash { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; }
-.hud-gauges { display: flex; gap: 14px; margin-top: 10px; }
+.hud-gauges { display: flex; gap: 14px; }
 .gauge { display: flex; align-items: center; gap: 6px; flex: 1; font-size: 11px; color: var(--muted); }
 .gauge-label { min-width: 28px; }
 .gauge-track { flex: 1; height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
-.gauge-fill { height: 100%; border-radius: 4px; transition: width .3s ease, background .3s ease; }
+/* §6 "상태 전이 — 게이지 보간". 멘탈·컨디션 게이지의 폭이 값이 바뀔 때 즉시 뛰지
+ * 않고 부드럽게 보간되게 한다. duration은 tokens.css(--dur-base)를 그대로 참조한다 —
+ * 하드코딩 금지(전역 제약) — reduced-motion에서는 위 전역 안전망이 이 transition도
+ * 사실상 순간 종료시킨다. */
+.gauge-fill { height: 100%; border-radius: 4px; transition: width var(--dur-base) var(--ease-standard), background var(--dur-base) var(--ease-standard); }
 .gauge-num { min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
 .gauge-critical .gauge-fill { animation: pulse-danger 1.4s ease-in-out infinite; }
 .gauge-critical .gauge-num { color: var(--danger); }
@@ -101,8 +143,11 @@ ul { list-style: none; padding: 0; margin: 0; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---------- Tab bar ---------- */
+/* 흐름 안에 있는 `.app`의 마지막 플렉스 아이템이다(Task 24). `position: fixed`였을
+ * 때는 어떤 화면이든 아래 56px을 자기 몫으로 가져가면서도 레이아웃 계산에는 참여하지
+ * 않아, 내용이 길어지면 조용히 그 위를 덮었다. */
 .tabbar {
-  position: fixed; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
+  flex: 0 0 auto;
   display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--panel); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
@@ -115,50 +160,258 @@ ul { list-style: none; padding: 0; margin: 0; }
 .tabbar button.active { color: var(--text); font-weight: 700; }
 .tabbar button.active .tabbar-glyph { filter: none; }
 
-/* ---------- Home / portrait ---------- */
-.screen.home { display: flex; flex-direction: column; }
-.portrait {
-  display: flex; justify-content: center; align-items: center;
-  padding: 18px 0 10px; border-radius: 16px;
-  background: radial-gradient(circle at 50% 20%, var(--panel-2), transparent 70%);
+/* ---------- Home / TopBar / CharacterStage ---------- */
+/* 홈은 `.body` 한 장을 정확히 채우고, 그 안이 **두 층**이다(Fix Round 1):
+ *   .home-scroll  — 캐릭터·티커·스탯·행동력·카드. 넘치면 여기서 스크롤한다.
+ *   .home-actions — 주 조작부('한 주 넘기기'와 그 사유 문구). **항상 보인다.**
+ *
+ * Round 1 이전에는 홈이 한 덩어리였고 "남는 세로는 캐릭터 스테이지가 흡수한다"에만
+ * 기댔다. 리뷰어 실측으로 그 가정이 깨졌다 — 스테이지를 하한(170px)까지 줄여도
+ * 156턴 중 13턴에서 '한 주 넘기기'가 화면 밖으로 밀려났다(최악 −56px, 턴 128).
+ * 흡수는 여유가 있을 때만 통하는 완화책이지 보장이 아니다. 그래서 보장은 구조로
+ * 만든다: 조작부를 스크롤 컨테이너 바깥의 형제로 두면 밀려날 자리 자체가 없다. */
+.screen.home { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* 홈 외 화면(시세·계좌·도감)은 예전처럼 내용만큼 자라고 `.body`가 스크롤한다. */
+.screen:not(.home) { flex: 0 0 auto; }
+
+.home-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
 }
-.portrait-shaken { animation: shake .5s ease; }
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-4px); }
-  40% { transform: translateX(4px); }
-  60% { transform: translateX(-3px); }
-  80% { transform: translateX(3px); }
+/* 스크롤 영역의 자식은 기본적으로 **자라지도 줄지도 않는다**. 이 한 줄이 없으면
+ * 세로가 모자랄 때 브라우저가 모든 자식을 기준 크기 비율대로 함께 찌그러뜨려,
+ * 카드·행동력 글자가 잘리는 방식으로 '들어맞는' 화면이 된다.
+ * 줄어드는 창구는 아래 스테이지 하나뿐이다 — 그리고 **자라는 창구는 없다**:
+ * 하나라도 자라면 스테이지의 260px 상한(§3.1 예산)이 그만큼 깨진다.
+ * 이 두 성질은 design/layout.test.tsx가 **두 겹으로** 확인한다(Fix Round 2):
+ * (a) index.css의 모든 규칙을 전수 훑어 `flex-grow > 0`을 주는 선언이 존재만 해도 실패시키고
+ *     (@media·!important·구체성과 무관하다 — 캐스케이드를 풀지 않는 것이 요점이다),
+ * (b) 렌더된 DOM에서 인라인 style 우회를 잡는다.
+ * 실제 픽셀은 scripts/layout-audit.mjs가 실브라우저로 156턴을 돌며 잰다. */
+.home-scroll > * { flex: 0 0 auto; }
+.home-scroll > .char-stage { flex: 0 1 auto; min-height: 170px; }
+/* 짧은 기기(아이폰 SE급 667px) 대응 — 흡수 창구의 **하한**만 낮춘다(Fix Round 2 Minor).
+ * 390×667 실측: 스크롤 넘침이 최대 266px이라 붐비는 턴에는 카드 아랫줄이 0%까지 가려졌다.
+ * 버튼은 구조상 항상 보이므로 진행이 막히지는 않지만, "이번 주에 뭘 할까"를 보려고 매번
+ * 스크롤해야 하는 건 주 화면으로서 나쁘다. 하한을 96px로 내리면 스테이지가 그만큼 더
+ * 양보한다 — 인물 상단이 남는 띠 정도지만 이미지 슬롯은 §5 폴백이 있어 화면이 깨지지 않고,
+ * 아래 조작부는 어차피 흐름 밖이라 영향이 없다. 상한(260px)은 건드리지 않는다. */
+@media (max-height: 740px) {
+  .home-scroll > .char-stage { min-height: 96px; }
 }
 
-/* ---------- News ---------- */
+/* 주 조작부. `.home-scroll`의 형제이므로 스크롤과 무관하게 항상 제자리에 있고,
+ * 탭바 바로 위 — 엄지 도달 범위 — 에 앉는다. */
+.home-actions {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding-top: 8px;
+}
+/* 조작부 안의 요소도 찌그러지지 않는다 — 여기가 마지막 보루다. */
+.home-actions > * { flex: 0 0 auto; }
+
+/* §3.1 상단바: 메뉴 / 연차·주차·D-day / 총자산 / 정보. 진행바(Hud가 이미 그린다)와
+   나머지 HUD 요소는 Task 12가 Hud를 정리하면서 이 자리로 옮겨온다. */
+.topbar {
+  /* 높이는 TopBar.tsx의 TOPBAR_HEIGHT_PX(56px, §3 레이아웃 예산)가 인라인으로
+     내려준다 — 여기서 세로 패딩을 더하면 그 예산을 넘긴다(리뷰 Fix Round 1 Minor 1:
+     기존 6px+12px 패딩이 44px 버튼과 합쳐져 63px까지 밀려났던 원인). */
+  display: flex; align-items: center; gap: 10px;
+  padding: 0; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.topbar-icon-btn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  color: var(--text); font-size: 17px; line-height: 1;
+}
+.topbar-icon-btn:active { background: var(--panel-2); }
+.topbar-date {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+}
+.topbar-yearweek { font-size: 13px; font-weight: 700; color: var(--text); }
+.topbar-dday { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.topbar-assets {
+  flex: 0 0 auto; font-size: 15px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+
+/* §3.1 진행바(리뷰 Fix Round 1 Ruling 22) — TopBar 바로 아래, 156턴 중 지금 턴의
+   진척을 보여준다. 높이(12px)는 TurnProgress.tsx의 상수가 인라인으로 내려주므로
+   여기서 다시 정의하지 않는다. */
+.turn-progress {
+  background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 10px;
+}
+.turn-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #7db2ff);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+/* §3.1 캐릭터 스테이지: 배경 레이어 + 인물 레이어가 같은 자리를 겹쳐 채우고, 그 위에
+   티어·수익률 배지가 뜬다. 높이(260px)는 CharacterStage.tsx의 상수가 인라인으로
+   내려주므로 여기서 다시 정의하지 않는다. */
+.char-stage {
+  /* 인라인 height(CharacterStage.tsx의 CHARACTER_STAGE_HEIGHT_PX = 260px, §3.1 예산)가
+   * 플렉스 기준 크기이자 상한이고, 세로가 모자라면 여기서만 줄어든다 — min-height가
+   * 그 하한이다. 스펙 §3.1의 260px을 '고정'이 아니라 '상한'으로 읽는 셈인데, 다이어그램의
+   * 합(770px)에 구분선·여백 몫이 전혀 없어 390x844에서 그대로는 성립하지 않기 때문이다.
+   * 줄어들 후보 중 스테이지를 고른 이유: 이미지 슬롯은 비율만 유지되면 되고(§5 폴백이
+   * 있다), 나머지 행은 전부 조작부라 잘리면 게임이 진행되지 않는다. */
+  position: relative; width: 100%; overflow: hidden;
+  border-radius: 18px; border: 1px solid var(--border);
+  background: var(--panel);
+  transition: box-shadow var(--dur-base) var(--ease-standard);
+}
+.char-stage-shaken { animation: char-stage-pulse 1.6s var(--ease-standard) infinite; }
+.char-bg-layer, .char-fg-layer { position: absolute; inset: 0; }
+.char-bg-layer { opacity: .55; filter: saturate(.7); }
+.char-bg-art, .char-fg-art { width: 100%; height: 100%; }
+.char-bg-art .art-slot-content, .char-fg-art .art-slot-content { width: 100%; height: 100%; }
+.char-fg-layer {
+  display: flex; align-items: flex-end; justify-content: center;
+  background: linear-gradient(180deg, transparent 35%, rgba(11, 14, 19, .55) 100%);
+}
+.char-fg-layer .art-slot-content { height: 100%; width: auto; max-width: 78%; object-fit: contain; }
+.char-badge {
+  position: absolute; left: 12px; bottom: 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.char-badge-tier {
+  font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--gold); color: var(--gold);
+}
+.char-badge-roi {
+  font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+.char-badge-roi.up { border-color: var(--up); }
+.char-badge-roi.down { border-color: var(--down); }
+@keyframes char-stage-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(240, 97, 109, 0); }
+  50% { box-shadow: inset 0 0 0 3px rgba(240, 97, 109, .55); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .char-stage-shaken { animation: none; }
+}
+
+/* ---------- News ticker + sheet (§3.1, Task 14) ----------
+ * 높이(32px)는 NewsTicker.tsx의 TICKER_HEIGHT_PX가 인라인으로 내려주므로 여기서
+ * 다시 정의하지 않는다. 1차 NewsFeed(최근 8건을 세로로 쌓던 목록)를 대체한다 —
+ * 156턴 동안 최대 312건이 나와 목록으로는 소화되지 않는다(주석은 NewsTicker.tsx 참고). */
+.news-ticker-wrap { margin: 8px 0 0; flex: 0 0 auto; }
+.ticker-line {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 0 10px; color: var(--text); font-size: 13px; text-align: left;
+}
+.ticker-line.rumor { color: var(--rumor); }
+.ticker-line .ticker-text { flex: 1; min-width: 0; line-height: 1.3; }
+.ticker-line .ticker-chevron { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
 .news-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 12px 0; }
-.news { margin: 8px 0 4px; font-size: 13px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-.news li { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.news li:last-child { border-bottom: 0; }
-.news li.rumor { color: var(--rumor); }
-.news li.news { color: var(--text); }
-.news li span { line-height: 1.4; }
 
-/* ---------- Cards ---------- */
-.section-title { font-size: 14px; margin: 16px 0 8px; font-weight: 700; display: flex; align-items: baseline; gap: 6px; }
-.section-title small { color: var(--muted); font-weight: 500; font-size: 12px; }
-.card-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.card {
-  text-align: left; padding: 10px 11px; border-radius: 12px;
-  border: 1px solid var(--border); background: var(--panel);
-  color: var(--text); transition: border-color .15s, background .15s, transform .1s;
+/* 시트: 화면 하단에서 올라오는 최근 8건 목록. */
+.news-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 25; display: flex; align-items: flex-end;
+  max-width: 480px; margin: 0 auto; background: rgba(11, 14, 19, .7);
 }
+.news-sheet {
+  width: 100%; max-height: 70vh; overflow-y: auto;
+  background: var(--panel); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+}
+.news-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.news-sheet-head h3 { margin: 0; font-size: 15px; }
+.news-sheet-close { background: none; border: 0; color: var(--muted); font-size: 16px; }
+.news-sheet-list { margin: 0; font-size: 13px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.news-sheet-list li { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.news-sheet-list li:last-child { border-bottom: 0; }
+.news-sheet-list li.rumor { color: var(--rumor); }
+.news-sheet-list li.news { color: var(--text); }
+.news-sheet-list li span { line-height: 1.4; }
+
+/* ---------- Stat chips (§3.1, Task 12) ---------- */
+.stat-chips {
+  /* 5칸 그리드로 못박는다(Task 24). 예전엔 `display: flex` + `overflow-x: auto`라
+   * 390px 화면에서 행 전체 폭이 426px로 넘쳐 다섯째 칩(인맥)이 잘려 나갔다 — 가로
+   * 스크롤은 '상시 노출'(§2)의 반대말이다. minmax(0, 1fr)이라 폭이 어떻든 다섯 칸이
+   * 항상 같은 폭으로 들어오고, 넘치는 건 칩 안의 글자뿐이다. */
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 8px 0 0;
+}
+.stat-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; overflow: hidden;
+  padding: 5px 4px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); font-size: 11px; color: var(--muted); white-space: nowrap;
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+.stat-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--chip); flex: 0 0 auto; }
+.stat-chip-label { color: var(--text); font-weight: 600; }
+.stat-chip-value { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--chip); }
+.stat-chip-flash { box-shadow: 0 0 0 2px var(--chip); animation: chip-flash var(--dur-slow) var(--ease-standard); }
+@keyframes chip-flash {
+  0% { background: var(--chip); }
+  100% { background: var(--panel); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stat-chip-flash { animation: none; }
+}
+
+/* ---------- Action meter (§3.1, Task 12) ---------- */
+.action-meter { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex: 0 0 auto; }
+.ap-dots { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; }
+.ap-num { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin-right: 2px; }
+.ap-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft);
+  transition: background var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.ap-dot-spent { background: var(--border); box-shadow: none; transform: scale(.8); }
+.reroll-btn {
+  flex: 0 0 auto; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); font-size: 12.5px; font-weight: 700;
+}
+.reroll-btn:active:not(:disabled) { background: var(--panel-2); }
+.reroll-btn:disabled { color: var(--muted); opacity: .5; }
+
+/* ---------- Cards (§3.1 카드 2×2, Task 13) ----------
+ * 열 수(2)는 CSS가 아니라 CardGrid.tsx의 인라인 스타일이 유일한 출처다(그 파일의
+ * CARD_GRID_COLUMNS 주석 참고) — 여기서는 gap 등 나머지 시각 규칙만 둔다. */
+/* `.section-title`("이번 주에 뭘 할까")은 Task 24에서 지웠다 — §3.1 다이어그램에 없는
+ * 행이었고 위아래 여백까지 42px을 먹었다. 쓰는 화면이 없으므로 규칙도 함께 지운다. */
+.card-list { gap: 8px; margin-top: 10px; flex: 0 0 auto; }
+.card {
+  display: flex; flex-direction: column; gap: 4px;
+  text-align: left; padding: 9px 10px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--text);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+/* §6 "타격감 — 카드 프레스". 누르는 순간 살짝 줄어들어 눌림을 체감하게 한다. */
 .card:active:not(:disabled) { transform: scale(.97); }
 .card.picked { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+/* 회복 슬롯의 시각적 구별(MU9) — 왼쪽 굵은 초록 테두리 + recovery-marker 텍스트
+ * 배지 둘로 이중 표시한다. 행동력을 소모하지 않고 항상 열려 있다는 사실(전역 제약)이
+ * 잠금 처리(.card:disabled)와 절대 겹치지 않는다는 것도 이 색으로 드러난다. */
 .card.recovery { border-left: 3px solid var(--good); }
 .card:disabled { opacity: .38; }
-.card-name { display: flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13.5px; }
-.card-desc { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.card-name { display: flex; align-items: center; gap: 4px; font-weight: 700; font-size: 13.5px; min-width: 0; }
+.card-name > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.hud-baseline { font-size: 11px; color: var(--muted); margin-top: 2px; }
+/* 등급 배지 — 배경색은 CardTile.tsx가 `var(--grade-<등급>)`로 인라인 지정한다
+ * (tokens.css가 유일한 색 출처). 글자색만 여기서 고정한다: 6색 전부 --bg 대비
+ * 명도 대비가 충분해(측정치 최저 4.54:1) 진한 배경 글자로 일관되게 읽힌다. */
+.grade-badge {
+  flex: 0 0 auto; min-width: 20px; text-align: center; padding: 1px 7px;
+  border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--bg);
+}
+.effect-summary { font-size: 12px; color: var(--text); font-weight: 600; }
+.card-cost-row { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ap-cost { color: var(--gold); font-weight: 700; }
+.cost-item { color: var(--danger); }
+.recovery-marker { font-size: 10.5px; color: var(--good); font-weight: 700; }
 
-.card-lock { display: block; margin-top: 4px; font-size: 10.5px; color: var(--danger); }
+.card-lock { display: block; font-size: 10.5px; color: var(--danger); }
 
 .turn-skipped {
   margin: 10px 0 0; font-size: 12px; color: var(--danger); text-align: center;
@@ -167,13 +420,15 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 
 .turn-blocked {
-  margin: 12px 0 0; font-size: 12px; color: var(--gold); text-align: center;
+  margin: 0; font-size: 12px; color: var(--gold); text-align: center;
   background: rgba(230, 180, 90, .1); border: 1px solid rgba(230, 180, 90, .3);
   border-radius: 8px; padding: 8px;
 }
 
 .next-turn {
-  width: 100%; margin-top: 14px; padding: 15px; border: 0; border-radius: 14px;
+  /* 위쪽 간격은 .home-actions의 gap/padding이 준다(Fix Round 1) — 여기서 margin을
+     또 주면 두 곳이 같은 간격을 다투게 된다. */
+  width: 100%; padding: 14px; border: 0; border-radius: 14px;
   background: linear-gradient(180deg, #2ea043, #238636); color: #fff; font-size: 16px; font-weight: 800;
   box-shadow: 0 6px 18px -6px rgba(35, 134, 54, .7);
   transition: opacity .15s, box-shadow .15s;
@@ -206,6 +461,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 .s-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .s-name { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-sector { font-size: 11px; color: var(--muted); }
+.s-spark { flex: 0 0 auto; display: flex; align-items: center; }
 .s-quote { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .s-price { font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .s-quote .up, .s-quote .down, .s-quote .neutral { font-size: 11.5px; font-weight: 700; }
@@ -238,6 +494,13 @@ ul { list-style: none; padding: 0; margin: 0; }
 .held { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
 .held .up, .held .down, .held .neutral { font-weight: 700; }
 
+.average-down { margin-top: 10px; }
+.average-down-btn {
+  width: 100%; border: 1px solid var(--accent); border-radius: 10px;
+  background: var(--accent-soft); color: var(--text); font-size: 14px; font-weight: 700;
+}
+.average-down-btn:disabled { border-color: var(--border); background: var(--panel); color: var(--muted); }
+
 .trade { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
 .trade-row { display: flex; align-items: center; gap: 10px; }
 .trade-row label { font-size: 13px; color: var(--muted); }
@@ -253,23 +516,48 @@ ul { list-style: none; padding: 0; margin: 0; }
 .trade-buttons .buy { background: linear-gradient(180deg, #ef5a67, #e0404e); color: #fff; }
 .trade-buttons .sell { background: linear-gradient(180deg, #5a92f0, #3f78e0); color: #fff; }
 .trade-buttons button:disabled { background: var(--border); color: var(--muted); }
+/* 손절 봉인(SELL_BLOCKED)은 진짜 HTML disabled가 아니다(StockDetail.tsx 주석) — 눌러야
+ * 흔들림 피드백이 나오려면 클릭 이벤트 자체는 받아야 한다. 그래서 같은 "잠긴 것처럼
+ * 보이는" 시각을 별도 클래스로 흉내낸다. */
+.trade-buttons button.locked { background: var(--border); color: var(--muted); }
+
+/* §6 "타격감 — 막힌 동작(손절 봉인)의 짧은 흔들림". useShake(design/motion.ts)가
+ * `.shake` 클래스를 짧게 붙였다 뗀다 — 실제 keyframe은 여기, 재생 여부(reduced-motion)
+ * 는 위 전역 안전망이 처리한다(char-stage-shaken과 달리 이 클래스는 별도의
+ * `@media (prefers-reduced-motion: reduce)` 예외를 두지 않는다 — 전역 규칙 하나로 충분하다). */
+@keyframes shake-x {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.shake { animation: shake-x var(--dur-base) var(--ease-standard); }
 
 /* ---------- Account ---------- */
 .screen.account .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
+.cost-total {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 14px; font-size: 12.5px; color: var(--muted);
+}
 .donut-wrap { display: flex; align-items: center; gap: 16px; padding: 12px 4px; }
 .donut-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
 .donut-legend span { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .donut-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
 .sum { font-size: 13px; color: var(--muted); margin: 4px 0 12px; text-align: center; }
-.holdings { display: flex; flex-direction: column; gap: 6px; }
-.holdings li {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-height: 52px;
-  border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+.holdings { display: flex; flex-direction: column; gap: 6px; list-style: none; padding: 0; margin: 0; }
+.holding-row {
+  width: 100%; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  text-align: left; transition: transform .1s;
 }
-.h-name { flex: 1; font-weight: 700; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.h-qty { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
-.h-avg { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
-.holdings .up, .holdings .down, .holdings .neutral { font-size: 12.5px; font-weight: 700; flex: 0 0 auto; min-width: 48px; text-align: right; }
+.holding-row:active { transform: scale(.98); }
+.h-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.h-name { font-weight: 700; font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-top .up, .h-top .down, .h-top .neutral { font-size: 13px; font-weight: 800; flex: 0 0 auto; }
+.h-bottom { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.h-weight { margin-left: auto; }
 
 /* ---------- Overlays: 프롤로그·이벤트·컷신·엔딩 ---------- */
 .overlay {
@@ -282,17 +570,208 @@ ul { list-style: none; padding: 0; margin: 0; }
   min-height: 44px; padding: 12px 28px; border: 0; border-radius: 10px;
   background: var(--good); color: #fff; font-size: 15px; font-weight: 700;
 }
-.cut-text { white-space: pre-line; font-size: 15px; line-height: 1.7; max-width: 320px; color: var(--text); }
 .event-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 340px; }
 .event-body { white-space: pre-line; font-size: 14px; color: var(--muted); line-height: 1.6; }
-.choices { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-.choices button {
-  min-height: 44px; padding: 11px; border-radius: 9px; border: 1px solid var(--border);
-  background: var(--panel-2); color: var(--text); font-size: 14px;
+
+/* ---------- 엔딩 잔고증명서 (overlays/EndingView.tsx, §4.4) ----------
+   1차 엔딩은 이모지 배지 위에 숫자를 얹은 카드였다 — 이번엔 실물 문서 흉내다.
+   숫자 열은 등락색과 무관한 순수 수치 나열이라 monospace로 자릿수를 맞추고,
+   행 사이는 실제 증명서의 항목-금액 대응이 한눈에 읽히도록 점선 리더(leader)로
+   잇는다. 도장은 오른쪽 아래에 살짝 기울여 앉혀 "찍힌" 느낌을 낸다 — §5.1의
+   `ending.*` 슬롯이 엔딩마다 다른 도장 그래픽을 낸다. */
+/* Ruling 28(Task 20) — 엔딩은 모달이 아니라 게임의 마지막 장면이다. 프롤로그·컷신과
+   같은 원칙: 알파를 쓰지 않는 완전 불투명 배경으로 뒤(홈 HUD·탭바)가 전혀 비치지 않게
+   한다(.overlay 기본값의 rgba(...,.96)는 진짜 모달인 EventModal 전용). */
+.overlay.ending { overflow-y: auto; background: var(--bg); }
+.doc {
+  width: 100%; max-width: 340px; box-sizing: border-box; text-align: left;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  padding: 22px 20px 18px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .6);
 }
-.titles { color: var(--gold); font-size: 13px; }
-.ending-desc { color: var(--muted); font-size: 13px; max-width: 320px; }
-.final-assets { font-size: 24px; font-weight: 700; color: var(--text); }
+.doc-issuer { margin: 0 0 2px; font-size: 11px; letter-spacing: .08em; color: var(--muted); }
+.doc-title {
+  margin: 0 0 16px; font-size: 17px; font-weight: 700; color: var(--text);
+  text-align: center; letter-spacing: .05em;
+}
+.doc-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 12.5px; color: var(--text); padding: 3px 0;
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1.4px);
+  background-position: bottom 7px left 0; background-repeat: repeat-x; background-size: 6px 1px;
+}
+.doc-row > span:first-child { background: var(--panel); padding-right: 6px; color: var(--muted); flex: 0 0 auto; }
+.doc-row > span:last-child { background: var(--panel); padding-left: 6px; font-weight: 600; }
+.doc-row.doc-sub { padding-left: 10px; font-size: 12px; }
+.doc-row.doc-total > span:last-child { font-weight: 800; color: var(--gold); }
+.doc-rule { border: none; border-top: 1px dashed var(--border); margin: 10px 0; }
+.doc-section { margin: 2px 0 4px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.doc-footer { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 14px; }
+.doc-date { font-size: 11px; color: var(--muted); }
+.doc-stamp-wrap { display: inline-block; transform: rotate(-9deg); opacity: .92; }
+.doc-stamp { border-radius: 50%; filter: saturate(1.15); }
+.doc-ending-name { margin: 18px 0 4px; font-size: 18px; font-weight: 800; color: var(--text); text-align: center; }
+.doc-ending-desc { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); text-align: center; line-height: 1.5; }
+.doc-titles { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.doc-title-chip {
+  font-size: 11px; color: var(--gold); border: 1px solid var(--gold); border-radius: 999px;
+  padding: 3px 10px; background: rgba(230, 180, 90, .08);
+}
+
+/* ---------- 이벤트 모달의 VN 합성 (overlays/EventModal.tsx, §4.1) ----------
+   .event-card(위)는 옛 "카드 하나에 텍스트" 레이아웃의 흔적이라 폭이 좁다(340px).
+   VN 합성은 배경 16:9 위에 인물이 서는 넓은 화면이 필요해 같은 요소에 .vn-event-card를
+   더해 겹치는 속성(width·padding)만 아래에서 다시 정의한다 — 같은 클래스 개수(1개)라
+   나중에 오는 이 규칙이 이긴다. */
+.vn-event-card { width: 100%; max-width: 440px; padding: 14px; box-sizing: border-box; }
+.event-title { margin: 0 0 10px; font-size: 16px; font-weight: 800; color: var(--text); }
+.vn-stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px;
+  overflow: hidden; margin-bottom: 12px; background: var(--panel-2);
+}
+.event-bg { position: absolute; inset: 0; }
+/* Fix Round 1(Major) — 인물 스탠딩은 무대 왼쪽에 선다. 배경 SVG의 지명 라벨
+   (art/parts/Backgrounds.tsx, x=150·y=82·textAnchor=end)이 무대 우하단 구석에 있어,
+   같은 구석에 인물을 세우면 라벨이 가려진다(리뷰 실측: "거리"→"ㅣ리"). 오른쪽 구석을
+   구조적으로 비워 두는 편이, 좌표를 정밀 조정해 겹침 여지를 남기는 것보다 안전하다.
+   대화창(그 아래)의 이름표도 왼쪽에서 시작하지만 vn-stage 바깥의 별도 박스라 겹치지
+   않는다.
+   카드 크롬(배경판·테두리·둥근 모서리·그림자)을 걷어내고, CharacterStage(§3.1,
+   .char-fg-layer)가 이미 쓰는 "무대에 선 인물" 패턴을 그대로 재사용한다 — 높이를
+   무대 전체에 맞추고(`height`) 폭은 원본 비율대로만(`width: auto`) 두어 늘이거나
+   자르지 않는다(`object-fit: contain`). 지금의 폴백 아트(64×64 정사각 배지)도 이
+   틀 안에서 자연스럽게 서고, Task 23이 투명 배경(알파) 인물 이미지를 꽂아도 같은
+   틀이 그대로 장면에 서게 만든다(§5). */
+.speaker-portrait {
+  position: absolute; left: 4%; top: 0; bottom: 0; width: 42%; max-width: 150px;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.speaker-portrait-art { width: 100%; height: 100%; }
+.speaker-portrait-art .art-slot-content {
+  width: auto; height: 86%; max-width: 100%; object-fit: contain;
+}
+/* 화자가 없는 뉴스형 이벤트는 인물 대신 섹터/시황 아이콘을 작은 배지로 얹는다 —
+   섹터 아이콘(§5) 자체가 1:1 소형 아이콘용 에셋이라, 인물 스탠딩과 같은 큰 자리를
+   채우도록 늘리면 에셋 설계 의도와 어긋난다(art/slots.tsx의 kind별 비율 참고). */
+.event-visual {
+  position: absolute; top: 10px; right: 10px; width: 68px;
+  border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, .45);
+  background: var(--panel);
+}
+
+/* ---------- 컷신 (overlays/CutsceneView.tsx, §4.3) ----------
+   "배경이 바뀌는 연출로 간다" — 승급/강등마다 오버레이 전체 배경을 다른 톤으로
+   물들인다. 톤 자체은 CutsceneView.tsx가 `data-tone`("up"/"down")으로 내려주고,
+   여기서는 그 값에 대응하는 그라디언트만 정의한다.
+   리뷰 Fix Round 1(Critical 1) — §0·§4.3은 프롤로그·컷신을 "장면"으로 규정한다.
+   장면은 화면을 온전히 차지해야지, 게임 화면 위에 얹힌 반투명 레이어여서는 안 된다
+   (진짜 모달인 EventModal과는 다르다 — 그쪽은 `.overlay`의 rgba(...,.96)를 그대로
+   쓴다). 알파를 .16→.96/.97로 올렸던 1차 수정은 리뷰 재현에서 여전히 뒤가 읽혔다
+   (sRGB 감마 특성상 밝은 텍스트 위 반투명 합성은 알파를 조금 올리는 정도로는 안
+   지워진다) — 그래서 접근 자체를 바꾼다: 알파 채널을 아예 쓰지 않는 완전 불투명
+   단색/그라디언트로 만든다(--good/--danger와 결이 맞는 톤을 불투명 hex로 새로
+   골랐다 — 알파가 섞인 기존 토큰을 그대로 쓰면 다시 반투명이 된다). */
+.overlay.cutscene[data-tone="up"] {
+  background: linear-gradient(180deg, #1f5438 0%, #0b0e13 60%);
+}
+.overlay.cutscene[data-tone="down"] {
+  background: linear-gradient(180deg, #602828 0%, #0b0e13 60%);
+}
+/* 컷신 크로스페이드를 실제로 재생하는 대상은 `.overlay.cutscene`(배경까지 포함한
+ * 장면 전체)이 아니라 이 `.cutscene-content` 래퍼다 — §6 요구("컷신 크로스페이드")와
+ * 완전 불투명 장면 불변식(Ruling 28, overlays.test.tsx)이 충돌할 뻔한 지점이다.
+ * `.overlay.cutscene[data-tone=...]`의 배경은 opacity를 전혀 안 쓰는 불투명 그라디언트인데,
+ * 크로스페이드를 그 바깥 요소(장면 전체)에 걸면 opacity가 0→1로 도는 동안 배경까지
+ * 함께 투명해져 그 뒤(홈 HUD·탭바)가 비친다 — CSS 소스 텍스트 파싱 검사(overlays.test.tsx)는
+ * 인라인 style(JS가 애니메이션을 재생하는 방식, Ruling 20)까지는 못 보므로 이 회귀를
+ * 못 잡는다(Task 21 재리뷰 MU-B와 같은 종류의 구멍). 그래서 애니메이션을 배경이 없는
+ * 안쪽 래퍼로 옮긴다 — 배경(.overlay.cutscene)은 항상 즉시 불투명하고, 그 위에서
+ * 제목·스테이지·대사·버튼만 페이드로 나타난다. 시각적으로도 "장면 전환" 자체는 그대로
+ * 크로스페이드처럼 읽힌다(overlays.test.tsx가 이제 이 요소를 직접 검증한다). */
+.cutscene-content { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; }
+.cutscene-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--text); }
+.cutscene-stage { display: flex; justify-content: center; }
+/* 애니메이션 값 자체는 CutsceneView.tsx가 인라인 style(animation)로 재생/생략을
+   결정한다(prefers-reduced-motion, Ruling 20 — ChoiceSheet.tsx와 같은 기법). 여기서는
+   그 값이 가리키는 키프레임만 정의한다. */
+@keyframes cutscene-crossfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 프롤로그 (overlays/PrologueView.tsx, §0) ----------
+   리뷰 Fix Round 1(Critical 1) — 컷신과 같은 이유로 완전 불투명 단색(알파 없음)을
+   쓴다. `--bg`(앱 배경색 자체)는 이미 알파 없는 hex(#0b0e13)라 그대로 재사용한다. */
+.overlay.prologue { background: var(--bg); }
+.prologue-stage { width: 55%; max-width: 220px; }
+.prologue-stage-art { border-radius: 12px; }
+
+/* ---------- 대화창 (overlays/DialogueBox.tsx, §4.1) ---------- */
+.dialogue-box {
+  position: relative; width: 100%; max-width: 480px; box-sizing: border-box;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px 52px 18px 18px; cursor: pointer;
+}
+/* §6 "화면 전환 — 대화창 페이드인". DialogueBox.tsx가 마운트마다(새 이벤트·새 컷신·
+ * 새 프롤로그 장면 — 부모가 key를 바꿔 매번 새로 마운트한다) 인라인 style(animation)로
+ * 재생/생략을 결정한다(prefers-reduced-motion, Ruling 20). 대화창은 이미 완전 불투명인
+ * 부모 장면(.overlay.prologue·.overlay.cutscene) 위에 얹히는 자식이라, 이 요소 자체가
+ * opacity로 페이드해도 그 뒤(게임 화면)가 비치지 않는다 — 불투명 불변식(Ruling 28)과
+ * 충돌하지 않는다(뒤에 있는 건 이미 불투명한 장면 배경이지 게임 화면이 아니다). */
+@keyframes dialogue-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.dialogue-speaker {
+  position: absolute; top: -14px; left: 14px; padding: 5px 14px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; color: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
+}
+.dialogue-text { margin: 8px 0 0; font-size: 14.5px; line-height: 1.7; color: var(--text); white-space: pre-line; word-break: break-word; min-height: 1.7em; }
+.dialogue-caret { display: inline-block; width: 7px; height: 1em; margin-left: 2px; background: var(--accent); vertical-align: -0.15em; animation: dialogue-caret-blink 800ms steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .dialogue-caret { animation: none; } }
+@keyframes dialogue-caret-blink { 50% { opacity: 0; } }
+.dialogue-log-toggle {
+  position: absolute; right: 6px; bottom: 6px; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; color: var(--muted); font-size: 16px; border-radius: 9px;
+}
+.dialogue-log-toggle[aria-pressed="true"] { color: var(--accent); }
+.dialogue-log {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); max-height: 220px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px; text-align: left; z-index: 1;
+}
+.dialogue-log-empty { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; }
+.dialogue-log-entry { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.dialogue-log-entry:last-child { border-bottom: 0; padding-bottom: 0; }
+.dialogue-log-speaker { font-size: 11.5px; font-weight: 700; color: var(--accent); }
+.dialogue-log-text { font-size: 12.5px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+
+/* ---------- 선택지 하단 시트 (overlays/ChoiceSheet.tsx, §4.2) ----------
+   "결정하는 순간을 대사와 분리"하기 위해 대화창과 별개로 화면 하단에 붙는다. .overlay
+   (위)는 position:fixed만 쓰고 transform 등으로 새 containing block을 만들지 않으므로,
+   자손의 position:fixed는 그대로 실제 뷰포트 바닥에 붙는다 — 엄지 도달 범위(전역 제약)에
+   선택 버튼을 두는 것이 이 태스크의 목적이다. */
+.choice-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; margin: 0 auto; width: 100%;
+  max-width: 480px; box-sizing: border-box; z-index: 21;
+  background: var(--panel); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.choice-sheet-title { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.choice-sheet-list { display: flex; flex-direction: column; gap: 8px; }
+.choice-sheet-list button {
+  min-height: 44px; padding: 11px 14px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); font-size: 14.5px; font-weight: 600;
+  text-align: left; white-space: normal; word-break: keep-all;
+}
+.choice-sheet-list button:disabled { opacity: .6; }
+/* 애니메이션 자체는 ChoiceSheet.tsx가 인라인 style(animation)로 재생/생략을 결정한다
+   (prefers-reduced-motion, jsdom이 외부 CSS를 읽지 않는다는 Ruling 20과 같은 이유) —
+   여기서는 그 값이 가리키는 키프레임만 정의한다. */
+@keyframes choice-sheet-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* ---------- 아트 슬롯 (art/slots.tsx) ---------- */
+/* 슬롯 컨테이너는 aspect-ratio로 종류별 비율을 고정하고, 안의 svg 폴백/<img> 둘 다
+   art-slot-content 클래스로 같은 자리를 꽉 채운다 — 이미지가 꽂혀도 레이아웃이 안 흔들린다. */
+.art-slot-content { display: block; width: 100%; height: 100%; object-fit: cover; }
 .skip {
   position: absolute; top: 16px; right: 16px; min-height: 44px; padding: 0 10px;
   background: none; border: 0; color: var(--muted); font-size: 13px;
@@ -301,9 +780,18 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* ---------- Codex ---------- */
 .codex-sum { color: var(--muted); font-size: 13px; text-align: center; margin: 4px 0 16px; }
 .codex-list, .codex-titles { list-style: none; padding: 0; }
-.codex-list li { display: flex; flex-direction: column; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.codex-list li strong { font-size: 13.5px; }
-.codex-list li span { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.codex-list li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.codex-stamp {
+  flex: 0 0 auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--panel); border: 1px solid var(--border); overflow: hidden;
+}
+.codex-list li.locked .codex-stamp { opacity: .5; }
+.codex-text { display: flex; flex-direction: column; min-width: 0; }
+.codex-text strong { font-size: 13.5px; }
+.codex-text span { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .codex-titles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .codex-titles li {
   padding: 8px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel);

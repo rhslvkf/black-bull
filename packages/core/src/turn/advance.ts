@@ -10,15 +10,18 @@ import { drawEvents, resolveImpacts, revealRumors } from '../events/engine'
 import { settleMental } from '../mental/mental'
 import { settleCondition, rollForcedSkip } from '../mental/condition'
 import { accrueInterest, checkMarginCall } from './margin'
-import { playCard } from './cards'
+import { playCard, actionPoints, cardApCost } from './cards'
 import { settlePayroll, settleTier, stepRival } from './economy'
 import { cashRatio, totalAssets } from './accounting'
 import { judgeEnding } from '../endings/endings'
+import { drawSlots, rerollCount, gradeOfSlot } from './slots'
 
 export function initGame(seed: number): GameState {
   const [regimes, rng] = generateRegimes(createRng(seed))
   const stockDefs = loadStockDefs()
-  return {
+  // slots/rerollsLeft는 아래에서 drawSlots·rerollCount로 채운다. 이 시점의 값은
+  // drawSlots 호출을 위한 임시 자리표시자일 뿐이고 반환되는 state에는 담기지 않는다.
+  const base: GameState = {
     turn: 1, seed0: seed, rng, regimes, stockDefs, stocks: initStockStates(stockDefs),
     player: {
       cash: BALANCE.seedMoney, loan: 0, holdings: [],
@@ -28,13 +31,17 @@ export function initGame(seed: number): GameState {
     },
     pendingImpacts: [], news: [], firedOneShots: [], flags: {},
     pendingChoices: [], rivalAssets: BALANCE.rival.start,
-    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0 },
+    trackers: { shakenTurns: 0, usedMargin: false, lossCuts: 0, maxHeldTurns: 0, cashRatioSum: 0, turnsCounted: 0, netPayroll: 0,
+      feesPaid: 0, taxPaid: 0, peakAssets: 0, maxDrawdownPct: 0, tradeCount: 0 },
     prevLossPct: 0, cutscene: null, lastTurnSkip: null, status: 'playing', ending: null,
+    slots: { action: [], recovery: { cardId: 'rest', grade: 'C' } },
+    rerollsLeft: 0,
   }
-}
-
-export function cardsPerTurn(state: GameState): number {
-  return state.player.employed ? 1 : 2
+  // drawSlots는 state.rng를 읽기만 하므로, 초기 슬롯을 뽑아 소비한 rng를 여기서
+  // 직접 상태에 반영한다 — 초기 시드 소비도 결정론의 일부다(같은 시드는 156턴을
+  // 바이트 단위로 재현해야 한다).
+  const [slots, rng2] = drawSlots(base)
+  return { ...base, slots, rng: rng2, rerollsLeft: rerollCount(base) }
 }
 
 function takePending(s: GameState, key: string): [number, GameState] {
@@ -47,7 +54,19 @@ function takePending(s: GameState, key: string): [number, GameState] {
 export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   if (state.status !== 'playing') throw new GameError('NOT_PLAYING')
   if (state.pendingChoices.length > 0) throw new GameError('CHOICE_PENDING')
-  if (cardIds.length > cardsPerTurn(state)) throw new GameError('TOO_MANY_CARDS')
+  // Ruling 15 — 같은 카드를 한 턴에 두 번 낼 수 없다. drawSlots가 행동 슬롯 안의
+  // 중복을 이미 막고 회복 카드와 행동 카드는 집합이 겹치지 않으므로, 슬롯 안 어떤
+  // 카드도 두 번 나타날 수 없다 — 따라서 cardIds의 중복은 언제나 부정한 입력이다.
+  // (막지 않으면 행동력 0인 회복 카드를 무제한으로 낼 수 있다: ['rest'] × 10으로
+  //  한 턴에 멘탈·컨디션이 30에서 100까지 찬다.)
+  if (new Set(cardIds).size !== cardIds.length) throw new GameError('DUPLICATE_CARD')
+  // 슬롯 밖 카드는 여기서 gradeOfSlot이 NOT_IN_SLOTS로 거부한다 — "이번 턴에 뽑힌
+  // 카드만 낼 수 있다"가 이 게임의 규칙이므로, 등급을 모르면 비용도 효과도 정할 수 없다.
+  // (Task 4의 임시 관대 조회 gradeOfSlotOrDefault를 이 태스크가 걷어냈다.)
+  const grades = cardIds.map(id => gradeOfSlot(state, id))
+  const budget = actionPoints(state)
+  const spent = cardIds.reduce((sum, id, i) => sum + cardApCost(id, grades[i]!), 0)
+  if (spent > budget) throw new GameError('NO_AP')
 
   let s: GameState = { ...state, cutscene: null, lastTurnSkip: null }
 
@@ -57,7 +76,7 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   const [skipped, afterSkip] = rollForcedSkip(s)
   s = afterSkip
   if (skipped) s = { ...s, lastTurnSkip: skipReason }
-  else for (const id of cardIds) s = playCard(s, id)
+  else cardIds.forEach((id, i) => { s = playCard(s, id, grades[i]!) })
 
   // 3. 가격
   const [impacts, afterImpacts] = resolveImpacts(s)
@@ -88,16 +107,44 @@ export function advanceTurn(state: GameState, cardIds: string[]): GameState {
   // 8. 보유 기간·트래커
   const holdings = s.player.holdings.map(h => ({ ...h, heldTurns: h.heldTurns + 1 }))
   s = { ...s, player: { ...s.player, holdings } }
+  // 최고 자산·최대 낙폭 — peak 갱신이 반드시 drawdown 계산보다 먼저다. 순서를 뒤바꾸면
+  // 그 턴에 신고점을 찍었는데도 낙폭이 잡히는 모순이 생긴다. peak > 0 가드는 파산으로
+  // 총자산이 0이 되는 경로에서 0으로 나누어 NaN이 트래커에 눌어붙는 것을 막는다.
+  const assets = totalAssets(s)
+  const peak = Math.max(s.trackers.peakAssets, assets)
+  const ddRaw = peak > 0 ? ((peak - assets) / peak) * 100 : 0
+  // 낙폭은 정의상 [0, 100]을 벗어날 수 없다 — 100%는 "가진 걸 전부 잃었다"는 뜻이고,
+  // 그 이상 잃을 원금은 없다. 그런데 담보 강제청산(checkMarginCall)으로 총자산이
+  // 음수가 되면(빚까지 진 상태) peak 대비 (peak-assets)/peak가 1을 넘어 dd가 100을
+  // 넘는다(Fix Round 1 — 리뷰 Major, 실측 150%·263.7%). 빚의 크기는 낙폭이 아니라
+  // player.loan이 말해야 하므로 여기서는 100에서 자른다. 하한 0은 peak = Math.max(...)
+  // 불변식상 dd가 음수가 될 수 없어 실질적으로 도달하지 않지만, 부동소수 오차에 대비해
+  // 방어적으로 남겨둔다.
+  const dd = Math.max(0, Math.min(100, ddRaw))
   s = { ...s, trackers: {
     ...s.trackers,
     cashRatioSum: s.trackers.cashRatioSum + cashRatio(s),
     turnsCounted: s.trackers.turnsCounted + 1,
     maxHeldTurns: Math.max(s.trackers.maxHeldTurns, ...holdings.map(h => h.heldTurns), 0),
+    peakAssets: peak,
+    maxDrawdownPct: Math.max(s.trackers.maxDrawdownPct, dd),
   } }
 
-  // 9. 종료 판정
+  // 8.5 다음 턴 슬롯 — 게이지 정산(6) 이후, 종료 판정(9) 이전이다. 여기 두면 이번 턴에
+  // 오른 스탯이 다음 턴 등급 굴림과 리롤 횟수에 곧바로 반영된다.
+  // **종료되는 턴에는 뽑지 않는다** — 아무도 쓰지 못할 슬롯을 뽑느라 rng를 소비하면
+  // 마지막 턴 이후의 상태가 이유 없이 달라진다. 그래서 종료 여부를 먼저 계산한다.
   const bankrupt = totalAssets(s) <= 0
-  if (bankrupt || s.turn >= BALANCE.totalTurns) {
+  const ending = bankrupt || s.turn >= BALANCE.totalTurns
+  if (!ending) {
+    // drawSlots는 rng를 읽기만 하므로, 소비한 rng를 여기서 상태에 반영해야 한다 —
+    // 반영하지 않으면 다음 턴의 가격·이벤트가 같은 난수를 다시 쓴다(결정론이 아니라 반복).
+    const [slots, slotRng] = drawSlots(s)
+    s = { ...s, slots, rng: slotRng, rerollsLeft: rerollCount(s) }
+  }
+
+  // 9. 종료 판정
+  if (ending) {
     // 마지막 턴에 새로 뽑힌 선택지는 미해결로 소멸한다 (의도된 동작, Ruling 50).
     // judgeEnding은 이 시점의 state로 이미 확정되므로, 남겨두면 이후 resolveChoice가
     // 굳어진 ending과 모순되는 cash/mental 변화를 사후에 반영할 수 있다.

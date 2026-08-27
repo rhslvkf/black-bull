@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { makeState, makeStock, makeStockDef } from '../testkit'
-import { buy, sell, canSell, maxBuyQty } from './trade'
+import { buy, sell, canSell, maxBuyQty, canAverageDown, averageDown } from './trade'
 import { totalAssets, cashRatio, portfolioLossPct, positionLossPct, priceOf, fee, tax } from './accounting'
 import { BALANCE } from '../balance'
 import { GameError } from '../error'
+import { loadCards } from './cards'
 
 describe('accounting', () => {
   it('보유 없으면 총자산 = 현금', () => {
@@ -224,5 +225,133 @@ describe('큰손 체결충격은 매수·매도 양쪽에 걸린다 (최종 리�
     const before = s.stocks[0]!.price
     const after = buy(s, 's1', 5_000_000)
     expect(after.stocks[0]!.price).toBe(before)
+  })
+})
+
+describe('averageDown', () => {
+  // Fix Round 2 #2(리뷰) — canBuy/canSell과 비대칭이던 부분. status를 안 보면
+  // 게임 종료 후에도(예: guard 없이 averageDown을 직접 부르는 호출자) NOT_PLAYING이
+  // 던져진다. canBuy/canSell처럼 canAverageDown도 조용히 ok:false를 돌려줘야 한다.
+  it('게임이 끝난 상태에서는 물타기할 수 없다 (canBuy/canSell과 대칭)', () => {
+    const s = makeState({
+      status: 'ended',
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    // 물타기 조건(보유·평단 이하·현금 충분) 자체는 전부 충족하는 상태다 — 그런데도
+    // status 때문에 막혀야 한다는 것을 보이려면 이 조건들을 만족시켜야 한다.
+    expect(s.player.holdings[0]!.avgCost).toBeGreaterThan(5000) // 평단보다 싸다
+    const chk = canAverageDown(s, 'sjc')
+    expect(chk.ok).toBe(false)
+    expect(chk.reason).toBe('게임이 끝났다')
+  })
+
+  it('게임이 끝난 상태에서 averageDown을 불러도 상태가 그대로다', () => {
+    const s = makeState({
+      status: 'ended',
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
+  it('보유하지 않은 종목은 물타기할 수 없다', () => {
+    const s = makeState({ player: { ...makeState().player, cash: 1_000_000, holdings: [] } })
+    expect(canAverageDown(s, 'sjc').ok).toBe(false)
+    // canAverageDown 판정만으로는 averageDown이 실제로 그 판정을 지키는지 고정하지 못한다
+    // (뮤테이션 검증 MU1: 가드 호출을 지워도 canAverageDown 자체는 여전히 false를 반환한다).
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
+  it('평단보다 현재가가 높으면 물타기할 수 없다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 12000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(canAverageDown(s, 'sjc').ok).toBe(false)
+    expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+  })
+
+  it('물타기하면 평단이 실제로 내려간다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    const after = averageDown(s, 'sjc', 500_000)
+    const h = after.player.holdings.find(x => x.stockId === 'sjc')!
+    expect(h.avgCost).toBeLessThan(10000)
+    expect(h.qty).toBeGreaterThan(10)
+  })
+
+  it('예산을 넘겨 쓰지 않는다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    const after = averageDown(s, 'sjc', 300_000)
+    expect(s.player.cash - after.player.cash).toBeLessThanOrEqual(300_000)
+  })
+
+  it('현금이 1주 값에 못 미치면 상태가 그대로다', () => {
+    const s = makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 100, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+    expect(averageDown(s, 'sjc', 100)).toEqual(s)
+  })
+
+  // 최종 리뷰 m1 — averageDown의 계약은 "던지지 않고 상태를 그대로 돌려준다"이고,
+  // app store.ts의 `doAverageDown`이 그 계약을 믿고 `guard()`(GameError를 삼키는 통로)
+  // 없이 부른다. 그런데 `budget`이 NaN이면 계약이 깨져 `BAD_QTY`가 그대로 새어나왔다:
+  //   Math.min(NaN, cash) === NaN → maxBuyQty가 NaN → `NaN < 1`이 **false**라 조기
+  //   반환을 통과 → buy(state, id, NaN)이 던진다.
+  // NaN과의 비교는 전부 false이므로 부등식 가드로는 원리적으로 못 막는다.
+  describe('숫자가 아닌 예산에도 계약을 지킨다 (최종 리뷰 m1 — 런타임 크래시 경로)', () => {
+    /** 물타기 조건(보유·평단 이하·현금 충분)을 전부 만족하는 상태 — 여기서 막히는
+     *  이유가 "조건 미달"이 아니라 "예산이 숫자가 아니다"임을 분명히 하기 위해서다. */
+    const ready = () => makeState({
+      stockDefs: [makeStockDef({ id: 'sjc' })],
+      stocks: [makeStock({ id: 'sjc', price: 5000 })],
+      player: { ...makeState().player, cash: 1_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }] },
+    })
+
+    it('전제 확인: 같은 상태에서 정상 예산이면 실제로 물타기가 일어난다', () => {
+      const s = ready()
+      expect(averageDown(s, 'sjc', 500_000)).not.toEqual(s)   // 이 전제가 없으면 아래가 공허하다
+    })
+
+    for (const [label, budget] of [
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+      ['-Infinity', Number.NEGATIVE_INFINITY],
+    ] as const) {
+      it(`예산이 ${label}이면 던지지 않고 상태가 그대로다`, () => {
+        const s = ready()
+        expect(() => averageDown(s, 'sjc', budget)).not.toThrow()
+        expect(averageDown(s, 'sjc', budget)).toEqual(s)
+      })
+    }
+
+    it('현금 자체가 NaN으로 오염돼 있어도 던지지 않는다 (두 번째 겹 — qty의 정수성)', () => {
+      const base = ready()
+      const s = { ...base, player: { ...base.player, cash: Number.NaN } }
+      expect(() => averageDown(s, 'sjc', 500_000)).not.toThrow()
+      expect(averageDown(s, 'sjc', 500_000)).toEqual(s)
+    })
+  })
+})
+
+describe('카드 풀 재편', () => {
+  it('물타기 카드가 사라졌다', () => {
+    expect(loadCards().find(c => c.id === 'avgdown')).toBeUndefined()
+  })
+  it('존버가 회복 카드가 됐다', () => {
+    expect(loadCards().find(c => c.id === 'hodl')!.isRecovery).toBe(true)
   })
 })

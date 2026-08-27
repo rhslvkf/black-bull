@@ -1,10 +1,13 @@
 import { ENDINGS } from '@bb/core'
 import {
-  TIERS, MOODS, NPCS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS, PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
+  TIERS, MOODS, NPCS, NPC_MOODS, BACKGROUNDS, SECTORS, ENDING_IDS, TIER_NAMES, UI_KEYS,
+  PROMOTE_TIERS, DEMOTE_TIERS, type ArtKey,
 } from './keys'
 import { makeCharacter, type ArtProps } from './parts/Character'
 import { makePortrait } from './parts/Portraits'
 import { makeScene, makeIcon } from './parts/Scenes'
+import { makeBackground } from './parts/Backgrounds'
+import { NPC_NAME_KO } from '../design/speakers'
 
 export type ArtSource =
   | { kind: 'svg'; component: React.FC<ArtProps> }
@@ -28,7 +31,12 @@ const UI_GLYPH: Record<string, string> = {
 // 않도록, 사람이 읽을 수 있는 한국어 설명을 키 단위로 미리 만들어 둔다. Art.tsx가
 // image 소스일 때 이 맵을 alt로 쓴다.
 const MOOD_KO: Record<string, string> = { normal: '평상시', shaken: '흔들리는 모습', joy: '기쁜 모습' }
-const NPC_NAME_KO: Record<string, string> = { daebak: '박대박', cho: '최존버', kim: '김실장', mom: '엄마' }
+// NPC_NAME_KO는 Task 17에서 design/speakers.ts로 옮겼다(대화창도 같은 이름이 필요해서다) —
+// 값은 그대로, 위에서 import해 쓴다.
+// Task 10: 조연 초상의 무드 축(normal/alt)은 char.*의 MOOD_KO(normal/shaken/joy)와 값이
+// 겹치지 않는 별개 맵이다 — 하나로 합치면 'alt'가 없는 키에도 존재하는 것처럼 보인다.
+const NPC_MOOD_KO: Record<string, string> = { normal: '기본 모습', alt: '다른 모습' }
+const BG_NAME_KO: Record<string, string> = { office: '사무실', home: '집', street: '거리', exchange: '거래소' }
 const UI_NAME_KO: Record<string, string> = {
   'ui.mental': '멘탈', 'ui.condition': '컨디션', 'ui.cash': '현금', 'ui.assets': '자산',
   'ui.up': '상승', 'ui.down': '하락', 'ui.lock': '잠금', 'ui.rumor': '루머',
@@ -47,9 +55,15 @@ for (const t of TIERS) for (const m of MOODS) {
   entries.push([key, { kind: 'svg', component: makeCharacter(t, m, alt) }])
   altEntries.push([key, alt])
 }
-for (const n of NPCS) {
-  entries.push([`npc.${n}`, { kind: 'svg', component: makePortrait(n, NPC_NAME_KO[n] ?? n) }])
-  altEntries.push([`npc.${n}`, `등장인물 ${NPC_NAME_KO[n] ?? n}`])
+for (const n of NPCS) for (const m of NPC_MOODS) {
+  const alt = `등장인물 ${NPC_NAME_KO[n] ?? n} (${NPC_MOOD_KO[m]})`
+  entries.push([`npc.${n}.${m}`, { kind: 'svg', component: makePortrait(n, m, alt) }])
+  altEntries.push([`npc.${n}.${m}`, alt])
+}
+for (const b of BACKGROUNDS) {
+  const alt = `배경: ${BG_NAME_KO[b] ?? b}`
+  entries.push([`bg.${b}`, { kind: 'svg', component: makeBackground(b, alt) }])
+  altEntries.push([`bg.${b}`, alt])
 }
 // settleTier(economy.ts)는 next > cur일 때 promote.${next}(next=1..5), next < cur일 때
 // demote.${next}(next=0..4)를 만든다 — promote.0과 demote.5는 도달 불가능하다.
@@ -79,3 +93,17 @@ export const ART = Object.fromEntries(entries) as Record<ArtKey, ArtSource>
 export const ALL_ART_KEYS = entries.map(([k]) => k) as ArtKey[]
 /** Minor #2: 이미지로 교체된 아트 키의 <img alt>에 쓰는 한국어 설명. */
 export const ART_ALT = Object.fromEntries(altEntries) as Record<ArtKey, string>
+
+// 리뷰 Fix Round 1 (Major 4 연장): "이미지로 교체됐는가"를 Art.tsx와 slots.tsx가 각자
+// `kind === 'image'`를 따로 비교하면, 둘 중 하나만 고쳐질 때 조용히 어긋날 수 있는 구조가
+// 생긴다. 이 타입가드 하나로 판정을 통일한다 — Art.tsx의 렌더 분기와 slots.tsx의
+// `hasImage` 둘 다 이 함수를 호출하므로, 어긋나는 두 번째 구현 자체가 존재하지 않는다.
+export function isImageSource(src: ArtSource | undefined): src is Extract<ArtSource, { kind: 'image' }> {
+  return src?.kind === 'image'
+}
+
+/** id가 실제 이미지로 교체됐는지 여부. Art.tsx의 <img>/<svg> 분기와 항상 같은 답을
+ *  낸다 — 둘 다 isImageSource 하나만 호출하기 때문이다. */
+export function hasImage(id: ArtKey): boolean {
+  return isImageSource(ART[id])
+}

@@ -1,0 +1,105 @@
+/*
+ * 디자인 토큰 — 색·간격·타이포·모션.
+ *
+ * 기존 15개 색 토큰(--bg, --panel, --panel-2, --border, --text, --muted, --accent,
+ * --accent-soft, --gold, --bull, --bear, --danger, --danger-soft, --good, --rumor)은
+ * 이미 전 화면이 참조하고 있어 이름을 그대로 유지한다. 이 파일이 그 정의를
+ * `index.css`에서 옮겨받는 자리이고, 재설계 스펙(§3·§6)이 요구하는 의미 이름
+ * (--surface, --up, --down, --neutral)은 기존 값을 가리키는 별칭으로 추가한다 —
+ * 새 화면 코드는 의미 이름을, 기존 화면 코드는 기존 이름을 그대로 쓸 수 있다.
+ *
+ * 등급색 6종(--grade-E ~ --grade-S)은 "시장의 온도"를 은유로 잡았다 — 차가운 강철빛
+ * (E)에서 시작해 이끼빛 → 올리브 → 호박빛 → 진한 주황을 거쳐 S등급의 타오르는 금색으로
+ * 올라간다. 등급이 오를수록 카드가 "달아오른다"는 감각을 색으로 준다. 상승(빨강)·하락
+ * (파랑) 두 색과 채도·색상 모두 겹치지 않게 골라, 카드 등급 배지가 시세 등락 색과
+ * 섞여 읽히지 않는다.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- 색: 기존 15종(이름 유지) ---------- */
+  --bg: #0b0e13;
+  --panel: #151a22;
+  --panel-2: #1a212b;
+  --border: #262e3a;
+  --text: #e9edf3;
+  --muted: #8892a0;
+  --accent: #4f8ff7;
+  --accent-soft: #1c2a40;
+  --gold: #e6b45a;
+  --bull: #f0616d;
+  --bear: #4f8ff7;
+  --danger: #e05252;
+  --danger-soft: #2a1518;
+  --good: #3fb950;
+  --rumor: #c893ff;
+
+  /* ---------- 색: 재설계 스펙이 요구하는 의미 이름(별칭) ---------- */
+  --surface: var(--panel);
+  --surface-2: var(--panel-2);
+  --up: var(--bull);     /* 상승 = 빨강(한국 관례) */
+  --down: var(--bear);   /* 하락 = 파랑(한국 관례) */
+  --neutral: var(--muted); /* 0은 중립 */
+
+  /* ---------- 색: 카드 등급 6종 (E < D < C < B < A < S) ---------- */
+  --grade-E: #6b7c93;
+  --grade-D: #5fa392;
+  --grade-C: #8fae4f;
+  --grade-B: #d99a3e;
+  --grade-A: #e2703f;
+  --grade-S: #ffcf5c;
+
+  /* ---------- 색: 스탯 5종(§2) — 등급색·상승/하락색과 색상환 위치를 겹치지 않게
+     고른다. StatChips가 스탯마다 이 중 하나를 --chip으로 내려써 칩 색을 정한다. */
+  --stat-grit: #c97a3d;      /* 강인함 — 구릿빛, 버티는 인내 */
+  --stat-stamina: #3fae6a;   /* 체력 — 녹색, 컨디션·회복과 결이 맞는 건강함 */
+  --stat-info: #2fb6c4;      /* 정보력 — 청록, 신호·정보 채널 */
+  --stat-analysis: #7c6ff0;  /* 분석력 — 보라, 냉철한 분석 */
+  --stat-network: #d9558f;   /* 인맥 — 자홍, 사람과의 관계 */
+  /** 기본값(폴백)뿐이다 — `StatChips`가 칩마다 `style={{ '--chip': 'var(--stat-<key>)' }}`로
+   *  실제 값을 인라인으로 덮어쓴다. 여기서 정의하는 이유는 index.css의
+   *  '정의되지 않은 var(--x) 참조 금지' 검사(tokens.test.ts) 때문이다 — 정적 CSS
+   *  파일만 보면 `--chip`은 어떤 요소에도 선언되지 않은 것처럼 보인다. */
+  --chip: var(--muted);
+
+  /* ---------- 색: 대화창 화자 이름표 4종(§4) — 조연마다 고정색. 등급색·스탯색과
+     색상환 위치를 겹치지 않게 고른다. 정체를 감춘 화자('???')는 --speaker-unknown
+     (중립 회색)을 쓴다. DialogueBox가 화자마다
+     `style={{ backgroundColor: 'var(--speaker-<id>)' }}`로 인라인으로 내려쓴다. */
+  --speaker-daebak: #d97b3f;  /* 박대박 — 들뜬 호언장담, 따뜻한 주황 */
+  --speaker-cho: #3f8fae;     /* 최존버 — 15년째 안 파는 뚝심, 차분한 청록 */
+  --speaker-kim: #9a5fd1;     /* 김실장 — 수상한 리딩방 실장, 의심스러운 보라 */
+  --speaker-mom: #d9738f;     /* 엄마 — 따뜻한 걱정, 로즈 */
+  --speaker-unknown: #8892a0; /* '???' — 정체 미상, 중립 회색(--muted와 같은 값) */
+
+  /* ---------- 간격 8단계 ---------- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+
+  /* ---------- 타이포 6단계 (font-size) ---------- */
+  --text-1: 11px;
+  --text-2: 12px;
+  --text-3: 14px;
+  --text-4: 16px;
+  --text-5: 20px;
+  --text-6: 26px;
+
+  /* ---------- 모션 3단계 ---------- */
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+  --dur-slow: 480ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /** 기본값(폴백)뿐이다 — `--chip`(위)과 같은 이유. App.tsx가 탭 전환마다
+   *  `style={{ '--tab-slide-x': '±12px' }}`로 인라인 지정한다(§6 "탭 전환 슬라이드"
+   *  방향, Fix Round 1 Minor 2) — 여기 없으면 tokens.test.ts의 '정의되지 않은
+   *  var(--x) 참조 금지' 검사가 오탐한다. */
+  --tab-slide-x: 12px;
+}
