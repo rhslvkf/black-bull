@@ -218,6 +218,18 @@ describe('prefers-reduced-motion 전역 안전망 (§6 제1 제약)', () => {
     expect(block).toMatch(/animation-duration:\s*0\.01ms\s*!important/)
     expect(block).toMatch(/transition-duration:\s*0\.01ms\s*!important/)
   })
+
+  // Fix Round 1 Minor 4(리뷰) — 위 테스트는 duration 두 줄만 보고 이 줄은 따로
+  // 확인하지 않아, `animation-iteration-count: 1 !important`를 지워도 안 잡혔다.
+  // `infinite` 반복 애니메이션(예: `.gauge-critical .gauge-fill`)이 duration만
+  // 0.01ms로 눌려도 여전히 "무한히" 도는 상태로 남을 수 있어, 반복 횟수 자체를
+  // 1로 강제하는 이 줄이 별도로 고정돼야 한다.
+  it('animation-iteration-count도 1로 강제한다 (Fix Round 1 Minor 4 — 무한 반복 방지)', () => {
+    const m = clean.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/)
+    expect(m, 'reduced-motion 전역 블록을 찾을 수 없다').not.toBeNull()
+    const block = m![1]!
+    expect(block).toMatch(/animation-iteration-count:\s*1\s*!important/)
+  })
 })
 
 describe('루머 색은 하드코딩이 아니라 --rumor 토큰을 통해 적용된다 (Fix Round 1 Major 2)', () => {

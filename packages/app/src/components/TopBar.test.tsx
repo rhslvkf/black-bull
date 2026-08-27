@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { BALANCE } from '@bb/core'
 import { renderWithState, setState } from '../testUtils'
 import { won } from '../format'
@@ -108,5 +108,32 @@ describe('총자산 롤업 (§6 상태 전이, Task 22 브리프)', () => {
     renderWithState({ player: { cash: 7_000_000 } })
     const el = screen.getByTestId('topbar-assets')
     expect(el.textContent).toBe(won(Number(el.getAttribute('data-value'))))
+  })
+})
+
+// Fix Round 1 Major 2(리뷰) — 위 두 테스트는 "롤업 도중엔 목표보다 작다"만 본다.
+// 목표값 자체가 틀리는 뮤테이션(최종적으로 실제 자산과 다른 수로 수렴)은 못 잡는다.
+// 실제 모션 경로(reduced-motion 아님)로 rAF를 충분히 흘려보내(실시간 대기 —
+// motion.test.ts의 '시간이 지나면 한 글자씩 늘어난다'와 같은 기법, 실제 브라우저와
+// 같은 jsdom 내장 requestAnimationFrame을 그대로 쓴다) 애니메이션이 완료된 뒤
+// **정확히** 목표값인지 정확 일치로 본다(부분 문자열이 아니다 — 이 저장소에서
+// 부분 문자열이 오염된 값을 통과시킨 전례가 두 번 있다).
+describe('롤업이 정확한 목표값에 수렴한다 (Fix Round 1 Major 2)', () => {
+  it('애니메이션이 완료되면 정확히 실제 자산과 같은 값을 보여준다', async () => {
+    renderWithState({ player: { cash: 1_000_000 } })
+    setState({ player: { cash: 2_345_678 } })
+    const el = screen.getByTestId('topbar-assets')
+    // COUNT_UP_DURATION(motion.ts, --dur-slow=480ms)이 끝날 때까지 실시간으로 기다린다
+    // (motion.test.ts의 '시간이 지나면 한 글자씩 늘어난다'와 같은 기법 — 실제 jsdom
+    // 내장 requestAnimationFrame을 그대로 굴린다). 환경마다 프레임 타이밍이 들쭉날쭉할
+    // 수 있어 한 번에 크게 기다리지 않고, 목표값에 도달할 때까지 짧게 반복 대기한다
+    // (최대 3초 — 480ms의 6배 이상 여유).
+    for (let i = 0; i < 60; i++) {
+      if (el.getAttribute('data-value') === '2345678') break
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    }
+    expect(el.getAttribute('data-value')).toBe('2345678') // 정확 일치
+    expect(el.textContent).toBe(won(2_345_678))
   })
 })

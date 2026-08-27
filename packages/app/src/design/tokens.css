@@ -96,4 +96,10 @@
   --dur-base: 240ms;
   --dur-slow: 480ms;
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /** 기본값(폴백)뿐이다 — `--chip`(위)과 같은 이유. App.tsx가 탭 전환마다
+   *  `style={{ '--tab-slide-x': '±12px' }}`로 인라인 지정한다(§6 "탭 전환 슬라이드"
+   *  방향, Fix Round 1 Minor 2) — 여기 없으면 tokens.test.ts의 '정의되지 않은
+   *  var(--x) 참조 금지' 검사가 오탐한다. */
+  --tab-slide-x: 12px;
 }

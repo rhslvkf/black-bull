@@ -105,3 +105,21 @@ describe('흔들림에서 벗어나면 맥동이 사라진다 (MU6)', () => {
     unmount()
   })
 })
+
+// Fix Round 1 Minor 3(리뷰) — 이전엔 어떤 테스트도 edge-pulse가 `infinite`가 되는
+// 뮤테이션을 잡지 못했다. "960ms 1회성"이라고 보고했지만 실제로 고정돼 있지 않았다.
+// 정확 일치(리터럴 960 — motion.ts의 계산식을 다시 베끼지 않는다)로 애니메이션
+// shorthand 문자열 전체를 본다 — `infinite`가 뒤에 붙으면 이 비교가 반드시 깨진다.
+describe('가장자리 맥동은 정확히 한 번만 재생된다 (Fix Round 1 Minor 3)', () => {
+  it('애니메이션 문자열에 iteration count(예: infinite)가 붙지 않는다', () => {
+    const { unmount } = renderWithState({ player: { mental: 40 } }, <App />)
+    fireEvent.click(screen.getByTestId('prologue-skip'))
+    setState({ player: { mental: 12 } })
+    const anim = screen.getByTestId('app-root').style.animation
+    // 리터럴 960ms — App.tsx의 PULSE_DURATION_MS(DUR_SLOW*2)와 값은 같지만, 여기서
+    // 그 계산식을 다시 쓰지 않는다(자기충족 기대값 금지, 이 저장소의 반복 결함).
+    expect(anim).toBe('edge-pulse 960ms var(--ease-standard)')
+    expect(anim).not.toContain('infinite')
+    unmount()
+  })
+})

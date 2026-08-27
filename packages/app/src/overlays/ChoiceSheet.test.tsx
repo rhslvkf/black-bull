@@ -4,6 +4,7 @@ import { loadEvents, type EventChoice } from '@bb/core'
 import { ChoiceSheet } from './ChoiceSheet'
 import { renderEventWithChoices, currentState } from '../testUtils'
 import { matchMediaMock } from '../design/testUtils'
+import { DUR_BASE } from '../design/motion'
 
 // Ruling 18 — packages/app에는 @testing-library/jest-dom이 없다. 브리프의
 // toBeInTheDocument는 getByTestId가 못 찾으면 이미 던지므로 그 사실 자체로 대체하고
@@ -204,6 +205,17 @@ describe('ChoiceSheet — 컴포넌트 단위 방어 (Task 19 뮤테이션 대�
     const anim = (screen.getByTestId('choice-sheet') as HTMLElement).style.animation
     expect(anim).not.toBe('')
     expect(anim).not.toBe('none')
+  })
+
+  // Fix Round 1 Minor 1(리뷰) — duration이 motion.ts의 DUR_BASE(따라서 tokens.css
+  // --dur-base)에서 유도되는지 직접 본다. 이전엔 '240ms'가 하드코딩돼 있었다 —
+  // 리터럴로 되돌려도(우연히 같은 숫자가 아닌 한) 이 테스트가 잡는다.
+  it('슬라이드업 길이가 motion.ts의 DUR_BASE에서 유도된다 (Fix Round 1 Minor 1)', () => {
+    render(<ChoiceSheet eventId="e1" choices={choices} open onChoose={() => {}} />)
+    // 전역 제약: `as` 타입 단언 금지 — 이 파일의 기존 테스트들과 달리 캐스트 없이도
+    // `screen.getByTestId`가 이미 HTMLElement를 돌려주므로 `.style`에 바로 접근한다.
+    const anim = screen.getByTestId('choice-sheet').style.animation
+    expect(anim).toContain(`${DUR_BASE}ms`)
   })
 
   // 직접 확인 요청 — 실제 콘텐츠에서 가장 긴 선택지 텍스트로도 시트가 깨지지 않는지.

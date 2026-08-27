@@ -66,9 +66,12 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* §6 "화면 전환 — 탭 전환 슬라이드". App.tsx가 탭이 바뀔 때마다 `.body`를 새 key로
  * 다시 마운트하며 인라인 style(animation)로 이 키프레임을 건다(prefers-reduced-motion
- * 이면 아예 안 건다). */
+ * 이면 아예 안 건다). 시작 오프셋은 `--tab-slide-x`(App.tsx가 이동 방향에 따라 +12px/
+ * -12px로 인라인 지정, Fix Round 1 Minor 2)를 쓴다 — 방향과 무관하게 항상 오른쪽에서
+ * 들어오던 이전 버전은 왼쪽 탭으로 옮겨도 똑같이 오른쪽에서 슬라이드해 들어오는
+ * 결함이 있었다. */
 @keyframes tab-slide {
-  from { transform: translateX(10px); opacity: 0; }
+  from { transform: translateX(var(--tab-slide-x, 12px)); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 

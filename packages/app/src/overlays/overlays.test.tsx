@@ -568,22 +568,12 @@ describe('CutsceneView', () => {
     expect(screen.getByTestId('cutscene-content').style.animation).toContain('cutscene-crossfade')
   })
 
-  // Task 22 — 위 두 테스트를 "안쪽 래퍼"로 옮긴 대칭으로, 바깥(불투명 장면 배경 자체인
-  // `cutscene`)에는 어떤 모션 상황에서도 애니메이션이 걸리면 안 된다는 것을 직접
-  // 고정한다. CSS 소스 텍스트 파싱(위 "완전 불투명 장면이다" describe)은 인라인
-  // style을 보지 못하므로(Task 21 재리뷰 MU-B) 이 런타임 검사가 그 구멍을 메운다 —
-  // 누군가 크로스페이드를 다시 바깥 요소로 옮기면(과거 실제로 그랬던 코드) 여기서
-  // 즉시 잡힌다.
-  it('불투명 장면 배경(cutscene) 자체는 어떤 모션 설정에서도 애니메이션이 걸리지 않는다 (오버레이 불투명 불변식 우선)', () => {
-    const first = renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
-    expect(screen.getByTestId('cutscene').style.animation).toBe('')
-    first.unmount()
-
-    matchMediaMock('(prefers-reduced-motion: reduce)', true)
-    const second = renderWithState({ cutscene: 'cutscene.demote.2' }, <CutsceneView />)
-    expect(screen.getByTestId('cutscene').style.animation).toBe('')
-    second.unmount()
-  })
+  // Fix Round 1 Major 1(리뷰) — 바깥(불투명 장면 배경 자체인 `cutscene`)이 어떤
+  // 모션 상황에서도 애니메이션이 걸리면 안 된다는 런타임 검사는 이제 프롤로그·
+  // 엔딩과 함께 `opaqueInvariant.test.tsx` 한 곳에서 묶어 돈다(리뷰가 지적한 대로
+  // 컷신에서만 이 장치가 있고 같은 클래스인 프롤로그·엔딩은 무방비였다 — 세 장면이
+  // 같은 불변식을 공유하니 검사도 한 곳에서 같이 돌아야 네 번째 장면이 생겨도
+  // 빠뜨리지 않는다).
 
   // MU13 — 전역 제약 "터치 타깃 44px 이상". 44는 계획서 요구값이지 구현 상수가 아니므로
   // (ChoiceSheet.test.tsx·DialogueBox.test.tsx와 같은 방식으로) 테스트 안에 리터럴로 못박는다.

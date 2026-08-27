@@ -146,4 +146,23 @@ describe('탭 전환 슬라이드 (§6 화면 전환, MU11)', () => {
     expect(screen.getByTestId('tab-body').style.animation).toContain('tab-slide')
     expect(screen.getByTestId('filter-all')).toBeDefined()
   })
+
+  // Fix Round 1 Minor 2(리뷰) — 방향이 전혀 검증되지 않아 좌우를 뒤집어도 안 잡혔다.
+  // TAB_ORDER(홈=0·시세=1·계좌=2·도감=3) 기준으로 오른쪽 탭(인덱스 증가)으로 가면
+  // 오른쪽에서(+12px), 왼쪽 탭(인덱스 감소)으로 가면 왼쪽에서(-12px) 슬라이드가
+  // 시작돼야 한다 — index.css의 `--tab-slide-x` 커스텀 프로퍼티로 실측한다.
+  it('오른쪽 탭(시세, 인덱스 증가)으로 가면 오른쪽에서 슬라이드가 시작된다(+12px)', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.getPropertyValue('--tab-slide-x')).toBe('12px')
+  })
+
+  it('왼쪽 탭(홈, 인덱스 감소)으로 돌아가면 왼쪽에서 슬라이드가 시작된다(-12px)', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market')) // 0 → 1
+    fireEvent.click(screen.getByTestId('tab-home'))   // 1 → 0 (역방향)
+    expect(screen.getByTestId('tab-body').style.getPropertyValue('--tab-slide-x')).toBe('-12px')
+  })
 })

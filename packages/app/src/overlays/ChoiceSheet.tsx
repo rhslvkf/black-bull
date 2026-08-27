@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { EventChoice } from '@bb/core'
-import { prefersReducedMotion } from '../design/motion'
+import { DUR_BASE, prefersReducedMotion } from '../design/motion'
 import { TOUCH_TARGET_PX } from '../design/layout'
 
 export interface ChoiceSheetProps {
@@ -65,7 +65,7 @@ export function ChoiceSheet({ eventId, choices, open, onChoose }: ChoiceSheetPro
   // 즉시 제자리에 나타난다. jsdom은 외부 CSS(@media 포함)를 읽지 않으므로(Ruling 20과
   // 같은 이유) 인라인 style로 내려 실측 가능하게 한다 — DialogueBox 로그 토글의
   // TOUCH_TARGET_PX와 같은 기법이다.
-  const animation = prefersReducedMotion() ? 'none' : 'choice-sheet-slide-up 240ms ease-out'
+  const animation = prefersReducedMotion() ? 'none' : `choice-sheet-slide-up ${DUR_BASE}ms ease-out`
 
   return (
     <div className="choice-sheet" data-testid="choice-sheet" style={{ animation }}>
