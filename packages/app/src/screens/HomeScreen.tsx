@@ -41,7 +41,11 @@ export function HomeScreen() {
       <NewsTicker />
       <StatChips />
       <ActionMeter picked={picked} />
-      <h2 className="section-title">이번 주에 뭘 할까</h2>
+      {/* 예전에는 여기 <h2 className="section-title">이번 주에 뭘 할까</h2>가 있었다.
+          §3.1 다이어그램에 없는 행이고(행동력 행 바로 아래가 카드 2x2다), 제목 18px과
+          위아래 여백 24px을 합쳐 42px — 390x844에서 카드 아래 줄과 '한 주 넘기기'가
+          탭바에 가려지던 세로 초과분의 3분의 1이 이 한 줄이었다. 카드 타일 자체가
+          "고를 것"임을 이미 말하므로 정보 손실도 없다(Task 24 세로 예산 재배분). */}
       <CardGrid picked={picked} onPick={pick} />
       {blocked && <p className="turn-blocked">먼저 마주한 상황부터 정리해야 한다.</p>}
       {burnoutAhead && (

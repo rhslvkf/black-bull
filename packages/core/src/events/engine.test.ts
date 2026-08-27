@@ -75,6 +75,20 @@ describe('revealRumors', () => {
     const s = pending(5); s.player.stats.info = 10
     expect(revealRumors(s).news.some(n => n.kind === 'rumor')).toBe(true)
   })
+  it("루머 제목은 원제목 앞에 '[루머] ' 접두사를 붙인 것과 정확히 같다", () => {
+    // 플레이어에게 보이는 한국어 문구인데 지금까지 어떤 테스트도 이 문자열을 고정하지
+    // 않았다 — 접두사를 지우거나 다른 말로 바꿔도 전부 그린이었다(Task 14 리뷰 이월).
+    // app은 접두사가 아니라 `kind === 'rumor'`로 루머를 판별하므로(NewsTicker의 isRumor)
+    // 이 문구가 조용히 바뀌어도 화면은 멀쩡히 동작하고, 그래서 더더욱 여기서 잠가야 한다.
+    //
+    // `toContain('[루머]')`로 쓰지 않는 이유: 부분 문자열 검사는 접두사만 남기고 원제목을
+    // 통째로 날려도('[루머] ' 하나만 있어도) 통과한다 — 이 저장소가 이미 두 번 밟은
+    // 함정이다. 완성된 제목 전체를 통짜로 비교한다.
+    const s = pending(5); s.player.stats.info = 10
+    const rumors = revealRumors(s).news.filter(n => n.kind === 'rumor')
+    expect(rumors).toHaveLength(1)
+    expect(rumors[0]!.title).toBe('[루머] 수주 임박')
+  })
   it('같은 루머를 두 번 노출하지 않는다', () => {
     let s = pending(5); s.player.stats.info = 10
     s = revealRumors(s)

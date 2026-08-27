@@ -33,14 +33,25 @@ ul { list-style: none; padding: 0; margin: 0; }
   }
 }
 
+/* 세로 예산의 뼈대 (Task 24).
+ * 예전에는 `min-height: 100dvh`만 있고 `.body`가 `min-height: auto`(플렉스 기본값)라
+ * 내용이 길어지면 `.app` 자체가 뷰포트보다 커졌다 — 390x844에서 문서 scrollHeight가
+ * 954px까지 늘어났고, `position: fixed` 탭바가 그 위에 겹쳐 '한 주 넘기기' 버튼의
+ * 아래 72px과 카드 아래 줄을 가렸다(Task 14 리뷰 실측 924~941px과 같은 결함).
+ * 고치는 방법은 세 줄이다:
+ *   1) `height: 100dvh` — 앱은 정확히 뷰포트 한 장이다(넘치면 늘어나는 게 아니라 안에서 스크롤).
+ *   2) `.body { min-height: 0 }` — 플렉스 아이템이 내용 최소 크기 아래로 줄어들 수 있어야
+ *      `overflow-y: auto`가 실제로 동작한다. 이게 없으면 overflow 선언이 죽은 코드다.
+ *   3) 탭바를 흐름 안(`position: static`)으로 되돌린다 — 겹침이 구조적으로 불가능해진다. */
 .app {
   max-width: 480px;
   margin: 0 auto;
-  min-height: 100dvh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   position: relative;
+  overflow: hidden;
 }
 .app.start {
   align-items: center;
@@ -86,13 +97,17 @@ ul { list-style: none; padding: 0; margin: 0; }
   box-shadow: 0 8px 24px -8px rgba(79, 143, 247, .6);
 }
 
-.body { flex: 1; overflow-y: auto; padding: 14px 14px 92px; }
+/* `min-height: 0`이 핵심이다(위 .app 주석). 하단 패딩 92px은 고정 탭바를 피하려던
+ * 임시방편이었는데, 탭바가 흐름 안으로 들어오면서 필요 없어졌다 — 그만큼이 그대로
+ * 세로 예산으로 돌아온다. 홈은 이 안에서 스크롤 없이 한 장에 들어간다. */
+.body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; }
 
 /* ---------- HUD ---------- */
 .hud {
   position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, var(--panel), var(--bg));
-  padding: 10px 14px 12px;
+  /* §3.1 게이지 행 예산 28px에 맞춘 패딩(Task 24) — 예전 10/12는 실측 38px이었다. */
+  padding: 8px 14px 9px;
   border-bottom: 1px solid var(--border);
   transition: box-shadow .3s;
 }
@@ -122,8 +137,11 @@ ul { list-style: none; padding: 0; margin: 0; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---------- Tab bar ---------- */
+/* 흐름 안에 있는 `.app`의 마지막 플렉스 아이템이다(Task 24). `position: fixed`였을
+ * 때는 어떤 화면이든 아래 56px을 자기 몫으로 가져가면서도 레이아웃 계산에는 참여하지
+ * 않아, 내용이 길어지면 조용히 그 위를 덮었다. */
 .tabbar {
-  position: fixed; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
+  flex: 0 0 auto;
   display: grid; grid-template-columns: repeat(4, 1fr);
   background: var(--panel); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
@@ -137,7 +155,17 @@ ul { list-style: none; padding: 0; margin: 0; }
 .tabbar button.active .tabbar-glyph { filter: none; }
 
 /* ---------- Home / TopBar / CharacterStage ---------- */
-.screen.home { display: flex; flex-direction: column; }
+/* 홈은 `.body` 한 장을 정확히 채운다. 남거나 모자란 세로는 **캐릭터 스테이지**가
+ * 흡수한다(아래 .char-stage의 flex) — 조작부(스탯·행동력·카드·한 주 넘기기)는 어떤
+ * 뷰포트에서도 잘리지 않고, 줄어드는 쪽은 장식인 스테이지다(Task 24 세로 예산 재배분). */
+.screen.home { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* 홈 외 화면(시세·계좌·도감)은 예전처럼 내용만큼 자라고 `.body`가 스크롤한다. */
+.screen:not(.home) { flex: 0 0 auto; }
+/* 홈의 자식은 기본적으로 **줄어들지 않는다**. 이 한 줄이 없으면 세로가 모자랄 때
+ * 브라우저가 모든 자식을 기준 크기 비율대로 함께 찌그러뜨려, 카드·버튼 글자가 잘리는
+ * 방식으로 '들어맞는' 화면이 된다. 줄어드는 창구는 아래 스테이지 하나뿐이다. */
+.screen.home > * { flex: 0 0 auto; }
+.screen.home > .char-stage { flex: 0 1 auto; min-height: 170px; }
 
 /* §3.1 상단바: 메뉴 / 연차·주차·D-day / 총자산 / 정보. 진행바(Hud가 이미 그린다)와
    나머지 HUD 요소는 Task 12가 Hud를 정리하면서 이 자리로 옮겨온다. */
@@ -146,7 +174,7 @@ ul { list-style: none; padding: 0; margin: 0; }
      내려준다 — 여기서 세로 패딩을 더하면 그 예산을 넘긴다(리뷰 Fix Round 1 Minor 1:
      기존 6px+12px 패딩이 44px 버튼과 합쳐져 63px까지 밀려났던 원인). */
   display: flex; align-items: center; gap: 10px;
-  padding: 0; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  padding: 0; border-bottom: 1px solid var(--border); margin-bottom: 10px;
   box-sizing: border-box;
 }
 .topbar-icon-btn {
@@ -169,7 +197,7 @@ ul { list-style: none; padding: 0; margin: 0; }
    진척을 보여준다. 높이(12px)는 TurnProgress.tsx의 상수가 인라인으로 내려주므로
    여기서 다시 정의하지 않는다. */
 .turn-progress {
-  background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px;
+  background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 10px;
 }
 .turn-progress-fill {
   height: 100%; border-radius: 999px;
@@ -181,6 +209,12 @@ ul { list-style: none; padding: 0; margin: 0; }
    티어·수익률 배지가 뜬다. 높이(260px)는 CharacterStage.tsx의 상수가 인라인으로
    내려주므로 여기서 다시 정의하지 않는다. */
 .char-stage {
+  /* 인라인 height(CharacterStage.tsx의 CHARACTER_STAGE_HEIGHT_PX = 260px, §3.1 예산)가
+   * 플렉스 기준 크기이자 상한이고, 세로가 모자라면 여기서만 줄어든다 — min-height가
+   * 그 하한이다. 스펙 §3.1의 260px을 '고정'이 아니라 '상한'으로 읽는 셈인데, 다이어그램의
+   * 합(770px)에 구분선·여백 몫이 전혀 없어 390x844에서 그대로는 성립하지 않기 때문이다.
+   * 줄어들 후보 중 스테이지를 고른 이유: 이미지 슬롯은 비율만 유지되면 되고(§5 폴백이
+   * 있다), 나머지 행은 전부 조작부라 잘리면 게임이 진행되지 않는다. */
   position: relative; width: 100%; overflow: hidden;
   border-radius: 18px; border: 1px solid var(--border);
   background: var(--panel);
@@ -222,7 +256,7 @@ ul { list-style: none; padding: 0; margin: 0; }
  * 높이(32px)는 NewsTicker.tsx의 TICKER_HEIGHT_PX가 인라인으로 내려주므로 여기서
  * 다시 정의하지 않는다. 1차 NewsFeed(최근 8건을 세로로 쌓던 목록)를 대체한다 —
  * 156턴 동안 최대 312건이 나와 목록으로는 소화되지 않는다(주석은 NewsTicker.tsx 참고). */
-.news-ticker-wrap { margin: 8px 0 4px; }
+.news-ticker-wrap { margin: 8px 0 0; flex: 0 0 auto; }
 .ticker-line {
   width: 100%; display: flex; align-items: center; gap: 7px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
@@ -255,17 +289,19 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* ---------- Stat chips (§3.1, Task 12) ---------- */
 .stat-chips {
-  display: flex; gap: 6px; margin: 10px 0 0; overflow-x: auto;
-  -ms-overflow-style: none; scrollbar-width: none;
+  /* 5칸 그리드로 못박는다(Task 24). 예전엔 `display: flex` + `overflow-x: auto`라
+   * 390px 화면에서 행 전체 폭이 426px로 넘쳐 다섯째 칩(인맥)이 잘려 나갔다 — 가로
+   * 스크롤은 '상시 노출'(§2)의 반대말이다. minmax(0, 1fr)이라 폭이 어떻든 다섯 칸이
+   * 항상 같은 폭으로 들어오고, 넘치는 건 칩 안의 글자뿐이다. */
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 8px 0 0;
 }
-.stat-chips::-webkit-scrollbar { display: none; }
 .stat-chip {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 9px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--panel); font-size: 11.5px; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; overflow: hidden;
+  padding: 5px 4px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); font-size: 11px; color: var(--muted); white-space: nowrap;
   transition: box-shadow var(--dur-fast) var(--ease-standard);
 }
-.stat-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--chip); flex: 0 0 auto; }
+.stat-chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--chip); flex: 0 0 auto; }
 .stat-chip-label { color: var(--text); font-weight: 600; }
 .stat-chip-value { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--chip); }
 .stat-chip-flash { box-shadow: 0 0 0 2px var(--chip); animation: chip-flash var(--dur-slow) var(--ease-standard); }
@@ -278,7 +314,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 
 /* ---------- Action meter (§3.1, Task 12) ---------- */
-.action-meter { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.action-meter { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex: 0 0 auto; }
 .ap-dots { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; }
 .ap-num { font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin-right: 2px; }
 .ap-dot {
@@ -297,12 +333,12 @@ ul { list-style: none; padding: 0; margin: 0; }
 /* ---------- Cards (§3.1 카드 2×2, Task 13) ----------
  * 열 수(2)는 CSS가 아니라 CardGrid.tsx의 인라인 스타일이 유일한 출처다(그 파일의
  * CARD_GRID_COLUMNS 주석 참고) — 여기서는 gap 등 나머지 시각 규칙만 둔다. */
-.section-title { font-size: 14px; margin: 16px 0 8px; font-weight: 700; display: flex; align-items: baseline; gap: 6px; }
-.section-title small { color: var(--muted); font-weight: 500; font-size: 12px; }
-.card-list { gap: 8px; }
+/* `.section-title`("이번 주에 뭘 할까")은 Task 24에서 지웠다 — §3.1 다이어그램에 없는
+ * 행이었고 위아래 여백까지 42px을 먹었다. 쓰는 화면이 없으므로 규칙도 함께 지운다. */
+.card-list { gap: 8px; margin-top: 10px; flex: 0 0 auto; }
 .card {
-  display: flex; flex-direction: column; gap: 5px;
-  text-align: left; padding: 10px 11px; border-radius: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  text-align: left; padding: 9px 10px; border-radius: 12px;
   border: 1px solid var(--border); background: var(--panel);
   color: var(--text);
   transition: border-color var(--dur-fast) var(--ease-standard),
@@ -349,7 +385,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 
 .next-turn {
-  width: 100%; margin-top: 14px; padding: 15px; border: 0; border-radius: 14px;
+  width: 100%; margin-top: 10px; padding: 14px; border: 0; border-radius: 14px; flex: 0 0 auto;
   background: linear-gradient(180deg, #2ea043, #238636); color: #fff; font-size: 16px; font-weight: 800;
   box-shadow: 0 6px 18px -6px rgba(35, 134, 54, .7);
   transition: opacity .15s, box-shadow .15s;
