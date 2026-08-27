@@ -4,6 +4,8 @@ import { loadEvents } from './content'
 import { loadStockDefs } from '../market/stocks'
 import { makeState } from '../testkit'
 import { drawEvents } from './engine'
+import { evalAll } from '../turn/conditions'
+import { BALANCE } from '../balance'
 import type { Sector, Effect, Condition, StatKey, EventDef } from '../types'
 
 const events = loadEvents()
@@ -85,6 +87,75 @@ describe('이벤트 콘텐츠', () => {
     let s = makeState()
     for (let t = 1; t <= 156; t++) { s = drawEvents({ ...s, turn: t }, events); s = { ...s, pendingChoices: [] } }
     expect(s.news.length).toBeGreaterThan(50)
+  })
+
+
+  // ── 김실장이 신용 창구를 연다 (st_kim_credit) ──────────────────────────────
+  // 신용거래는 core에 다 구현돼 있었는데 부르는 화면이 없었고(그래서 화면 쪽에 계좌
+  // 신용 섹션이 생겼다), 그 창구의 존재를 알리는 연출이 이 이벤트다. 조건은 티어
+  // 3(BALANCE.loan.minTier)뿐이라, 신용을 실제로 쓸 수 있게 된 바로 그 주부터 뜬다.
+  describe('신용 창구를 여는 이벤트', () => {
+    const kimCredit = events.find(e => e.id === 'st_kim_credit')!
+
+    it('존재하고, 김실장이 말하며, 한 번만 뜬다', () => {
+      expect(kimCredit).toBeDefined()
+      expect(kimCredit.oneShot).toBe(true)
+      expect(kimCredit.text.speaker).toBe('kim')
+      expect(kimCredit.category).toBe('story')
+    })
+
+    it('조건이 신용 최소 티어와 같은 값에 걸려 있다', () => {
+      // 리터럴 3이 아니라 BALANCE에서 읽는다 — 신용 티어를 옮기면 이 단언이 먼저 깨져
+      // 이벤트와 규칙이 갈라진 것을 알려준다.
+      expect(kimCredit.conditions).toEqual([{ type: 'tierMin', value: BALANCE.loan.minTier }])
+    })
+
+    it('티어 0~2에서는 후보에조차 오르지 않고, 3~5에서는 오른다', () => {
+      for (const tier of [0, 1, 2] as const) {
+        expect(evalAll(makeState({ player: { tier } }), kimCredit.conditions), `tier ${tier}`).toBe(false)
+      }
+      for (const tier of [3, 4, 5] as const) {
+        expect(evalAll(makeState({ player: { tier } }), kimCredit.conditions), `tier ${tier}`).toBe(true)
+      }
+    })
+
+    it('티어 3에 도달하면 실제로 뽑힌다 — 여러 시드에서 몇 주 안에 뜬다', () => {
+      // drawEvents는 매 턴 가중추첨으로 2개를 뽑으므로 "정확히 그 주"를 보장할 수는
+      // 없다. 대신 풀 전체에서 가장 큰 weight를 줘서 곧 뜨게 만들었다 — 그 사실을
+      // 시드별 실측으로 못박는다(문 여는 연출이 몇 달 뒤에 오면 연출이 아니다).
+      const waits: number[] = []
+      for (let seed = 1; seed <= 20; seed++) {
+        let s = makeState({ player: { tier: 3 }, rng: { s: seed } })
+        let fired = -1
+        for (let t = 1; t <= 15 && fired < 0; t++) {
+          s = drawEvents({ ...s, turn: t, pendingChoices: [] }, events)
+          if (s.firedOneShots.includes('st_kim_credit')) fired = t
+        }
+        expect(fired, `seed ${seed}: 15주 안에 뜨지 않았다`).toBeGreaterThan(0)
+        waits.push(fired)
+      }
+      // 중앙값 3주 이하. weight를 풀의 평범한 값(예: 20)으로 낮추면 중앙값이 7주 부근으로
+      // 밀려 여기서 걸린다 — 300시드 실측: weight 40 → 중앙값 4·최대 40주 초과,
+      // weight 120 → 중앙값 2·최대 10주.
+      const median = [...waits].sort((a, b) => a - b)[Math.floor(waits.length / 2)]!
+      expect(median, `대기 주차 ${waits.join(',')}`).toBeLessThanOrEqual(3)
+    })
+
+    it('티어 3이어도 이미 떴으면 다시 뜨지 않는다 (oneShot)', () => {
+      let s = makeState({ player: { tier: 3 }, rng: { s: 1 }, firedOneShots: ['st_kim_credit'] })
+      for (let t = 1; t <= 20; t++) s = drawEvents({ ...s, turn: t, pendingChoices: [] }, events)
+      expect(s.news.filter(n => n.title === kimCredit.text.title)).toEqual([])
+    })
+
+    it('선택지 둘 다 효과가 있고, 빚을 강요하지도 막지도 않는다', () => {
+      // 이 이벤트는 문을 열 뿐 대출 자체를 일으키지 않는다 — 돈을 직접 움직이는
+      // 효과(cash·buyStockPct)가 붙어 있으면 플레이어의 판단을 대신 내려버린다.
+      expect(kimCredit.choices).toHaveLength(2)
+      for (const c of kimCredit.choices!) {
+        expect(c.effects.length, c.label).toBeGreaterThan(0)
+        for (const f of c.effects) expect(['cash', 'buyStockPct']).not.toContain(f.type)
+      }
+    })
   })
 
   // ── 임팩트 채널 균형 (Fix Round 1) ─────────────────────────────────────────

@@ -363,3 +363,150 @@ describe('togglePick — 행동력 예산 기준 게이팅', () => {
     })
   })
 })
+
+// ── 신용 (doTakeLoan / doRepayLoan) ─────────────────────────────────────────
+// core의 takeLoan/repayLoan을 그대로 태운다. doAverageDown과 같은 자리의 액션이지만
+// 이 둘은 GameError를 던지므로 guard()를 거친다(store.ts 주석).
+describe('doTakeLoan / doRepayLoan', () => {
+  /** 신용이 열린(티어 3) 계좌를 만든다. cash·loan은 직접 심는다. */
+  function seedCredit(patch: { cash?: number; loan?: number; tier?: 0 | 1 | 2 | 3 | 4 | 5 } = {}) {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    useGame.setState({ state: { ...s, player: {
+      ...s.player, tier: patch.tier ?? 3, cash: patch.cash ?? 100_000_000, loan: patch.loan ?? 0,
+    } } })
+  }
+
+  it('입력한 금액만큼 현금과 빚이 함께 늘어난다 (고정액 뮤테이션 대비 두 금액)', () => {
+    seedCredit({ cash: 100_000_000 })
+    useGame.getState().doTakeLoan(3_000_000)
+    let p = useGame.getState().state!.player
+    expect(p.loan).toBe(3_000_000)
+    expect(p.cash).toBe(103_000_000)
+
+    useGame.getState().doTakeLoan(11_500_000)
+    p = useGame.getState().state!.player
+    expect(p.loan).toBe(14_500_000)
+    expect(p.cash).toBe(114_500_000)
+  })
+
+  it('신용을 쓴 기록(trackers.usedMargin)이 남는다 — 칭호 "빚 없이"가 무조건 부여되지 않는다', () => {
+    seedCredit()
+    expect(useGame.getState().state!.trackers.usedMargin).toBe(false)
+    useGame.getState().doTakeLoan(1_000_000)
+    expect(useGame.getState().state!.trackers.usedMargin).toBe(true)
+  })
+
+  it('결과가 localStorage에도 커밋된다 (새로고침해도 빚이 남는다)', () => {
+    seedCredit()
+    useGame.getState().doTakeLoan(2_000_000)
+    const saved = JSON.parse(localStorage.getItem(SAVE_KEY)!)
+    expect(saved.state.player.loan).toBe(2_000_000)
+    useGame.getState().reset() // 새로고침 시뮬레이션
+    expect(useGame.getState().state!.player.loan).toBe(2_000_000)
+  })
+
+  it('한도를 넘는 대출은 던지지 않고 조용히 거부된다 (LOAN_LIMIT을 guard가 삼킨다)', () => {
+    seedCredit({ cash: 10_000_000 })
+    const before = useGame.getState().state!
+    // 한도 = floor(10,000,000 × 0.9) = 9,000,000
+    expect(() => useGame.getState().doTakeLoan(9_000_001)).not.toThrow()
+    expect(useGame.getState().state).toBe(before)
+    // 경계 바로 아래는 실제로 통과한다 — 위 단언이 "항상 거부"로도 통과하지 않게 못박는다.
+    useGame.getState().doTakeLoan(9_000_000)
+    expect(useGame.getState().state!.player.loan).toBe(9_000_000)
+  })
+
+  it('티어가 모자라면 거부된다 (TIER_LOCKED)', () => {
+    seedCredit({ tier: 2, cash: 100_000_000 })
+    const before = useGame.getState().state!
+    expect(() => useGame.getState().doTakeLoan(1_000_000)).not.toThrow()
+    expect(useGame.getState().state).toBe(before)
+  })
+
+  it.each([0, -1_000_000, 1.5])('금액 %s는 거부된다 (BAD_AMOUNT)', amount => {
+    seedCredit()
+    const before = useGame.getState().state!
+    expect(() => useGame.getState().doTakeLoan(amount)).not.toThrow()
+    expect(useGame.getState().state).toBe(before)
+  })
+
+  it('상환은 입력한 금액만큼 빚과 현금을 함께 줄인다 (두 금액)', () => {
+    seedCredit({ cash: 30_000_000, loan: 20_000_000 })
+    useGame.getState().doRepayLoan(5_000_000)
+    let p = useGame.getState().state!.player
+    expect(p.loan).toBe(15_000_000)
+    expect(p.cash).toBe(25_000_000)
+
+    useGame.getState().doRepayLoan(1_250_000)
+    p = useGame.getState().state!.player
+    expect(p.loan).toBe(13_750_000)
+    expect(p.cash).toBe(23_750_000)
+  })
+
+  it('빚보다 많이·현금보다 많이 갚으려 하면 조용히 거부된다', () => {
+    seedCredit({ cash: 3_000_000, loan: 10_000_000 })
+    const before = useGame.getState().state!
+    expect(() => useGame.getState().doRepayLoan(10_000_001)).not.toThrow() // 빚 초과
+    expect(useGame.getState().state).toBe(before)
+    expect(() => useGame.getState().doRepayLoan(3_000_001)).not.toThrow() // 현금 초과
+    expect(useGame.getState().state).toBe(before)
+    // 현금 전액은 실제로 통과한다(위 두 단언이 공회전이 아니다).
+    useGame.getState().doRepayLoan(3_000_000)
+    expect(useGame.getState().state!.player.loan).toBe(7_000_000)
+    expect(useGame.getState().state!.player.cash).toBe(0)
+  })
+
+  it('턴을 넘기지 않고 슬롯·리롤·이번 턴 선택을 건드리지 않는다', () => {
+    seedCredit()
+    const before = useGame.getState().state!
+    useGame.getState().doTakeLoan(1_000_000)
+    const after = useGame.getState().state!
+    expect(after.turn).toBe(before.turn)
+    expect(after.rerollsLeft).toBe(before.rerollsLeft)
+    expect(after.slots).toBe(before.slots)
+    expect(useGame.getState().picked).toEqual([])
+  })
+})
+
+// ── 세이브 형태 검사: player.marginCallDueTurn ──────────────────────────────
+// core의 checkMarginCall이 `=== null`로 유예를 판정한다. 이 필드가 undefined면
+// "경고가 이미 서 있다"로 읽혀 **유예 없이 곧바로 청산**되는 경로가 열린다.
+describe('세이브 형태 검사 — player.marginCallDueTurn', () => {
+  /** 새 판을 만든 뒤 marginCallDueTurn 자리에 값을 심어 저장하고 다시 읽는다.
+   *  `undefined`를 넘기면 필드 자체를 지운다(구버전 v4 세이브의 형상). */
+  function loadWith(value: unknown, drop = false): unknown {
+    useGame.getState().newGame(1)
+    const s = useGame.getState().state!
+    const player: Record<string, unknown> = { ...s.player }
+    if (drop) delete player.marginCallDueTurn
+    else player.marginCallDueTurn = value
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: SAVE_VERSION, state: { ...s, player } }))
+    useGame.getState().reset()
+    return useGame.getState().state
+  }
+
+  it('필드가 아예 없는 세이브(v4 이전 형상)는 무시된다', () => {
+    expect(loadWith(undefined, true)).toBeNull()
+  })
+
+  it.each([
+    ['문자열', '7'],
+    ['불리언', true],
+    ['소수', 1.5],
+    ['객체', {}],
+  ])('턴 번호가 될 수 없는 값(%s)이 들어간 세이브는 무시된다', (_label, value) => {
+    expect(loadWith(value)).toBeNull()
+  })
+
+  it('null(경고 없음)과 실제 턴 번호는 정상적으로 읽힌다 (위 테스트들이 공회전이 아님)', () => {
+    const noWarning = loadWith(null) as { player: { marginCallDueTurn: number | null } } | null
+    expect(noWarning).not.toBeNull()
+    expect(noWarning!.player.marginCallDueTurn).toBeNull()
+
+    const warned = loadWith(9) as { player: { marginCallDueTurn: number | null } } | null
+    expect(warned).not.toBeNull()
+    // 값이 그대로 살아 들어와야 배너가 뜬다 — 로드만 통과하고 값이 뭉개지면 경고가 사라진다.
+    expect(warned!.player.marginCallDueTurn).toBe(9)
+  })
+})

@@ -29,6 +29,12 @@ export interface PlayerState {
   cash: number; loan: number; holdings: Holding[]
   mental: number; condition: number; burnoutTurns: number
   stats: Stats; employed: boolean; tier: Tier
+  /** 마진콜 경고가 걸린 상태에서 **청산 판정이 내려지는 턴 번호**. 경고가 없으면 null.
+   *  담보(현금+평가액)가 대출×callRatio 아래로 내려간 턴 N에 `N + 1`로 세워지고,
+   *  턴 N+1의 신용 단계에서 담보가 회복됐으면 null로 내려가고 아니면 전량 청산된다.
+   *  `flags.marginCalled`와 헷갈리지 마라 — 저쪽은 '청산이 이미 일어났다'는 사후 기록이고,
+   *  이쪽은 '아직 안 일어났지만 다음 주에 일어난다'는 예고다. */
+  marginCallDueTurn: number | null
 }
 
 export interface PendingImpact {

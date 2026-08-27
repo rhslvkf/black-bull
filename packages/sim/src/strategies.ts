@@ -1,7 +1,7 @@
 import {
   type GameState, type SlotCard, buy, sell, canSell, canBuy, maxBuyQty, totalAssets,
   loadCards, isCardAvailable, Rand, createRng, priceOf, actionPoints, cardApCost, gradeOfSlot,
-  rerollSlots, playCard, BALANCE,
+  rerollSlots, playCard, BALANCE, maxLoan, takeLoan, repayLoan, marginShortfall,
 } from '@bb/core'
 
 /**
@@ -32,8 +32,31 @@ import {
  *              주장인데, Fix Round 1 리뷰가 `cashMul`을 옛 `grade.mul`로 되돌려도
  *              sim 24/24가 전부 그린인 것을 실측했다. 성질을 만들어 놓고 고정하지
  *              않으면 다음 사람이 한 줄로 되돌려도 아무도 모른다.
+ * - `leverage` **빚을 져서 판을 키운다.** 이 저장소에서 유일하게 `takeLoan`을 부르는
+ *              전략이다 — 나머지 일곱은 `marginRate`가 정확히 0이다.
+ *
+ *              **왜 필요한가:** 신용거래는 core에 완전히 구현돼 있었지만 그것을 부르는
+ *              곳이 없어서, 조사 3,560판에서 `legend`(파산)·`fire`·`super`가 한 판도
+ *              나오지 않았다(최종 리뷰 M4/M5).
+ *
+ *              **정확히 말하면**: 빚이 없으면 총자산은 0 **미만**으로 내려갈 수 없어
+ *              `legend`(파산)는 닫힌다. 그러나 `super`는 신용 없이도 나온다 —
+ *              반례 `playOne(500355, 'momentum')`은 총자산 7.49억에 `usedMargin=false`다.
+ *              대조군 7전략 44,800판에서 legend 0 · fire 0 · super 5가 관측됐다.
+ *              즉 신용은 상단 엔딩을 **압도적으로** 열지만 유일한 길은 아니다.
+ *              `fire`가 신용 없이 가능한지는 **아직 모른다**(반례를 못 찾았을 뿐이다).
+ *              이 전략은 그 세 엔딩이 **실제로 도달 가능한지**를 판정하기 위해 존재한다.
+ *
+ *              세 가지가 다른 일곱과 구분한다(수치는 balance.test.ts의 게이트가 고정한다):
+ *              ① 티어 3(1억)에 닿는 순간 한도(`maxLoan`)를 남김없이 끌어 쓴다.
+ *              ② 마진콜 **경고**가 서면 그 유예 한 주 안에 전량 매도 → 전액 상환한다.
+ *                 (담보는 파는 것으로 채워지지 않는다 — 현금과 보유평가액은 1:1이라
+ *                  담보 합계가 그대로다. 요구 담보를 낮추는 유일한 수단이 상환이다.)
+ *              ③ 인맥 카드를 맨 뒤로 민다. `kimheir`(인맥 8 + 김실장 방)가 `fire`·`super`
+ *                 **보다 우선**해서, 인맥을 키우면 상단 엔딩을 스스로 덮어버린다.
  */
-export type Strategy = 'cash' | 'seedhold' | 'buyhold' | 'momentum' | 'random' | 'panic' | 'labor'
+export type Strategy =
+  | 'cash' | 'seedhold' | 'buyhold' | 'momentum' | 'random' | 'panic' | 'labor' | 'leverage'
 
 const tradable = (s: GameState) => s.stockDefs.filter(d => canBuy(s, d.id).ok)
 
@@ -47,6 +70,43 @@ function sellAll(s: GameState): GameState {
   for (const h of [...s.player.holdings]) {
     if (canSell(s, h.stockId).ok) { try { s = sell(s, h.stockId, h.qty) } catch { /* 봉인 */ } }
   }
+  return s
+}
+
+/**
+ * `leverage` 전용 — 지금 살 수 있는 종목 중 **변동성이 가장 큰** 것.
+ *
+ * 추세(`trendOf`)로 고르면 `momentum`·`panic`과 매매가 겹쳐 전략이 이름만 달라진다.
+ * 레버리지 플레이어의 목표는 "평균적으로 좋은 수익"이 아니라 **멀리 있는 문턱(티어 3의
+ * 1억)에 닿는 것**이고, 먼 문턱에 닿을 확률을 올리는 것은 기대값이 아니라 분산이다.
+ * 티어가 오를수록 더 사나운 종목이 열리므로(무쇠정밀 0.095는 티어 2 게이트) 이 규칙
+ * 하나로 티어를 따라 위험이 올라간다. 동률이면 id 순으로 잘라 결정론을 지킨다.
+ */
+function wildest(pool: readonly { id: string; volatility: number }[]) {
+  return [...pool].sort((a, b) => b.volatility - a.volatility || (a.id < b.id ? -1 : 1))[0]!
+}
+
+/**
+ * 신용을 새로 일으키는 최소 단위. 한도가 열릴 때마다 몇 원씩 빌리면 판을 키우지도
+ * 못하면서 이자만 붙고, `trackers.usedMargin`만 세워 '빚 없이' 칭호를 지운다.
+ * 리터럴이 아니라 **대출이 열리는 티어의 자산선에서 유도한다**(1억의 1% = 100만원) —
+ * 티어 문턱을 다시 튜닝하면 이 단위도 따라 움직인다.
+ */
+const LOAN_MIN_DRAW = Math.floor((BALANCE.tierMins[BALANCE.loan.minTier] ?? 0) * 0.01)
+
+/**
+ * 마진콜 **경고**에 대한 응답. core가 준 유예 한 주 안에 담보를 되살리는 유일한 방법이다.
+ *
+ * 파는 것만으로는 담보가 채워지지 않는다 — 담보는 `현금 + 보유평가액`이라 매도는 그
+ * 합계를 (수수료·세금만큼) **줄인다**. 요구 담보(`loan × callRatio`)를 낮추는 수단은
+ * 상환뿐이므로, 순서는 반드시 **팔아서 현금을 만들고 → 갚는다**여야 한다.
+ * 흔들림 + 포지션 손실 20% 이상이면 `canSell`이 매도를 봉인하므로(SELL_BLOCKED)
+ * 이 대응은 실패할 수 있다 — 그 실패가 곧 다음 턴의 강제청산이고, 파산 경로다.
+ */
+function deleverage(s: GameState): GameState {
+  s = sellAll(s)
+  const repay = Math.floor(Math.min(s.player.cash, s.player.loan))
+  if (repay > 0) { try { s = repayLoan(s, repay) } catch { /* 잔고가 어긋나면 다음 턴에 다시 */ } }
   return s
 }
 
@@ -158,6 +218,13 @@ export const CARD_PREF = {
   // 노동 특화. `cash`와 매매는 같고(하지 않는다) 야근이 1순위인 것만 다르다 —
   // 그래서 `labor − cash`가 **순수한 노동 소득**이 된다.
   labor:    ['overtime', 'study', 'analyze', 'news', 'report', 'forum', 'community'],
+  // 레버리지. 인맥 카드(forum·study)가 **맨 뒤**인 것이 이 표의 핵심이다 — `kimheir`는
+  // 인맥 8 + 김실장 방이면 자산과 무관하게 `fire`·`super`를 덮어쓰므로(endings.ts의
+  // pickEnding 순서), 인맥을 키우는 레버리지 플레이어는 상단 엔딩을 스스로 막는다.
+  // 앞쪽은 기업분석 → 커뮤니티 → 뉴스다. 커뮤니티(멘탈 −6)를 위에 두는 것은 취향이
+  // 아니라 대가다: 빚을 진 판은 멘탈이 곧 매도 가능 여부이므로(흔들림 + 손실 20%면
+  // SELL_BLOCKED) 정보를 싸게 사려다 마진콜 대응 수단을 잃는다.
+  leverage: ['analyze', 'community', 'news', 'report', 'overtime', 'study', 'forum'],
   random:   [],
 } as const satisfies Record<Strategy, readonly string[]>
 
@@ -278,6 +345,23 @@ export function act(
       case 'random': {
         if (rand.chance(0.3)) s = sellAll(s)
         if (rand.chance(0.5)) s = investPct(s, pool[rand.int(0, pool.length - 1)]!.id, 0.5)
+        break
+      }
+      case 'leverage': {
+        // ① 경고가 서 있으면 이번 턴은 오직 담보 복구에만 쓴다. 새로 사지 않는다 —
+        //    유예는 한 주뿐이고, 여기서 또 사면 다음 턴 판정에서 전량청산당한다.
+        if (s.player.marginCallDueTurn !== null) { s = deleverage(s); break }
+        // ② 담보가 이미 무너져 있으면(이번 턴 신용 단계에서 경고가 설 상태) 미리 줄인다.
+        //    경고가 서기 **전에** 반응하는 것이 전략의 유일한 선제 행동이다.
+        if (marginShortfall(s) > 0) { s = deleverage(s); break }
+        // ③ 한도가 열려 있으면 남김없이 끌어 쓴다. 티어 3 미만이면 maxLoan이 0이라
+        //    이 줄은 아무 일도 하지 않는다 — 그래서 판의 전반부는 무차입 몰빵이다.
+        const room = maxLoan(s)
+        if (room >= LOAN_MIN_DRAW) { try { s = takeLoan(s, room) } catch { /* 한도 경합 */ } }
+        // ④ 현금 전부를 가장 사나운 종목에 태운다. 다른 종목을 들고 있으면 갈아탄다.
+        const target = wildest(pool)
+        if (s.player.holdings.some(h => h.stockId !== target.id)) s = sellAll(s)
+        s = investPct(s, target.id, 1)
         break
       }
       case 'cash':

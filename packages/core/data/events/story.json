@@ -55,6 +55,13 @@
       { "label": "더 열심히 해본다", "effects": [{ "type": "condition", "delta": -10 }, { "type": "stat", "stat": "grit", "delta": 0.4 }] },
       { "label": "그러려니 한다", "effects": [{ "type": "mental", "delta": -8 }] }
     ] },
+  { "id": "st_kim_credit", "category": "story", "weight": 120, "oneShot": true,
+    "conditions": [{ "type": "tierMin", "value": 3 }],
+    "text": { "title": "김실장이 신용 창구를 열어줬다", "body": "\"이제 티어가 되시네요. 계좌에서 한도 확인되실 겁니다.\" 이자 얘기는 안 했다.", "speaker": "kim" },
+    "choices": [
+      { "label": "한도를 본다", "effects": [{ "type": "flag", "key": "kim", "value": "inc" }, { "type": "stat", "stat": "network", "delta": 0.4 }] },
+      { "label": "남의 돈은 무섭다", "effects": [{ "type": "mental", "delta": 6 }, { "type": "stat", "stat": "grit", "delta": 0.3 }] }
+    ] },
   { "id": "st_margin_after", "category": "story", "weight": 20, "oneShot": true,
     "conditions": [{ "type": "flagEq", "key": "marginCalled", "value": true }],
     "text": { "title": "반대매매가 끝난 계좌를 본다", "body": "보유 종목 칸이 비어 있다. 대출은 갚았는데 남은 게 없다." },

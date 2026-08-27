@@ -179,7 +179,11 @@ describe('최대 낙폭 100% 상한 (Fix Round 1 — 리뷰 Major)', () => {
     const base = initGame(1)
     let s = resolvePending(advanceTurn(base, [])) // 1턴 정상 진행 — peakAssets를 양수로 세운다
     expect(s.trackers.peakAssets).toBeGreaterThan(0) // 전제 조건: 오버플로 경로를 실제로 태우려면 peak > 0이어야 한다
-    s = { ...s, player: { ...s.player, cash: 100_000, loan: 5_000_000 } } // 담보 10만 << 대출×1.3
+    // 담보 10만 << 대출×1.3. marginCallDueTurn을 이번 턴으로 직접 세워, 지난주에 이미
+    // 경고를 받은 계좌로 만든다 — 마진콜은 한 주 유예를 주므로 경고 없이는 이번 턴에
+    // 청산이 일어나지 않는다(margin.test.ts '마진콜 한 주 유예'가 그 규칙을 고정한다).
+    // 이 테스트의 관심사는 유예가 아니라 청산 이후의 낙폭 클램프다.
+    s = { ...s, player: { ...s.player, cash: 100_000, loan: 5_000_000, marginCallDueTurn: s.turn } }
     const after = resolvePending(advanceTurn(s, []))
     expect(after.flags['marginCalled']).toBe(true)
     expect(totalAssets(after)).toBeLessThan(0) // 순자산이 실제로 음수인지 먼저 확인(전제 조건)

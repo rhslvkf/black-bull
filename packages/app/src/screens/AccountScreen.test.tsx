@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { AccountScreen } from './AccountScreen'
-import { renderWithState } from '../testUtils'
+import { renderWithState, type GameStateOverride } from '../testUtils'
 import { useGame } from '../store/store'
 
 // sjc(윤슬반도체)·bnk(한들금융지주)는 packages/core/data/stocks.json에 고정된 실제 종목이다
@@ -120,5 +120,282 @@ describe('AccountScreen', () => {
     renderWithState({ player: { holdings: [{ stockId: 'sjc', qty: 10, avgCost: 9000, heldTurns: 1 }] } }, <AccountScreen />)
     const style = getComputedStyle(screen.getByTestId('holding-sjc'))
     expect(parseFloat(style.minHeight)).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX)
+  })
+})
+
+// ── 신용 창구 (CreditSection) ────────────────────────────────────────────────
+// 이 저장소가 반복해서 겪은 함정: "숫자가 상태를 따라 변하는가"를 단일 값 한 번으로만
+// 확인하면 그 자리를 상수로 바꿔도 전부 초록이었다(CardTile 등급·TopBar 총자산).
+// 그래서 아래 다섯 값(한도·빚·주 이자·담보비율·부족액)은 **각각 서로 다른 상태 2개
+// 이상**으로 고정한다 — 어느 하나를 상수로 굳히면 두 기대값 중 최소 하나가 반드시 깨진다.
+describe('AccountScreen — 신용 창구', () => {
+  /** 계좌 화면을 신용이 열린 상태로 렌더한다. tier 기본값은 신용 최소 티어(3). */
+  function renderCredit(player: NonNullable<GameStateOverride['player']> = {}) {
+    return renderWithState({ player: { tier: 3, ...player } }, <AccountScreen />)
+  }
+  const text = (testId: string) => screen.getByTestId(testId).textContent ?? ''
+
+  describe('티어 게이트', () => {
+    it.each([0, 1, 2] as const)('티어 %i에서는 섹션이 아예 없다', tier => {
+      renderWithState({ player: { tier, loan: 0 } }, <AccountScreen />)
+      expect(screen.queryByTestId('credit-section')).toBeNull()
+      // 게이트를 지우면 아래 셋이 전부 살아난다 — 존재 자체를 각각 못박는다.
+      expect(screen.queryByTestId('credit-limit')).toBeNull()
+      expect(screen.queryByTestId('take-loan')).toBeNull()
+      expect(screen.queryByTestId('credit-amount')).toBeNull()
+    })
+
+    it.each([3, 4, 5] as const)('티어 %i에서는 섹션이 뜬다', tier => {
+      renderWithState({ player: { tier, loan: 0 } }, <AccountScreen />)
+      expect(screen.queryByTestId('credit-section')).not.toBeNull()
+      expect(screen.queryByTestId('take-loan')).not.toBeNull()
+    })
+
+    it('빚이 남아 있으면 티어가 강등돼도 창구는 닫히지 않는다 (갚을 길·경고를 막지 않는다)', () => {
+      renderWithState({ player: { tier: 2, loan: 5_000_000, cash: 6_000_000 } }, <AccountScreen />)
+      expect(screen.queryByTestId('credit-section')).not.toBeNull()
+      // 신규 대출은 여전히 막혀 있다 — maxLoan이 0이므로 한도 표시도 0원이다.
+      expect(text('credit-limit')).toBe('0원')
+      fireEvent.change(screen.getByTestId('credit-amount'), { target: { value: '1000000' } })
+      expect((screen.getByTestId('take-loan') as HTMLButtonElement).disabled).toBe(true)
+      // 그런데 상환은 된다(이게 이 예외의 이유다).
+      expect((screen.getByTestId('repay-loan') as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  describe('표시값이 상태를 따라 움직인다', () => {
+    // 한도 = floor(총자산 × 0.9) − 기존 대출. 총자산 = 현금 + 평가액 − 대출.
+    it('한도: 빚 없는 계좌', () => {
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 0 })
+      expect(text('credit-limit')).toBe('90,000,000원') // floor(100,000,000 × 0.9) − 0
+    })
+    it('한도: 이미 빌린 만큼 줄어든다', () => {
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 20_000_000 })
+      // 총자산 = 100,000,000 − 20,000,000 = 80,000,000 → 72,000,000 − 20,000,000
+      expect(text('credit-limit')).toBe('52,000,000원')
+    })
+    it('한도: 보유 평가액도 담보로 들어간다', () => {
+      renderCredit({ cash: 50_000_000, holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }], loan: 0 })
+      // 총자산 = 50,000,000 + 10 × 71,000 = 50,710,000 → floor(× 0.9)
+      expect(text('credit-limit')).toBe('45,639,000원')
+    })
+
+    it('현재 빚: 0원과 실제 잔액을 각각 그대로 보여준다', () => {
+      renderCredit({ cash: 100_000_000, loan: 0 })
+      expect(text('credit-loan')).toBe('0원')
+      screen.getByTestId('credit-section') // sanity — 같은 자리에서 읽었다
+    })
+    it('현재 빚: 빌린 금액이 그대로 뜬다', () => {
+      renderCredit({ cash: 100_000_000, loan: 23_450_000 })
+      expect(text('credit-loan')).toBe('23,450,000원')
+    })
+
+    // 주 이자 = round(빚 × BALANCE.loan.rate(0.25%)). 상수로 굳히면 두 값 중 하나는 깨진다.
+    it('주 이자: 빚 2,000만원이면 5만원', () => {
+      renderCredit({ cash: 100_000_000, loan: 20_000_000 })
+      expect(text('credit-interest')).toBe('50,000원')
+    })
+    it('주 이자: 빚 400만원이면 1만원', () => {
+      renderCredit({ cash: 100_000_000, loan: 4_000_000 })
+      expect(text('credit-interest')).toBe('10,000원')
+    })
+    it('주 이자: 빚이 없으면 0원', () => {
+      renderCredit({ cash: 100_000_000, loan: 0 })
+      expect(text('credit-interest')).toBe('0원')
+    })
+
+    // 담보비율 = (현금 + 평가액) / 빚 × 100. **현금만** 세는 뮤테이션은 아래 첫 두
+    // 케이스에서 각각 200.0% / 75.0%가 되어 기대값과 어긋난다.
+    it('담보비율: 평가액이 분자에 들어간다 (여유 있는 계좌)', () => {
+      renderCredit({
+        cash: 10_000_000, loan: 5_000_000,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }],
+      })
+      // (10,000,000 + 710,000) / 5,000,000 × 100 = 214.2%
+      expect(text('credit-collateral')).toBe('214.2%')
+      // 위험할 때만 색이 붙는다 — 여유 있는 계좌에는 하락색 클래스가 없다.
+      expect(screen.getByTestId('credit-collateral').className).toBe('')
+    })
+    it('담보비율: 청산선(130%) 아래면 하락색으로 뜬다', () => {
+      renderCredit({
+        cash: 3_000_000, loan: 4_000_000,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }],
+      })
+      // (3,000,000 + 710,000) / 4,000,000 × 100 = 92.75 → 92.8%
+      expect(text('credit-collateral')).toBe('92.8%')
+      expect(screen.getByTestId('credit-collateral').className).toBe('down')
+    })
+    it('담보비율: 빚이 없으면 비율 자체가 없다', () => {
+      renderCredit({ cash: 10_000_000, loan: 0 })
+      expect(text('credit-collateral')).toBe('—')
+    })
+  })
+
+  describe('마진콜 경고 배너', () => {
+    it('경고가 없으면 배너가 없다', () => {
+      renderCredit({ cash: 1_000_000, loan: 10_000_000, marginCallDueTurn: null })
+      expect(screen.queryByTestId('margin-banner')).toBeNull()
+      expect(screen.queryByTestId('margin-shortfall')).toBeNull()
+    })
+
+    it('경고가 서 있으면 문구와 부족액이 함께 뜬다', () => {
+      renderCredit({
+        cash: 1_000_000, loan: 10_000_000, marginCallDueTurn: 7,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }],
+      })
+      expect(text('margin-banner')).toContain('다음 주까지 담보를 못 채우면 보유 종목이 전량 청산됩니다')
+      // 부족액 = ceil(10,000,000 × 1.3 − (1,000,000 + 710,000))
+      expect(text('margin-shortfall')).toBe(' 부족액 11,290,000원')
+    })
+
+    /**
+     * **보유가 0인 계좌에는 청산할 것이 없다** — core `checkMarginCall`은 팔 것이 없으면
+     * 현금에서 `min(현금, 빚)`을 그대로 떼어 갚는다. 그런데도 배너가 "전량 청산됩니다"라고
+     * 말했다(리뷰 Minor 4). 이 상태는 가상이 아니다: 한 번 청산되고 잔존 채무가 남은 계좌가
+     * 정확히 '보유 0 + 빚 있음'이고, 그 계좌에 다음 경고가 다시 선다.
+     */
+    it('보유가 없으면 청산이 아니라 현금 상환이라고 말한다', () => {
+      renderCredit({ cash: 1_000_000, loan: 10_000_000, holdings: [], marginCallDueTurn: 7 })
+      expect(text('margin-banner')).toContain('다음 주까지 담보를 못 채우면 현금이 대출 상환에 들어갑니다')
+      expect(text('margin-banner'), '팔 것이 없는데 매도를 예고한다').not.toContain('청산')
+      // 부족액 = ceil(10,000,000 × 1.3 − 1,000,000)
+      expect(text('margin-shortfall')).toBe(' 부족액 12,000,000원')
+    })
+
+    /**
+     * 위 검사는 `margin-banner` **하나만** 본다. 그래서 두 줄 아래 `credit-hint`가
+     * 같은 계좌에 대고 "다음 주에 청산된다"고 말하는 것을 놓쳤다(재리뷰 잔여 2).
+     * **한 화면에 모순된 두 문장이 동시에 있었다.** 섹션 전체를 본다.
+     */
+    it('보유가 없으면 신용 섹션 어디에도 청산 예고가 없다', () => {
+      const { container } = renderCredit({
+        cash: 1_000_000, loan: 10_000_000, holdings: [], marginCallDueTurn: 7,
+      })
+      const section = container.querySelector('[data-testid="credit-section"]') ?? container
+      expect(section.textContent, '섹션 어딘가가 아직 매도를 예고한다').not.toContain('청산')
+    })
+
+    it('보유가 있으면 힌트도 청산이라고 말한다 — 위 검사가 문구를 지우기만 해도 통과하지 않게', () => {
+      const { container } = renderCredit({
+        cash: 1_000_000, loan: 10_000_000,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 71_000, heldTurns: 1 }],
+        marginCallDueTurn: 7,
+      })
+      const section = container.querySelector('[data-testid="credit-section"]') ?? container
+      expect(section.textContent).toContain('청산')
+    })
+
+    it('부족액은 담보(현금 + 평가액)를 따라 바뀐다', () => {
+      renderCredit({
+        cash: 5_000_000, loan: 10_000_000, marginCallDueTurn: 7,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 50_000, heldTurns: 2 }],
+      })
+      // 13,000,000 − (5,000,000 + 710,000) = 7,290,000 — 위 케이스(12,000,000원)와 다르다.
+      expect(text('margin-shortfall')).toBe(' 부족액 7,290,000원')
+    })
+
+    it('`flags.marginCalled`(이미 청산됨)는 배너 조건이 아니다', () => {
+      // 청산은 이미 끝났고(사후 기록) 예고는 없는 상태 — 배너 조건을 flags.marginCalled로
+      // 바꿔 놓으면 여기서 "다음 주에 청산됩니다"라는 거짓말이 뜬다.
+      renderCredit({ cash: 1_000_000, loan: 10_000_000, marginCallDueTurn: null })
+      const s = useGame.getState().state!
+      useGame.setState({ state: { ...s, flags: { ...s.flags, marginCalled: true } } })
+      expect(screen.queryByTestId('margin-banner')).toBeNull()
+    })
+
+    it('예고가 서 있으면 이미 청산된 적이 있어도 배너는 뜬다', () => {
+      renderCredit({ cash: 1_000_000, loan: 10_000_000, marginCallDueTurn: 12 })
+      expect(screen.queryByTestId('margin-banner')).not.toBeNull()
+    })
+  })
+
+  describe('대출·상환 버튼', () => {
+    const setAmount = (v: number) =>
+      fireEvent.change(screen.getByTestId('credit-amount'), { target: { value: String(v) } })
+    const btn = (id: string) => screen.getByTestId(id) as HTMLButtonElement
+
+    it('금액이 비어 있으면 둘 다 눌리지 않는다', () => {
+      renderCredit({ cash: 100_000_000, loan: 10_000_000 })
+      expect(btn('take-loan').disabled).toBe(true)
+      expect(btn('repay-loan').disabled).toBe(true)
+    })
+
+    it('한도 초과는 버튼이 막는다 (core의 LOAN_LIMIT까지 가지 않는다)', () => {
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 0 })
+      const limit = 90_000_000
+      setAmount(limit)
+      expect(btn('take-loan').disabled).toBe(false)
+      expect(screen.queryByTestId('take-reason')).toBeNull()
+      setAmount(limit + 1)
+      expect(btn('take-loan').disabled).toBe(true)
+      expect(text('take-reason')).toContain('한도(90,000,000원)를 넘었다')
+    })
+
+    it('현금 부족·빚 초과 상환은 버튼이 막는다', () => {
+      renderCredit({ cash: 3_000_000, holdings: [], loan: 10_000_000 })
+      setAmount(3_000_000)
+      expect(btn('repay-loan').disabled).toBe(false)
+      setAmount(3_000_001) // 현금 초과(빚보다는 적다)
+      expect(btn('repay-loan').disabled).toBe(true)
+      expect(text('repay-reason')).toContain('예수금(3,000,000원)이 모자란다')
+      setAmount(10_000_001) // 빚 초과
+      expect(btn('repay-loan').disabled).toBe(true)
+      expect(text('repay-reason')).toContain('빚(10,000,000원)보다 많이 갚을 수 없다')
+    })
+
+    it('대출 버튼은 입력한 금액을 그대로 빌린다 (고정액 뮤테이션 대비 두 금액)', () => {
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 0 })
+      setAmount(7_000_000)
+      fireEvent.click(screen.getByTestId('take-loan'))
+      let p = useGame.getState().state!.player
+      expect(p.loan).toBe(7_000_000)
+      expect(p.cash).toBe(107_000_000)
+      // 화면 표시도 함께 따라간다(같은 상태를 다시 그린다).
+      expect(text('credit-loan')).toBe('7,000,000원')
+
+      setAmount(1_234_000)
+      fireEvent.click(screen.getByTestId('take-loan'))
+      p = useGame.getState().state!.player
+      expect(p.loan).toBe(8_234_000)
+      expect(p.cash).toBe(108_234_000)
+    })
+
+    it('대출은 신용 사용 기록(trackers.usedMargin)을 남긴다', () => {
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 0 })
+      expect(useGame.getState().state!.trackers.usedMargin).toBe(false)
+      setAmount(1_000_000)
+      fireEvent.click(screen.getByTestId('take-loan'))
+      expect(useGame.getState().state!.trackers.usedMargin).toBe(true)
+    })
+
+    it('상환 버튼은 입력한 금액만큼 빚과 현금을 함께 줄인다', () => {
+      renderCredit({ cash: 50_000_000, holdings: [], loan: 20_000_000 })
+      setAmount(6_000_000)
+      fireEvent.click(screen.getByTestId('repay-loan'))
+      const p = useGame.getState().state!.player
+      expect(p.loan).toBe(14_000_000)
+      expect(p.cash).toBe(44_000_000)
+      expect(text('credit-loan')).toBe('14,000,000원')
+      // 한도도 다시 계산된다: 총자산 = 44,000,000 − 14,000,000 = 30,000,000
+      expect(text('credit-limit')).toBe('13,000,000원') // floor(27,000,000) − 14,000,000
+    })
+
+    it('"한도 전액"·"갚을 수 있는 만큼" 버튼이 금액 칸을 채운다', () => {
+      renderCredit({ cash: 3_000_000, holdings: [], loan: 10_000_000 })
+      fireEvent.click(screen.getByTestId('fill-repay'))
+      expect((screen.getByTestId('credit-amount') as HTMLInputElement).value).toBe('3000000') // min(빚, 현금)
+      expect(btn('repay-loan').disabled).toBe(false)
+
+      renderCredit({ cash: 100_000_000, holdings: [], loan: 0 })
+      fireEvent.click(screen.getAllByTestId('fill-limit')[0]!)
+      expect((screen.getAllByTestId('credit-amount')[0] as HTMLInputElement).value).toBe('90000000')
+    })
+
+    it('금액 칸과 버튼의 터치 타깃이 44px 이상이다', () => {
+      renderCredit({ cash: 100_000_000, loan: 0 })
+      for (const id of ['credit-amount', 'fill-limit', 'fill-repay', 'take-loan', 'repay-loan']) {
+        expect(parseFloat(getComputedStyle(screen.getByTestId(id)).minHeight), id).toBeGreaterThanOrEqual(44)
+      }
+    })
   })
 })

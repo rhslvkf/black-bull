@@ -3,6 +3,7 @@ import {
   GRADES, BALANCE, createRng, Rand, type Mood,
 } from '@bb/core'
 import { act, apCostOf, type Strategy } from './strategies'
+import { isBankrupt } from './bankruptcy'
 
 /** 등급을 숫자로 — E=0 … S=5. 후반 등급 상승을 재려면 순서가 있는 축이 필요하다. */
 const gradeIdx = (g: string): number => GRADES.findIndex(x => x === g)
@@ -36,6 +37,16 @@ export interface RunResult {
   peakAssets: number
   /** 이 판이 신용(대출)을 한 번이라도 썼는가. */
   usedMargin: boolean
+  /** 이 판에서 빚이 가장 많았던 순간의 잔액. `usedMargin`은 1원을 빌려도 참이라
+   *  "얼마나 크게 빌렸는가"를 못 본다 — 레버리지가 실제로 판을 키웠는지는 이 값이 말한다. */
+  peakLoan: number
+  /** 마진콜 **경고**(`player.marginCallDueTurn`)가 한 번이라도 섰는가. */
+  everWarned: boolean
+  /** 담보가 무너져 **강제청산**까지 간 판인가(`flags.marginCalled`). 경고만 서고 회복한
+   *  판과 구분한다 — 마진콜 대응이 일하고 있는지는 그 차이로만 보인다. */
+  marginCalled: boolean
+  /** 플레이어가 낸 주문 수(`trackers.tradeCount`). 강제청산은 세지 않는다(margin.ts). */
+  trades: number
 }
 export interface BatchReport {
   runs: number; strategy: Strategy
@@ -87,8 +98,19 @@ export interface BatchReport {
   /** 대출 문턱 이상까지 자산이 올라가 본 판의 비율. 신용 시스템이 살아 있는지는 이 값이
    *  0을 벗어나는지로만 보인다. */
   loanReachRate: number
-  /** 신용을 한 번이라도 쓴 판의 비율. sim 전략은 아무도 대출을 부르지 않으므로 0이다. */
+  /** 신용을 한 번이라도 쓴 판의 비율. `leverage` 말고는 아무도 `takeLoan`을 부르지
+   *  않으므로 나머지 전략에서는 정확히 0이다. */
   marginRate: number
+  /** 빚 최고잔액의 중앙값·최대값. 신용을 '썼다'와 '판을 키웠다'는 다른 말이다. */
+  peakLoanMedian: number
+  peakLoanMax: number
+  /** 마진콜 **경고**가 한 번이라도 선 판의 비율과, 거기서 회복하지 못해 **강제청산**까지
+   *  간 판의 비율. 둘의 차이가 곧 "경고를 받고 유예 한 주 안에 살아 나온 판"이다 —
+   *  마진콜의 유예가 실제로 쓰이는지는 이 두 값을 나란히 놓아야만 보인다. */
+  marginWarnRate: number
+  marginCallRate: number
+  /** 한 판당 플레이어가 낸 주문 수의 평균. 전략의 매매 패턴이 실제로 다른지를 재는 축. */
+  avgTrades: number
 }
 
 const events = loadEvents()
@@ -102,6 +124,9 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
   let apSpent = 0, rerolls = 0
   let gradeSumEarly = 0, gradeCountEarly = 0, gradeSumLate = 0, gradeCountLate = 0
   let everShaken = false
+
+  let peakLoan = 0
+  let everWarned = false
 
   for (let i = 0; i < BALANCE.totalTurns && s.status === 'playing'; i++) {
     // 대기 중인 선택지는 무작위로 해소
@@ -127,6 +152,12 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     apSpent += apCostOf(state, cards)
     for (const id of cards) cardUse[id] = (cardUse[id] ?? 0) + 1
     s = advanceTurn(state, cards)
+    // 빚의 최고잔액은 **턴이 끝난 뒤** 읽는다 — 이자 가산과 강제청산이 4단계에서
+    // 일어나므로, 매매 직후에만 읽으면 이자로 불어난 잔액을 놓친다.
+    peakLoan = Math.max(peakLoan, s.player.loan)
+    // 경고는 신용 단계(4)에서 서고 **다음 턴의 같은 단계**에서야 내려간다 — 턴이 끝난
+    // 자리에서 읽으면 유예 중인 한 주를 정확히 한 번 본다.
+    if (s.player.marginCallDueTurn !== null) everWarned = true
   }
 
   const assets = Math.max(0, totalAssets(s))
@@ -139,7 +170,14 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     ending: s.ending?.endingId ?? 'unknown',
     titles: s.ending?.titles ?? [],
     assets, shakenTurns: s.trackers.shakenTurns,
-    bankrupt: s.ending?.endingId === 'legend', turns: s.turn,
+    // 파산 여부는 **최종 상태**에서 직접 잰다(`isBankrupt`). 예전에는 `ending === 'legend'`
+    // 였는데, 그러면 "legend가 0판인 이유가 판정 버그가 아니라 파산 부재임을 확인한다"는
+    // 게이트가 자기 자신을 검사하는 자기충족 단언이 된다(같은 값을 양쪽에 놓고 비교).
+    // advanceTurn이 파산을 판정하는 식(`totalAssets(s) <= 0`)을 그대로 쓰면 `legend`
+    // 판수와 파산 판수가 **서로 다른 경로로** 계산돼 교차검증이 실제로 성립한다.
+    // 그 되돌림을 실제로 잡는 지킴이는 `bankruptcy.test.ts`다 — 이 한 줄이 다시
+    // 엔딩 이름을 읽기 시작하면 거기서 red가 된다.
+    bankrupt: isBankrupt(s), turns: s.turn,
     priceMul, moodTurns,
     apSpent, rerolls,
     gradeSumEarly, gradeCountEarly, gradeSumLate, gradeCountLate,
@@ -147,6 +185,10 @@ export function playOne(seed: number, strategy: Strategy): RunResult {
     cardUse,
     peakAssets: s.trackers.peakAssets,
     usedMargin: s.trackers.usedMargin,
+    peakLoan,
+    everWarned,
+    marginCalled: s.flags['marginCalled'] === true,
+    trades: s.trackers.tradeCount,
   }
 }
 
@@ -165,8 +207,9 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
   let apSpent = 0, rerolls = 0, turnsPlayed = 0
   let gEarlySum = 0, gEarlyN = 0, gLateSum = 0, gLateN = 0
   let everShakenRuns = 0, stuckRuns = 0
-  let loanReach = 0, marginRuns = 0
+  let loanReach = 0, marginRuns = 0, marginWarnRuns = 0, marginCalledRuns = 0, trades = 0
   const peaks: number[] = []
+  const loanPeaks: number[] = []
   // 대출 문턱의 자산선. loan.minTier는 티어 번호이고, 그 티어의 하한이 tierMins에 있다.
   const loanFloor = BALANCE.tierMins[BALANCE.loan.minTier] ?? Infinity
 
@@ -188,6 +231,10 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     peaks.push(r.peakAssets)
     if (r.peakAssets >= loanFloor) loanReach++
     if (r.usedMargin) marginRuns++
+    if (r.everWarned) marginWarnRuns++
+    if (r.marginCalled) marginCalledRuns++
+    trades += r.trades
+    loanPeaks.push(r.peakLoan)
     for (const t of r.titles) titleCounts[t] = (titleCounts[t] ?? 0) + 1
     for (const m of ['normal', 'shaken', 'joy'] as const) {
       moodTotal[m] += r.moodTurns[m]
@@ -239,5 +286,10 @@ export function runBatch(runs: number, strategy: Strategy, seed0 = 1): BatchRepo
     peakAssetsMedian: quantile([...peaks].sort((a, b) => a - b), 0.5),
     loanReachRate: loanReach / runs,
     marginRate: marginRuns / runs,
+    peakLoanMedian: quantile([...loanPeaks].sort((a, b) => a - b), 0.5),
+    peakLoanMax: loanPeaks.length === 0 ? 0 : Math.max(...loanPeaks),
+    marginWarnRate: marginWarnRuns / runs,
+    marginCallRate: marginCalledRuns / runs,
+    avgTrades: trades / runs,
   }
 }

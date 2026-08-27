@@ -2,7 +2,7 @@ import { BALANCE } from '@bb/core'
 import { runBatch } from './runner'
 import type { Strategy } from './strategies'
 
-const STRATEGIES = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic'] as const satisfies readonly Strategy[]
+const STRATEGIES = ['cash', 'labor', 'seedhold', 'buyhold', 'momentum', 'random', 'panic', 'leverage'] as const satisfies readonly Strategy[]
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`)
@@ -40,10 +40,13 @@ console.log(`  흔들림 겪은 판 ${(r.shakenRate * 100).toFixed(1)}%`)
 console.log(`  멘탈 교착률   ${(r.stuckInShakenRate * 100).toFixed(1)}% (흔들림 겪은 판 기준)`)
 console.log(`  턴당 행동력   ${r.avgApSpent.toFixed(2)} / 기본 ${BALANCE.action.base}`)
 console.log(`  턴당 리롤     ${r.rerollUse.toFixed(2)} / 기본 ${BALANCE.reroll.base}`)
-// Ruling 16 — 신용이 죽어 있다는 사실을 리포트 표면에 남긴다. 파산율이 늘 0인 이유가
-// "존버가 안전해서"가 아니라 "아무도 대출을 부르지 않아서"임이 여기서 보인다.
+// 신용이 이 판에서 실제로 어떻게 쓰였는지를 리포트 표면에 남긴다. `leverage` 말고는
+// 아무도 `takeLoan`을 부르지 않으므로 나머지 일곱은 신용·강제청산·파산이 전부 0이고,
+// 그 0이 "존버가 안전해서"가 아니라 "빚을 지지 않아서"임이 이 줄에서 보인다.
 console.log(`  최고자산      중앙 ${won(r.peakAssetsMedian)} / 최대 ${won(r.peakAssetsMax)}`)
 console.log(`  대출 문턱(${won(BALANCE.tierMins[BALANCE.loan.minTier] ?? 0)}) 도달 ${(r.loanReachRate * 100).toFixed(1)}%  ·  신용 사용 ${(r.marginRate * 100).toFixed(1)}%`)
+console.log(`  빚 최고잔액   중앙 ${won(r.peakLoanMedian)} / 최대 ${won(r.peakLoanMax)}  ·  강제청산 ${(r.marginCallRate * 100).toFixed(1)}%`)
+console.log(`  판당 주문 수  ${r.avgTrades.toFixed(1)}`)
 console.log(`  슬롯 등급(E=0..S=5)  초반 ${r.avgGradeIdxEarly.toFixed(2)} → 후반 ${r.avgGradeIdxLate.toFixed(2)} (Δ${(r.avgGradeIdxLate - r.avgGradeIdxEarly).toFixed(2)})`)
 console.log('  엔딩 분포')
 Object.entries(r.endingCounts).sort((a, b) => b[1] - a[1])
