@@ -4,6 +4,8 @@ import App from './App'
 import { useGame } from './store/store'
 import { loadEvents } from '@bb/core'
 import { pinSlots } from './testkit'
+import { DUR_BASE } from './design/motion'
+import { matchMediaMock } from './design/testUtils'
 
 // 카드 목록이 슬롯에서 나오므로(Task 6) 테스트가 클릭할 카드를 매 판 꽂아 둔다.
 beforeEach(() => {
@@ -105,5 +107,43 @@ describe('고른 카드는 탭을 옮겨도 남는다 (최종 리뷰 Minor 8)', 
     fireEvent.click(screen.getByTestId('slot-card-hodl'))
     fireEvent.click(screen.getByTestId('next-turn'))
     expect(useGame.getState().picked).toEqual([])
+  })
+})
+
+// Task 22 §6 "화면 전환 — 탭 전환 슬라이드". jsdom은 외부 CSS를 안 읽으므로(Ruling 20)
+// App.tsx가 인라인 style(animation)로 재생/생략을 결정한 값을 직접 본다.
+describe('탭 전환 슬라이드 (§6 화면 전환, MU11)', () => {
+  it('다른 탭으로 옮기면 본문 컨테이너에 슬라이드 애니메이션이 걸린다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain('tab-slide')
+  })
+
+  it('reduced-motion이면 탭을 옮겨도 애니메이션이 없다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toBe('')
+  })
+
+  // MU12 — duration이 motion.ts의 DUR_BASE(따라서 tokens.css --dur-base)에서
+  // 유도되는지 직접 본다. 하드코딩된 리터럴로 바뀌어도(우연히 같은 숫자가 아닌 한) 잡는다.
+  it('슬라이드 길이가 motion.ts의 DUR_BASE에서 유도된다', () => {
+    render(<App />)
+    goHome()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain(`${DUR_BASE}ms`)
+  })
+
+  it('탭 전환 슬라이드가 실제 탭 전환(다른 화면 렌더)과 함께 일어난다', () => {
+    // "애니메이션은 걸리지만 실제로는 탭이 안 바뀐다" 종류의 죽은 연출을 막는다.
+    render(<App />)
+    goHome()
+    expect(screen.queryByTestId('filter-all')).toBeNull()
+    fireEvent.click(screen.getByTestId('tab-market'))
+    expect(screen.getByTestId('tab-body').style.animation).toContain('tab-slide')
+    expect(screen.getByTestId('filter-all')).toBeDefined()
   })
 })

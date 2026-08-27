@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { useTypewriter } from '../design/motion'
+import { DUR_BASE, prefersReducedMotion, useTypewriter } from '../design/motion'
 import { NPC_ID_BY_NAME_KO } from '../design/speakers'
 import { TOUCH_TARGET_PX } from '../design/layout'
 
@@ -99,12 +99,20 @@ export function DialogueBox({ speaker, text, onAdvance, onDone }: DialogueBoxPro
     setLogOpen(o => !o)
   }
 
+  // §6 "화면 전환 — 대화창 페이드인". 부모(EventModal·CutsceneView·PrologueView)가
+  // 새 대사마다 이 컴포넌트를 새 key로 다시 마운트하므로, 렌더마다 다시 계산해도
+  // (ChoiceSheet.tsx와 같은 기법 — Ruling 20, jsdom이 외부 CSS를 안 읽어 인라인 style로
+  // 내려야 실측 가능하다) 애니메이션은 마운트당 한 번만 사실상 재생된다(같은 문자열을
+  // 다시 대입해도 브라우저는 재생 중인 keyframe을 재시작하지 않는다).
+  const fadeInAnimation = prefersReducedMotion() ? 'none' : `dialogue-fade-in ${DUR_BASE}ms ease-out`
+
   return (
     <div
       className="dialogue-box"
       data-testid="dialogue-box"
       role="button"
       tabIndex={0}
+      style={{ animation: fadeInAnimation }}
       onClick={handleAdvance}
       onKeyDown={handleKeyDown}
     >

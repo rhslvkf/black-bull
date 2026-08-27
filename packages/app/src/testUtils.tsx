@@ -305,6 +305,33 @@ export function currentState(): GameState {
 }
 
 /**
+ * Task 22 — "렌더 후 상태를 바꾼다"는 애니메이션 테스트(§6 "상태 전이")의 공통 전제다.
+ * `renderWithState`가 마운트 시점의 초기 상태를 심는 것과 달리, 이 헬퍼는 **이미 렌더된
+ * 컴포넌트가 구독 중인 스토어를 그 자리에서 갱신**해 리렌더를 유발한다 — 롤업·보간처럼
+ * "값이 바뀌는 순간"을 봐야 하는 테스트(자산 롤업, 흔들림 진입 등)에는 `renderWithState`
+ * 하나만으로는 표현할 수 없다.
+ *
+ * 병합 규칙은 `renderWithState`와 완전히 같다(`player`·`trackers` 중첩 부분 객체 지원) —
+ * 두 헬퍼가 각자 다른 병합 로직을 쓰면 "renderWithState에서는 되는데 setState에서는 안
+ * 되는" 비대칭이 생긴다.
+ *
+ * React `act()` 안에서 갱신한다 — 그러지 않으면 "state update not wrapped in act" 경고와
+ * 함께 effect(useCountUp의 rAF 시작, useShakePulse의 진입 판정 등)가 이 호출 안에서
+ * 동기적으로 플러시된다는 보장이 없어진다.
+ */
+export function setState(patch: GameStateOverride): void {
+  act(() => {
+    const base = useGame.getState().state
+    if (!base) throw new Error('setState: 게임 상태가 없다 (renderWithState를 먼저 불러라)')
+    const { player: playerOver, trackers: trackersOver, ...rest } = patch
+    const player = mergePlayer(base.player, playerOver)
+    const trackers = mergeTrackers(base.trackers, trackersOver)
+    const state: GameState = { ...base, ...rest, player, trackers }
+    useGame.setState({ state })
+  })
+}
+
+/**
  * Task 21 — `EndingView`(잔고증명서) 테스트용 편의 헬퍼. 브리프가 쓰는 다섯 옵션
  * (`cash`·`holdingValue`·`trackers`·`endingId`·`titles`)만 지원한다.
  */

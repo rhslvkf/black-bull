@@ -5,6 +5,7 @@ import { won, pct } from '../format'
 import { PriceChart } from '../components/PriceChart'
 import { Art } from '../art/Art'
 import { TOUCH_TARGET_PX } from '../design/layout'
+import { useShake } from '../design/motion'
 import type { ArtKey } from '../art/keys'
 
 const REASON: Record<string, string> = {
@@ -25,6 +26,9 @@ export function StockDetail() {
   const doSell = useGame(st => st.doSell)
   const doAverageDown = useGame(st => st.doAverageDown)
   const [qty, setQty] = useState(1)
+  // 훅은 이른 리턴(아래) 전에 항상 같은 순서로 호출해야 한다(React 규칙) — 손절
+  // 봉인 흔들림(§6 "타격감") 상태도 다른 훅과 마찬가지로 여기서 미리 호출해 둔다.
+  const [sellShaking, triggerSellShake] = useShake()
   if (!s || !id) return null
 
   const def = s.stockDefs.find(d => d.id === id)!
@@ -47,7 +51,14 @@ export function StockDetail() {
   // 기대지 않고 조건 자체가 음수를 거부하게 한다(canAfford는 원래부터 qty > 0을
   // 요구해 이 문제가 없었다 — averageDownDisabled의 qty < 1도 마찬가지다).
   const canSellQty = !!held && qty > 0 && held.qty >= qty
-  const sellDisabled = !sellChk.ok || !canSellQty
+  // §6 "타격감 — 막힌 동작(손절 봉인)의 짧은 흔들림". 전역 제약이 정의하는 "손절
+  // 봉인"은 core의 SELL_BLOCKED(흔들림 + 손실 20% 이상, canSell 참고)와 정확히 같은
+  // 조건이다. 이 케이스만 버튼을 진짜 HTML disabled로 두지 않는다 — disabled 버튼은
+  // 클릭 이벤트 자체를 받지 못해(브라우저·jsdom 둘 다 마찬가지로 실측 확인됨) 흔들림
+  // 피드백을 낼 방법이 없어진다. 그 외 사유(보유 없음·게임 종료·수량 미입력)는 정말로
+  // "누를 이유가 없는" 상태라 기존처럼 진짜 disabled로 남긴다.
+  const sellLocked = !sellChk.ok && sellChk.reason === 'SELL_BLOCKED'
+  const sellDisabled = (!sellChk.ok && !sellLocked) || !canSellQty
   // Fix Round 1 Major 1 — 물타기 예산은 항상 현금 전액이 아니라, 화면에 이미 있는 수량
   // 입력을 그대로 재사용한다. Task 2가 averageDownPct(고정 20%)를 지우고 budget을
   // 매개변수화한 취지가 "얼마를 넣을지 매매 화면에서 사용자가 정한다"였는데, 원탭으로
@@ -142,7 +153,18 @@ export function StockDetail() {
 
         <div className="trade-buttons">
           <button data-testid="buy" className="buy" disabled={!canAfford} onClick={() => doBuy(id, qty)}>매수</button>
-          <button data-testid="sell" className="sell" disabled={sellDisabled} onClick={() => doSell(id, qty)}>매도</button>
+          <button
+            data-testid="sell"
+            className={`sell${sellLocked ? ' locked' : ''}${sellShaking ? ' shake' : ''}`}
+            disabled={sellDisabled}
+            aria-disabled={sellLocked || sellDisabled}
+            onClick={() => {
+              if (sellLocked) { triggerSellShake(); return }
+              doSell(id, qty)
+            }}
+          >
+            매도
+          </button>
         </div>
         {!sellChk.ok && held && <p className="warn" data-testid="sell-block-reason">{REASON[sellChk.reason!] ?? sellChk.reason}</p>}
         {sellChk.ok && held && held.qty < qty && <p className="warn">보유 수량({held.qty}주)보다 많이 팔 수 없다.</p>}

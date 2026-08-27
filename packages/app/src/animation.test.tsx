@@ -1,0 +1,107 @@
+import { describe, it, expect } from 'vitest'
+import { screen, fireEvent } from '@testing-library/react'
+import App from './App'
+import { renderWithState, renderDetail, setState } from './testUtils'
+import { matchMediaMock } from './design/testUtils'
+
+/**
+ * Task 22 — §6(애니메이션) 검증. 브리프(task-22-brief.md)가 준 4개 테스트를 그대로
+ * 옮기되, 컨트롤러 판정 두 가지를 반영한다:
+ *
+ * - Ruling 18: `@testing-library/jest-dom`을 추가하지 않는다 — `toHaveClass`/
+ *   `toHaveAttribute`를 `classList.contains`/`getAttribute` 순수 DOM 비교로 옮긴다.
+ *   검사 내용은 그대로다.
+ * - Ruling 2: `renderDetail({ blocked: true })`의 `blocked`는 실제 상태 필드가 아니다.
+ *   전역 제약이 정의하는 손절 봉인 조건(흔들림 = 멘탈 ≤ 29, 손실 20% 이상)을
+ *   `override.player.mental` + `holdings`/`price`로 직접 구성한다.
+ *
+ * "흔들림 진입 시 화면 가장자리가 맥동한다" 테스트는 `app-root`(App.tsx의 최상위
+ * `<main>`)를 봐야 하므로, 브리프 원문과 달리 렌더 대상을 `<HomeScreen/>`(기본값)이
+ * 아니라 `<App/>`으로 명시한다 — `app-root`는 App 자신이 그리는 요소이지 HomeScreen이
+ * 그리는 요소가 아니다.
+ */
+describe('애니메이션 (Task 22 브리프)', () => {
+  it('자산 숫자가 롤업된다', () => {
+    renderWithState({ player: { cash: 1_000_000 } })
+    setState({ player: { cash: 2_000_000 } })
+    expect(Number(screen.getByTestId('topbar-assets').getAttribute('data-value'))).toBeLessThan(2_000_000)
+  })
+
+  it('reduced-motion이면 즉시 반영된다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    renderWithState({ player: { cash: 1_000_000 } })
+    setState({ player: { cash: 2_000_000 } })
+    expect(Number(screen.getByTestId('topbar-assets').getAttribute('data-value'))).toBe(2_000_000)
+  })
+
+  // 전역 제약이 정의하는 손절 봉인: 흔들림(멘탈 ≤ 29) + 20% 이상 손실 포지션.
+  // core trade.test.ts의 실측값(avgCost 10000·price 8000 → 손실 20%, mental 10)을
+  // 그대로 재사용해 core가 실제로 SELL_BLOCKED로 판정하는 조합임을 보장한다.
+  it('막힌 동작(손절 봉인)은 흔들림 클래스를 받는다', () => {
+    renderDetail({
+      stockId: 'sjc',
+      price: 8000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }],
+      override: { player: { mental: 10 } },
+    })
+    fireEvent.click(screen.getByTestId('sell'))
+    expect(screen.getByTestId('sell').classList.contains('shake')).toBe(true)
+  })
+
+  it('흔들림 진입 시 화면 가장자리가 맥동한다', () => {
+    const { unmount } = renderWithState({ player: { mental: 40 } }, <App />)
+    fireEvent.click(screen.getByTestId('prologue-skip')) // 첫 판은 프롤로그가 먼저 뜬다
+    setState({ player: { mental: 12 } })
+    expect(screen.getByTestId('app-root').getAttribute('data-pulse')).toBe('shaken')
+    unmount()
+  })
+})
+
+// MU4 — 반대 방향. 막히지 않은(정상) 매도 클릭에는 흔들림 클래스가 붙으면 안 된다.
+// "막힌 동작에 클래스를 안 붙인다"만 보면, "항상 클래스를 붙인다"는 정반대 뮤테이션도
+// 위 브리프 테스트 하나만으로는 못 잡는다(둘 다 그 테스트를 통과시킨다).
+describe('막히지 않은 동작에는 흔들림 클래스가 붙지 않는다 (MU4 — 반대 방향)', () => {
+  it('정상적으로 팔 수 있는 상태에서 매도를 눌러도 shake 클래스가 없다', () => {
+    renderDetail({
+      stockId: 'sjc',
+      price: 12000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }],
+      override: { player: { mental: 80 } }, // 흔들림이 아니다 — 손실도 없다(오히려 이익)
+    })
+    fireEvent.click(screen.getByTestId('sell'))
+    expect(screen.getByTestId('sell').classList.contains('shake')).toBe(false)
+  })
+
+  it('클릭 전에는 애초에 shake 클래스가 없다(손절 봉인 상태라도)', () => {
+    renderDetail({
+      stockId: 'sjc',
+      price: 8000,
+      holdings: [{ stockId: 'sjc', qty: 10, avgCost: 10000, heldTurns: 3 }],
+      override: { player: { mental: 10 } },
+    })
+    expect(screen.getByTestId('sell').classList.contains('shake')).toBe(false)
+  })
+})
+
+// MU6 — 흔들림에서 벗어나면 맥동이 즉시 사라져야 한다(§6 "한 번" 맥동 — 영원히 돌면 안
+// 된다). 브리프 테스트(진입 시 켜진다)만으로는 "한 번 켜지면 계속 켜져 있다" 뮤테이션을
+// 못 잡는다.
+describe('흔들림에서 벗어나면 맥동이 사라진다 (MU6)', () => {
+  it('멘탈이 흔들림 문턱 위로 회복되면 data-pulse가 즉시 없어진다', () => {
+    const { unmount } = renderWithState({ player: { mental: 40 } }, <App />)
+    fireEvent.click(screen.getByTestId('prologue-skip'))
+    setState({ player: { mental: 12 } }) // 진입 — 펄스 on
+    expect(screen.getByTestId('app-root').getAttribute('data-pulse')).toBe('shaken')
+
+    setState({ player: { mental: 60 } }) // 회복 — 흔들림에서 벗어남
+    expect(screen.getByTestId('app-root').getAttribute('data-pulse')).toBeNull()
+    unmount()
+  })
+
+  it('애초에 흔들리지 않는 판에서는 data-pulse 자체가 없다', () => {
+    const { unmount } = renderWithState({ player: { mental: 80 } }, <App />)
+    fireEvent.click(screen.getByTestId('prologue-skip'))
+    expect(screen.getByTestId('app-root').getAttribute('data-pulse')).toBeNull()
+    unmount()
+  })
+})

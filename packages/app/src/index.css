@@ -12,6 +12,27 @@ body {
 button { font: inherit; cursor: pointer; }
 ul { list-style: none; padding: 0; margin: 0; }
 
+/* ---------- 모션: prefers-reduced-motion 전역 안전망 (§6, 이 태스크의 제1 제약) ----------
+ * 이 파일 전체(그리고 앞으로 추가될 CSS)가 개별 규칙마다 `@media (prefers-reduced-motion:
+ * reduce) { .foo { animation: none } }`를 반복해서 달지 않아도, 순수 CSS 트랜지션/애니메이션
+ * (JS가 인라인 style로 재생 여부를 결정하는 것들 — ChoiceSheet·CutsceneView·DialogueBox·
+ * App의 탭 슬라이드·가장자리 맥동 — 은 이미 각자 prefersReducedMotion()을 본다)은 전부
+ * 이 규칙 하나로 사실상 순간 종료된다. 개별 규칙에 이미 달려 있는 별도의
+ * `@media (prefers-reduced-motion: reduce) { animation: none }`(char-stage-shaken·
+ * stat-chip-flash·dialogue-caret 등)은 중복이지만 해가 없어 그대로 둔다 — 의도를 더
+ * 명시적으로 드러내는 문서 역할도 한다. `!important`가 필요한 이유: 이 규칙보다 CSS
+ * 소스에서 나중에 오거나 특이도가 높은 개별 transition/animation 선언이 이 안전망을
+ * 덮어쓰지 못하게 하기 위해서다(그러지 않으면 새 애니메이션을 추가할 때마다 이 규칙
+ * 뒤에 둬야 한다는 암묵적 순서 의존이 생긴다). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 .app {
   max-width: 480px;
   margin: 0 auto;
@@ -33,6 +54,24 @@ ul { list-style: none; padding: 0; margin: 0; }
   background: none; color: var(--muted); border: 1px solid var(--border);
   box-shadow: none; font-size: 14px; font-weight: 600; padding: 12px 20px; min-height: 44px;
 }
+/* §6 "타격감 — 흔들림 진입 시 화면 가장자리 맥동". App.tsx가 흔들림 진입 순간에만
+ * (useShakePulse, §6 "한 번" 맥동 + MU6 — 흔들림에서 벗어나면 즉시 꺼진다) 인라인
+ * style(animation)로 이 키프레임을 건다(Ruling 20과 같은 이유로 duration도 인라인).
+ * 여기서는 그 값이 가리키는 키프레임 자체만 정의한다 — ChoiceSheet·CutsceneView와
+ * 같은 분업이다. */
+@keyframes edge-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(224, 82, 82, 0); }
+  50% { box-shadow: inset 0 0 48px 10px rgba(224, 82, 82, .5); }
+}
+
+/* §6 "화면 전환 — 탭 전환 슬라이드". App.tsx가 탭이 바뀔 때마다 `.body`를 새 key로
+ * 다시 마운트하며 인라인 style(animation)로 이 키프레임을 건다(prefers-reduced-motion
+ * 이면 아예 안 건다). */
+@keyframes tab-slide {
+  from { transform: translateX(10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 .error-detail {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
   color: var(--danger); word-break: break-all; max-width: 320px;
@@ -62,7 +101,11 @@ ul { list-style: none; padding: 0; margin: 0; }
 .gauge { display: flex; align-items: center; gap: 6px; flex: 1; font-size: 11px; color: var(--muted); }
 .gauge-label { min-width: 28px; }
 .gauge-track { flex: 1; height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
-.gauge-fill { height: 100%; border-radius: 4px; transition: width .3s ease, background .3s ease; }
+/* §6 "상태 전이 — 게이지 보간". 멘탈·컨디션 게이지의 폭이 값이 바뀔 때 즉시 뛰지
+ * 않고 부드럽게 보간되게 한다. duration은 tokens.css(--dur-base)를 그대로 참조한다 —
+ * 하드코딩 금지(전역 제약) — reduced-motion에서는 위 전역 안전망이 이 transition도
+ * 사실상 순간 종료시킨다. */
+.gauge-fill { height: 100%; border-radius: 4px; transition: width var(--dur-base) var(--ease-standard), background var(--dur-base) var(--ease-standard); }
 .gauge-num { min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
 .gauge-critical .gauge-fill { animation: pulse-danger 1.4s ease-in-out infinite; }
 .gauge-critical .gauge-num { color: var(--danger); }
@@ -258,8 +301,12 @@ ul { list-style: none; padding: 0; margin: 0; }
   display: flex; flex-direction: column; gap: 5px;
   text-align: left; padding: 10px 11px; border-radius: 12px;
   border: 1px solid var(--border); background: var(--panel);
-  color: var(--text); transition: border-color .15s, background .15s, transform .1s;
+  color: var(--text);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
 }
+/* §6 "타격감 — 카드 프레스". 누르는 순간 살짝 줄어들어 눌림을 체감하게 한다. */
 .card:active:not(:disabled) { transform: scale(.97); }
 .card.picked { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
 /* 회복 슬롯의 시각적 구별(MU9) — 왼쪽 굵은 초록 테두리 + recovery-marker 텍스트
@@ -387,6 +434,22 @@ ul { list-style: none; padding: 0; margin: 0; }
 .trade-buttons .buy { background: linear-gradient(180deg, #ef5a67, #e0404e); color: #fff; }
 .trade-buttons .sell { background: linear-gradient(180deg, #5a92f0, #3f78e0); color: #fff; }
 .trade-buttons button:disabled { background: var(--border); color: var(--muted); }
+/* 손절 봉인(SELL_BLOCKED)은 진짜 HTML disabled가 아니다(StockDetail.tsx 주석) — 눌러야
+ * 흔들림 피드백이 나오려면 클릭 이벤트 자체는 받아야 한다. 그래서 같은 "잠긴 것처럼
+ * 보이는" 시각을 별도 클래스로 흉내낸다. */
+.trade-buttons button.locked { background: var(--border); color: var(--muted); }
+
+/* §6 "타격감 — 막힌 동작(손절 봉인)의 짧은 흔들림". useShake(design/motion.ts)가
+ * `.shake` 클래스를 짧게 붙였다 뗀다 — 실제 keyframe은 여기, 재생 여부(reduced-motion)
+ * 는 위 전역 안전망이 처리한다(char-stage-shaken과 달리 이 클래스는 별도의
+ * `@media (prefers-reduced-motion: reduce)` 예외를 두지 않는다 — 전역 규칙 하나로 충분하다). */
+@keyframes shake-x {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.shake { animation: shake-x var(--dur-base) var(--ease-standard); }
 
 /* ---------- Account ---------- */
 .screen.account .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 40px 0; }
@@ -532,6 +595,18 @@ ul { list-style: none; padding: 0; margin: 0; }
 .overlay.cutscene[data-tone="down"] {
   background: linear-gradient(180deg, #602828 0%, #0b0e13 60%);
 }
+/* 컷신 크로스페이드를 실제로 재생하는 대상은 `.overlay.cutscene`(배경까지 포함한
+ * 장면 전체)이 아니라 이 `.cutscene-content` 래퍼다 — §6 요구("컷신 크로스페이드")와
+ * 완전 불투명 장면 불변식(Ruling 28, overlays.test.tsx)이 충돌할 뻔한 지점이다.
+ * `.overlay.cutscene[data-tone=...]`의 배경은 opacity를 전혀 안 쓰는 불투명 그라디언트인데,
+ * 크로스페이드를 그 바깥 요소(장면 전체)에 걸면 opacity가 0→1로 도는 동안 배경까지
+ * 함께 투명해져 그 뒤(홈 HUD·탭바)가 비친다 — CSS 소스 텍스트 파싱 검사(overlays.test.tsx)는
+ * 인라인 style(JS가 애니메이션을 재생하는 방식, Ruling 20)까지는 못 보므로 이 회귀를
+ * 못 잡는다(Task 21 재리뷰 MU-B와 같은 종류의 구멍). 그래서 애니메이션을 배경이 없는
+ * 안쪽 래퍼로 옮긴다 — 배경(.overlay.cutscene)은 항상 즉시 불투명하고, 그 위에서
+ * 제목·스테이지·대사·버튼만 페이드로 나타난다. 시각적으로도 "장면 전환" 자체는 그대로
+ * 크로스페이드처럼 읽힌다(overlays.test.tsx가 이제 이 요소를 직접 검증한다). */
+.cutscene-content { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; }
 .cutscene-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--text); }
 .cutscene-stage { display: flex; justify-content: center; }
 /* 애니메이션 값 자체는 CutsceneView.tsx가 인라인 style(animation)로 재생/생략을
@@ -551,6 +626,16 @@ ul { list-style: none; padding: 0; margin: 0; }
   position: relative; width: 100%; max-width: 480px; box-sizing: border-box;
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
   padding: 18px 52px 18px 18px; cursor: pointer;
+}
+/* §6 "화면 전환 — 대화창 페이드인". DialogueBox.tsx가 마운트마다(새 이벤트·새 컷신·
+ * 새 프롤로그 장면 — 부모가 key를 바꿔 매번 새로 마운트한다) 인라인 style(animation)로
+ * 재생/생략을 결정한다(prefers-reduced-motion, Ruling 20). 대화창은 이미 완전 불투명인
+ * 부모 장면(.overlay.prologue·.overlay.cutscene) 위에 얹히는 자식이라, 이 요소 자체가
+ * opacity로 페이드해도 그 뒤(게임 화면)가 비치지 않는다 — 불투명 불변식(Ruling 28)과
+ * 충돌하지 않는다(뒤에 있는 건 이미 불투명한 장면 배경이지 게임 화면이 아니다). */
+@keyframes dialogue-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .dialogue-speaker {
   position: absolute; top: -14px; left: 14px; padding: 5px 14px; border-radius: 999px;

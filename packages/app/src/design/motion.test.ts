@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useCountUp, useTypewriter } from './motion'
+import { useCountUp, useShake, useShakePulse, useTypewriter } from './motion'
 import { matchMediaMock } from './testUtils'
 
 describe('useCountUp', () => {
@@ -20,6 +20,96 @@ describe('useCountUp', () => {
     matchMediaMock('(prefers-reduced-motion: reduce)', true)
     const { result } = renderHook(() => useCountUp(0))
     expect(result.current).toBe(0)
+  })
+})
+
+describe('useShake (§6 타격감 — 막힌 동작의 짧은 흔들림)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('처음에는 흔들리지 않는다', () => {
+    const { result } = renderHook(() => useShake(200))
+    expect(result.current[0]).toBe(false)
+  })
+
+  it('trigger()를 부르면 즉시 흔들리고, duration 뒤 자동으로 꺼진다', () => {
+    const { result } = renderHook(() => useShake(200))
+    act(() => result.current[1]())
+    expect(result.current[0]).toBe(true)
+    act(() => { vi.advanceTimersByTime(200) })
+    expect(result.current[0]).toBe(false)
+  })
+
+  it('duration이 지나기 전에 다시 trigger()하면 타이머가 재시작된다(계속 흔들린 채 유지)', () => {
+    const { result } = renderHook(() => useShake(200))
+    act(() => result.current[1]())
+    act(() => { vi.advanceTimersByTime(150) })
+    act(() => result.current[1]()) // 재시작
+    act(() => { vi.advanceTimersByTime(150) }) // 최초 트리거로부터 300ms — 재시작 없었으면 이미 꺼졌을 시점
+    expect(result.current[0]).toBe(true)
+    act(() => { vi.advanceTimersByTime(50) }) // 재시작 시점으로부터 200ms
+    expect(result.current[0]).toBe(false)
+  })
+})
+
+describe('useShakePulse (§6 타격감 — 흔들림 진입 시 화면 가장자리 맥동)', () => {
+  // beforeEach/afterEach로 묶는다(useShake describe와 같은 패턴) — 개별 it 안에서
+  // vi.useFakeTimers()/vi.useRealTimers()를 직접 짝지으면, 그 사이의 assertion이
+  // 실패해 던질 때 useRealTimers()가 실행되지 못하고 fake timer가 다음 테스트(특히
+  // 이 파일 뒤쪽의 useTypewriter 테스트들, setTimeout 기반)로 새어나간다 — 실제로
+  // 겪은 사고(MU6 뮤테이션 테스트 중 발견).
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('흔들리지 않는 상태로 마운트되면 펄스가 없다', () => {
+    const { result } = renderHook(() => useShakePulse(false))
+    expect(result.current).toBe(false)
+  })
+
+  it('마운트 즉시 흔들린 상태라면(진입이 아니라 이미 흔들리는 채 시작) 펄스를 켜지 않는다', () => {
+    // "진입 시" 한 번만 맥동해야 한다 — 이미 흔들리는 판을 새로고침해서 다시 열었다고
+    // 매번 펄스가 도는 것은 스펙 의도가 아니다.
+    const { result } = renderHook(() => useShakePulse(true))
+    expect(result.current).toBe(false)
+  })
+
+  it('false→true로 바뀌는 순간(흔들림 진입) 펄스가 켜진다', () => {
+    const { result, rerender } = renderHook(({ shaken }) => useShakePulse(shaken, 500), {
+      initialProps: { shaken: false },
+    })
+    expect(result.current).toBe(false)
+    rerender({ shaken: true })
+    expect(result.current).toBe(true)
+  })
+
+  it('duration이 지나면 흔들림이 계속돼도 펄스는 저절로 꺼진다("한 번" 맥동)', () => {
+    const { result, rerender } = renderHook(({ shaken }) => useShakePulse(shaken, 500), {
+      initialProps: { shaken: false },
+    })
+    rerender({ shaken: true })
+    expect(result.current).toBe(true)
+    act(() => { vi.advanceTimersByTime(500) })
+    expect(result.current).toBe(false)
+  })
+
+  it('흔들림에서 벗어나면 타임아웃을 기다리지 않고 즉시 펄스가 꺼진다(MU6)', () => {
+    const { result, rerender } = renderHook(({ shaken }) => useShakePulse(shaken, 5000), {
+      initialProps: { shaken: false },
+    })
+    rerender({ shaken: true })
+    expect(result.current).toBe(true)
+    act(() => { vi.advanceTimersByTime(10) }) // 타임아웃(5000ms)에는 한참 못 미친다
+    rerender({ shaken: false }) // 흔들림에서 벗어남
+    expect(result.current).toBe(false)
+  })
+
+  it('reduced-motion이면 흔들림에 진입해도 펄스가 켜지지 않는다 (§6 제1 제약)', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    const { result, rerender } = renderHook(({ shaken }) => useShakePulse(shaken), {
+      initialProps: { shaken: false },
+    })
+    rerender({ shaken: true })
+    expect(result.current).toBe(false)
   })
 })
 

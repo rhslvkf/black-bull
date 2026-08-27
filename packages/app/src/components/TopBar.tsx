@@ -2,6 +2,7 @@ import { BALANCE, totalAssets } from '@bb/core'
 import { useGame } from '../store/store'
 import { won, yearWeek } from '../format'
 import { TOUCH_TARGET_PX } from '../design/layout'
+import { useCountUp } from '../design/motion'
 
 // TOUCH_TARGET_PX는 design/layout.ts로 옮겼다(Fix Round 1 Minor 3) — ActionMeter·
 // CardTile 등 다른 컴포넌트가 이 파일(TopBar.tsx)을 상수 창고로 끌어다 쓰던 구조를
@@ -26,6 +27,12 @@ export function TopBar() {
 
   const remaining = BALANCE.totalTurns - s.turn
   const assets = totalAssets(s)
+  // §6 "상태 전이 — 자산 숫자 롤업". 지금은 값이 즉시 바뀌어 무엇이 변했는지 알 수
+  // 없다(스펙 원문) — useCountUp(Task 9, design/motion.ts)이 목표값까지 부드럽게
+  // 올라가는 표시값을 돌려준다. reduced-motion이면 그 훅이 알아서 즉시 목표값을 준다.
+  // `data-value`는 테스트가 "지금 화면에 실제로 그려진 숫자"를 원시값으로 읽을 수 있게
+  // 하는 지점이다(StockDetail의 `avg-cost` data-value와 같은 기존 관례).
+  const displayAssets = useCountUp(assets)
 
   return (
     <header className="topbar" data-testid="topbar" style={{ height: `${TOPBAR_HEIGHT_PX}px` }}>
@@ -42,7 +49,7 @@ export function TopBar() {
         <span className="topbar-yearweek">{yearWeek(s.turn)}</span>
         <span className="topbar-dday">D-{remaining}</span>
       </div>
-      <div className="topbar-assets" data-testid="topbar-assets">{won(assets)}</div>
+      <div className="topbar-assets" data-testid="topbar-assets" data-value={displayAssets}>{won(displayAssets)}</div>
       <button
         type="button"
         className="topbar-icon-btn"

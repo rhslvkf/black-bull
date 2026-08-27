@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { actionPoints, cardApCost, gradeOfSlot, slotsWith } from '@bb/core'
@@ -123,5 +126,37 @@ describe('Hud를 줄여도 게이지는 화면에 남는다 (MU10)', () => {
     renderWithState({ player: { mental: 55, condition: 33 } }, <Hud />)
     expect(screen.getByTestId('gauge-mental').textContent).toContain('55')
     expect(screen.getByTestId('gauge-condition').textContent).toContain('33')
+  })
+})
+
+// Task 22 §6 "타격감 — 행동력 점 소모" · "상태 전이 — 게이지 보간". jsdom은 실제 CSS
+// 트랜지션의 시각 효과를 계산하지 않으므로(Ruling 20과 같은 근본 이유) index.css
+// 소스 텍스트를 직접 읽어 규칙 존재를 고정한다(tokens.test.ts·CardTile.test.tsx가
+// 세운 전례).
+describe('§6 CSS 트랜지션이 실제로 걸려 있다 (MU7 게이지 보간, MU10 행동력 점 소모)', () => {
+  const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const css = readFileSync(cssPath, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+  function ruleBody(selector: string): string {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`)
+    const m = css.match(re)
+    if (!m) throw new Error(`선택자를 찾을 수 없다: ${selector}`)
+    return m[1]!
+  }
+
+  it('.gauge-fill의 width가 --dur-base 토큰으로 보간된다 (MU7 — 없애면 잡힌다)', () => {
+    expect(ruleBody('.gauge-fill')).toMatch(/transition:[^;]*width\s+var\(--dur-base\)/)
+  })
+
+  it('.ap-dot이 background/transform을 --dur-fast 토큰으로 트랜지션한다 (MU10 — 없애면 잡힌다)', () => {
+    const body = ruleBody('.ap-dot')
+    expect(body).toMatch(/background\s+var\(--dur-fast\)/)
+    expect(body).toMatch(/transform\s+var\(--dur-fast\)/)
+  })
+
+  it('.ap-dot-spent가 실제로 다른 시각 상태(꺼진 점)를 그린다', () => {
+    const body = ruleBody('.ap-dot-spent')
+    expect(body).toMatch(/background:\s*var\(--border\)/)
   })
 })

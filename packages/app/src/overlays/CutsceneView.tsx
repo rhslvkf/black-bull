@@ -87,6 +87,15 @@ export function CutsceneView() {
   // §6 "화면 전환 — 컷신 크로스페이드". prefers-reduced-motion이면 즉시 나타난다.
   // jsdom은 외부 CSS(@media 포함)를 읽지 않으므로(Ruling 20, ChoiceSheet.tsx와 같은 기법)
   // 인라인 style로 내려 실측 가능하게 한다.
+  //
+  // **이 애니메이션은 바깥 `.overlay.cutscene`(data-testid="cutscene")이 아니라 안쪽
+  // `.cutscene-content` 래퍼에 건다.** 바깥 요소는 완전 불투명 장면 배경(Ruling 28 —
+  // overlays.test.tsx가 알파 채널을 전혀 안 쓰는지 CSS 소스 텍스트로 고정한다)인데,
+  // opacity 크로스페이드를 그 요소 자체에 걸면(과거 이 자리에 있던 코드) 배경까지
+  // 함께 투명해지는 동안 뒤(홈 HUD·탭바)가 비친다 — 소스 텍스트 검사는 인라인 style을
+  // 못 보므로 이 회귀를 못 잡는다(index.css의 `.cutscene-content` 주석 참고). 배경이
+  // 없는 안쪽 래퍼로 옮기면 배경은 항상 즉시 불투명한 채로, 그 위 내용만 크로스페이드로
+  // 나타난다 — 시각적 효과(장면이 부드럽게 드러난다)는 그대로 유지된다.
   const animation = prefersReducedMotion() ? 'none' : `cutscene-crossfade ${DUR_SLOW}ms ease-out`
 
   return (
@@ -95,25 +104,26 @@ export function CutsceneView() {
       className="overlay cutscene"
       data-testid="cutscene"
       data-tone={tone}
-      style={{ animation }}
     >
-      <h3 className="cutscene-title" data-testid="cutscene-title">{title}</h3>
+      <div className="cutscene-content" data-testid="cutscene-content" style={{ animation }}>
+        <h3 className="cutscene-title" data-testid="cutscene-title">{title}</h3>
 
-      <div className="cutscene-stage" data-testid="cutscene-stage">
-        {artKey && <Art id={artKey} size={260} />}
+        <div className="cutscene-stage" data-testid="cutscene-stage">
+          {artKey && <Art id={artKey} size={260} />}
+        </div>
+
+        <DialogueBox speaker={null} text={line} onAdvance={clear} />
+
+        <button
+          type="button"
+          className="primary"
+          data-testid="cutscene-close"
+          style={{ minHeight: TOUCH_TARGET_PX, minWidth: TOUCH_TARGET_PX }}
+          onClick={clear}
+        >
+          계속
+        </button>
       </div>
-
-      <DialogueBox speaker={null} text={line} onAdvance={clear} />
-
-      <button
-        type="button"
-        className="primary"
-        data-testid="cutscene-close"
-        style={{ minHeight: TOUCH_TARGET_PX, minWidth: TOUCH_TARGET_PX }}
-        onClick={clear}
-      >
-        계속
-      </button>
     </div>
   )
 }

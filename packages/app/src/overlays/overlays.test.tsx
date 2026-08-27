@@ -64,7 +64,11 @@ describe('프롤로그·컷신은 완전 불투명 장면이다 (Critical 1 Fix 
   it('세 규칙 모두 알파 채널(rgba/opacity)을 전혀 쓰지 않는다', () => {
     for (const rule of [prologueBgRule, cutscenePromoteBgRule, cutsceneDemoteBgRule]) {
       expect(rule, `알파가 섞인 rgba(...)를 쓰고 있다: "${rule}"`).not.toMatch(/rgba\(/)
-      expect(rule, `opacity 속성으로 반투명을 흉내내고 있다: "${rule}"`).not.toMatch(/opacity\s*:/)
+      // Task 22 MU13 재검토 — `/opacity\s*:/`(속성 선언 형태)만 보면
+      // `transition: opacity 200ms`처럼 opacity를 트랜지션 대상으로만 얹는 우회를
+      // 놓친다(EndingView.test.tsx에서 실측). "opacity"라는 단어 자체가 이 규칙
+      // 블록에 전혀 나오지 않아야 한다.
+      expect(rule, `opacity가 이 블록 안에 언급돼 있다(트랜지션 대상 포함): "${rule}"`).not.toMatch(/opacity/)
     }
   })
 })
@@ -548,14 +552,37 @@ describe('CutsceneView', () => {
   // MU12 — 전역 제약 "prefers-reduced-motion 존중"(§6). CutsceneView.tsx가 인라인
   // style(animation)로 재생/생략을 결정하므로(ChoiceSheet.tsx와 같은 기법, Ruling 20)
   // jsdom에서도 직접 실측할 수 있다.
+  //
+  // Task 22 — 애니메이션 대상이 바깥 `cutscene`(불투명 장면 배경)에서 안쪽
+  // `cutscene-content`(내용) 래퍼로 옮겨졌다(index.css의 `.cutscene-content` 주석,
+  // CutsceneView.tsx 주석 참고) — 불투명 장면 불변식(Ruling 28)과 §6 크로스페이드
+  // 요구가 충돌해, 불변식을 우선하기 위한 조정이다. 검사 내용(reduced-motion이면
+  // 없다 / 아니면 걸린다)은 그대로이고, 대상 요소만 바로잡는다.
   it('prefers-reduced-motion이면 크로스페이드 애니메이션이 없다 (MU12)', () => {
     matchMediaMock('(prefers-reduced-motion: reduce)', true)
     renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
-    expect(screen.getByTestId('cutscene').style.animation).toBe('none')
+    expect(screen.getByTestId('cutscene-content').style.animation).toBe('none')
   })
   it('모션을 허용하면 컷신 크로스페이드 애니메이션이 걸린다', () => {
     renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
-    expect(screen.getByTestId('cutscene').style.animation).toContain('cutscene-crossfade')
+    expect(screen.getByTestId('cutscene-content').style.animation).toContain('cutscene-crossfade')
+  })
+
+  // Task 22 — 위 두 테스트를 "안쪽 래퍼"로 옮긴 대칭으로, 바깥(불투명 장면 배경 자체인
+  // `cutscene`)에는 어떤 모션 상황에서도 애니메이션이 걸리면 안 된다는 것을 직접
+  // 고정한다. CSS 소스 텍스트 파싱(위 "완전 불투명 장면이다" describe)은 인라인
+  // style을 보지 못하므로(Task 21 재리뷰 MU-B) 이 런타임 검사가 그 구멍을 메운다 —
+  // 누군가 크로스페이드를 다시 바깥 요소로 옮기면(과거 실제로 그랬던 코드) 여기서
+  // 즉시 잡힌다.
+  it('불투명 장면 배경(cutscene) 자체는 어떤 모션 설정에서도 애니메이션이 걸리지 않는다 (오버레이 불투명 불변식 우선)', () => {
+    const first = renderWithState({ cutscene: 'cutscene.promote.1' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').style.animation).toBe('')
+    first.unmount()
+
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    const second = renderWithState({ cutscene: 'cutscene.demote.2' }, <CutsceneView />)
+    expect(screen.getByTestId('cutscene').style.animation).toBe('')
+    second.unmount()
   })
 
   // MU13 — 전역 제약 "터치 타깃 44px 이상". 44는 계획서 요구값이지 구현 상수가 아니므로

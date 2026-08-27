@@ -70,6 +70,64 @@ export function useCountUp(value: number, duration = COUNT_UP_DURATION): number 
   return display
 }
 
+/** 막힌 동작(§6 "타격감" — 예: 손절 봉인 상태의 매도 버튼)에 짧게 흔들림 피드백을
+ *  준다. `trigger()`를 부르면 `shaking`이 즉시 true가 됐다가 `duration` 뒤 자동으로
+ *  false로 돌아온다. 연달아 누르면 타이머를 다시 시작해(clearTimeout 후 재설정)
+ *  매번 새 애니메이션 사이클처럼 보이게 한다.
+ *
+ *  reduced-motion을 이 훅 자신은 따로 보지 않는다 — `shaking` 자체는 "막힌 동작을
+ *  건드렸다"는 상태 신호이고(테스트가 이 신호로 흔들림 클래스 부착 여부를 고정한다),
+ *  실제 시각적 흔들림(keyframe)은 CSS 쪽(.shake, index.css)이 `char-stage-shaken`과
+ *  같은 패턴으로 `@media (prefers-reduced-motion: reduce)`에서 끈다. */
+export function useShake(duration = DUR_BASE): [boolean, () => void] {
+  const [shaking, setShaking] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const trigger = useCallback(() => {
+    setShaking(true)
+    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setShaking(false), duration)
+  }, [duration])
+
+  useEffect(() => () => {
+    if (timeoutRef.current !== null) clearTimeout(timeoutRef.current)
+  }, [])
+
+  return [shaking, trigger]
+}
+
+/** 흔들림(멘탈 위기, `isShaken`) 상태 **진입 시** 화면 가장자리를 한 번 맥동시키는
+ *  훅(§6 "타격감" — "흔들림 진입 시 화면 가장자리 맥동"). `shaken`이 false→true로
+ *  바뀌는 순간에만 짧게 펄스를 켠다:
+ *   - 이미 흔들리는 동안 계속 펄스가 돌면 안 된다(스펙 "한 번" 맥동) → `duration` 뒤
+ *     자동으로 꺼진다.
+ *   - 흔들림에서 벗어난 뒤에도 펄스가 남아 있으면 안 된다(브리프 MU6) → `shaken`이
+ *     false가 되는 즉시 펄스를 강제로 끈다. 자연 타임아웃을 기다리지 않는다.
+ *  prefers-reduced-motion이면 펄스를 아예 켜지 않는다 — 이 훅은 순수 시각 효과라
+ *  useShake와 달리(위 주석) "상태 신호"로서의 쓸모가 따로 없다. */
+export function useShakePulse(shaken: boolean, duration = DUR_SLOW * 2): boolean {
+  const [pulsing, setPulsing] = useState(false)
+  const prevRef = useRef(shaken)
+
+  useEffect(() => {
+    const wasShaken = prevRef.current
+    prevRef.current = shaken
+
+    if (!shaken) {
+      setPulsing(false)
+      return
+    }
+    if (wasShaken) return // 계속 흔들리는 중 — 새 진입이 아니다.
+    if (prefersReducedMotion()) return
+
+    setPulsing(true)
+    const id = setTimeout(() => setPulsing(false), duration)
+    return () => clearTimeout(id)
+  }, [shaken, duration])
+
+  return pulsing
+}
+
 export interface Typewriter {
   /** 지금까지 드러난 텍스트. */
   shown: string

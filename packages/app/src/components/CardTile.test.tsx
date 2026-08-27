@@ -187,3 +187,28 @@ describe('CardTile', () => {
     expect(rest.isRecovery).toBe(true)
   })
 })
+
+// Task 22 §6 "타격감 — 카드 프레스". jsdom은 실제 CSS 트랜지션/의사클래스(:active)의
+// 시각 효과를 계산하지 않으므로(Ruling 20과 같은 근본 이유) index.css 소스 텍스트를
+// 직접 읽어 규칙 존재를 고정한다(tokens.test.ts·overlays.test.tsx가 세운 전례).
+describe('카드 프레스 피드백이 CSS에 존재한다 (§6 타격감, MU9)', () => {
+  const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const css = readFileSync(cssPath, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+  function ruleBody(selector: string): string {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`)
+    const m = css.match(re)
+    if (!m) throw new Error(`선택자를 찾을 수 없다: ${selector}`)
+    return m[1]!
+  }
+
+  it('.card:active:not(:disabled)가 눌림(scale 축소)을 그린다', () => {
+    expect(ruleBody('.card:active:not(:disabled)')).toMatch(/transform:\s*scale\(/)
+  })
+
+  it('.card가 transform 트랜지션을 --dur-fast 토큰으로 건다(하드코딩 금지)', () => {
+    const body = ruleBody('.card')
+    expect(body).toMatch(/transform\s+var\(--dur-fast\)/)
+  })
+})

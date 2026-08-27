@@ -251,7 +251,13 @@ describe('StockDetail', () => {
     fireEvent.click(screen.getByTestId('buy'))
     expect(useGame.getState().state!.player.holdings).toHaveLength(1)
   })
-  it('손절 봉인 상태면 매도 버튼이 잠기고 사유가 보인다', () => {
+  // Task 22(§6 "타격감") — 손절 봉인은 더 이상 진짜 HTML disabled가 아니다. disabled
+  // 버튼은 클릭 이벤트 자체를 받지 못해(실측 확인) 흔들림 피드백(animation.test.tsx의
+  // "막힌 동작은 흔들림 클래스를 받는다")을 낼 방법이 없기 때문이다 — 그래서 이 상태는
+  // `aria-disabled="true"` + `.locked` 클래스로 "잠겼다"는 사실을 알리면서도 클릭은
+  // 계속 받는다. "잠긴다"는 사용자 관점 사실은 그대로 고정하되(약화가 아니다), 그
+  // 사실을 표현하는 속성만 바뀐 것을 반영한다.
+  it('손절 봉인 상태면 매도 버튼이 잠기고(aria-disabled) 사유가 보이며, 눌러도 매도되지 않는다', () => {
     useGame.getState().doBuy('sjc', 1)
     const s = useGame.getState().state!
     useGame.setState({ state: {
@@ -260,8 +266,15 @@ describe('StockDetail', () => {
       stocks: s.stocks.map(x => x.id === 'sjc' ? { ...x, price: Math.round(x.price * 0.5) } : x),
     } })
     render(<StockDetail />)
-    expect(screen.getByTestId('sell').hasAttribute('disabled')).toBe(true)
+    const sellBtn = screen.getByTestId('sell')
+    expect(sellBtn.hasAttribute('disabled')).toBe(false) // 네이티브 disabled는 아니다 — 클릭은 받는다
+    expect(sellBtn.getAttribute('aria-disabled')).toBe('true')
+    expect(sellBtn.classList.contains('locked')).toBe(true)
     expect(screen.getByText(/손이 안 나간다/)).toBeDefined()
+
+    const before = useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty
+    fireEvent.click(sellBtn)
+    expect(useGame.getState().state!.player.holdings.find(h => h.stockId === 'sjc')!.qty).toBe(before)
   })
   it('손절 봉인이 아니면 보유 수량 내에서 매도 버튼이 열려 있다', () => {
     useGame.getState().doBuy('sjc', 1)

@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DialogueBox } from './DialogueBox'
 import { matchMediaMock } from '../design/testUtils'
+import { DUR_BASE } from '../design/motion'
 
 // Ruling 18 — packages/app에는 @testing-library/jest-dom이 없다. toHaveTextContent 대신
 // 순수 DOM(el.textContent)으로 본다. 검사 내용은 브리프와 동일하다.
@@ -336,5 +337,31 @@ describe('로그는 컴포넌트가 언마운트되면 사라진다 (Fix Round 1
     fireEvent.click(screen.getByTestId('dialogue-log-toggle'))
     expect(screen.getByTestId('dialogue-log-empty')).toBeDefined()
     expect(screen.queryByTestId('dialogue-log-entry-0')).toBeNull()
+  })
+})
+
+// Task 22 §6 "화면 전환 — 대화창 페이드인". Ruling 20(jsdom이 외부 CSS를 안 읽으므로
+// 인라인 style로 내려야 실측 가능하다)과 같은 이유로 인라인 style.animation을 직접
+// 본다(ChoiceSheet.test.tsx·CutsceneView 테스트와 같은 기법).
+describe('대화창 페이드인 (§6 화면 전환)', () => {
+  it('모션을 허용하면 페이드인 애니메이션이 걸린다', () => {
+    render(<DialogueBox speaker={null} text="테스트" />)
+    expect(screen.getByTestId('dialogue-box').style.animation).toContain('dialogue-fade-in')
+  })
+
+  it('prefers-reduced-motion이면 애니메이션이 없다', () => {
+    matchMediaMock('(prefers-reduced-motion: reduce)', true)
+    render(<DialogueBox speaker={null} text="테스트" />)
+    expect(screen.getByTestId('dialogue-box').style.animation).toBe('none')
+  })
+
+  // MU12(§6 제1 제약과 "duration 하드코딩 금지") — 애니메이션 길이가 motion.ts의
+  // DUR_BASE 상수(따라서 tokens.css의 --dur-base)에서 유도되는지 직접 본다. 이 값을
+  // 상수 대신 리터럴 숫자로 바꿔치기해도 이 테스트는 그 리터럴이 DUR_BASE와 우연히
+  // 같지 않은 한 잡는다 — 완전한 방어는 아니지만(값이 우연히 같으면 못 잡는다) 최소
+  // 회귀 신호는 준다.
+  it('애니메이션 길이가 motion.ts의 DUR_BASE에서 유도된다', () => {
+    render(<DialogueBox speaker={null} text="테스트" />)
+    expect(screen.getByTestId('dialogue-box').style.animation).toContain(`${DUR_BASE}ms`)
   })
 })

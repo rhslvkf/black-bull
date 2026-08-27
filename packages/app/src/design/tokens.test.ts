@@ -190,6 +190,36 @@ describe('index.css가 토큰 파일을 import한다', () => {
  * 대해 닫은 구멍과 대칭이지만 방향이 반대다: 그쪽은 "참조하는 이름이 정의됐는가",
  * 이쪽은 "정의된 이름을 실제로 참조하는가").
  */
+/**
+ * Task 22 §6의 제1 제약: "전부 prefers-reduced-motion을 존중하고 스킵 옵션을 둔다.
+ * 156턴을 도는 게임에서 매번 기다리게 하면 짐이 된다." JS가 인라인 style(animation)로
+ * 재생 여부를 직접 결정하는 애니메이션(ChoiceSheet·CutsceneView·DialogueBox·App의
+ * 탭 슬라이드/가장자리 맥동·StockDetail의 흔들림)은 각자 prefersReducedMotion()을
+ * 보지만, 순수 CSS 트랜지션/애니메이션(카드 프레스, 게이지 보간, 행동력 점 소모,
+ * 스탯 칩 링, 스톡 행 눌림 등 index.css에 흩어진 것들)은 매 규칙마다 개별
+ * `@media (prefers-reduced-motion: reduce)` 예외를 달지 않는 한 reduced-motion을
+ * 못 본다. index.css 맨 위에 `*`(전 요소)를 겨냥한 전역 안전망 하나를 두어, 앞으로
+ * 추가되는 순수 CSS 애니메이션까지 한 번에 커버한다 — 이 테스트가 그 안전망 자체가
+ * 사라지지 않는지 고정한다.
+ */
+describe('prefers-reduced-motion 전역 안전망 (§6 제1 제약)', () => {
+  const clean = stripCssComments(indexCss)
+
+  it('reduced-motion 미디어 쿼리 블록이 index.css에 존재한다', () => {
+    expect(clean).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)/)
+  })
+
+  it('그 블록이 모든 요소(*)의 animation-duration·transition-duration을 사실상 0으로 만든다', () => {
+    const m = clean.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/)
+    expect(m, 'reduced-motion 전역 블록을 찾을 수 없다').not.toBeNull()
+    const block = m![1]!
+    // 전체 요소를 겨냥해야 한다 — 특정 클래스 하나만 좁혀 잡으면 "안전망"이 아니다.
+    expect(block).toMatch(/\*[^{]*\{/)
+    expect(block).toMatch(/animation-duration:\s*0\.01ms\s*!important/)
+    expect(block).toMatch(/transition-duration:\s*0\.01ms\s*!important/)
+  })
+})
+
 describe('루머 색은 하드코딩이 아니라 --rumor 토큰을 통해 적용된다 (Fix Round 1 Major 2)', () => {
   /** `selector { ... }` 규칙 하나를 그대로 찾아 본문을 돌려준다. 못 찾으면 던진다 —
    *  선택자 자체가 사라지면(리팩터로 이름이 바뀌면) 조용히 통과하는 게 아니라

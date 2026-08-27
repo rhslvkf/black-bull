@@ -28,7 +28,12 @@ describe('EndingView는 완전 불투명 장면이다 (Critical Fix Round 1)', (
 
   it('알파 채널(rgba/opacity)을 전혀 쓰지 않는다', () => {
     expect(endingBgRule, `알파가 섞인 rgba(...)를 쓰고 있다: "${endingBgRule}"`).not.toMatch(/rgba\(/)
-    expect(endingBgRule, `opacity 속성으로 반투명을 흉내내고 있다: "${endingBgRule}"`).not.toMatch(/opacity\s*:/)
+    // Task 22 MU13 재검토 — `/opacity\s*:/`(속성 선언 형태)만 보면
+    // `transition: opacity 200ms`처럼 opacity를 트랜지션 대상으로만 얹는 우회를
+    // 놓친다(실측: 이 정확한 패턴으로 뮤테이션 테스트가 통과해버렸다). "opacity"라는
+    // 단어 자체가 이 규칙 블록에 전혀 나오지 않아야 한다 — 이 요소는 절대 반투명해질
+    // 방법이 없어야 하므로, transition 목록에 이름만 얹는 것조차 금지한다.
+    expect(endingBgRule, `opacity가 이 블록 안에 언급돼 있다(트랜지션 대상 포함): "${endingBgRule}"`).not.toMatch(/opacity/)
   })
 })
 
