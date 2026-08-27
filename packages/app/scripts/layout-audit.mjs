@@ -37,9 +37,19 @@
  * (요소 스크린샷이 아니라 페이지 스크린샷을 크롭하는 이유: 요소 스크린샷은 그 위를
  *  덮은 것을 담지 않아 커튼을 놓친다.)
  *
- * **여전히 열려 있는 것(정직하게).** 이 감사가 보는 것은 '한 주 넘기기' 버튼 **한 곳**이고,
- * 픽셀 오라클은 "무언가 보이는가"만 묻는다 — 글자가 **읽을 수 있는지**(대비·잘림·엉뚱한
- * 문구)는 묻지 않는다. 카드·탭바·오버레이의 가시성도 범위 밖이다.
+ * **여전히 열려 있는 것(정직하게).**
+ *  - 이 감사가 보는 것은 '한 주 넘기기' 버튼 **한 곳**이다. 카드·탭바·오버레이는 범위 밖이다.
+ *  - 픽셀 오라클은 "무언가 보이는가"만 묻는다 — **읽을 수 있는지**(대비·잘림·엉뚱한 문구)는
+ *    묻지 않는다.
+ *  - **무늬 있는 커튼은 못 잡는다.** 무지 커튼은 크롭이 단색이 되어 잡히지만, 그라디언트에
+ *    줄무늬를 넣은 커튼은 그 자체로 distinct 4138·잉크 53.4%라 "보인다"를 만족시키면서
+ *    버튼을 100% 가린다(실측). 전면 시각 회귀(기준선 이미지)가 있어야 잡히고 그건 별개
+ *    프로젝트다 — 쫓지 않기로 했다.
+ *  - 이 파일 자체는 vitest 대상이 **아니다**. 순수 함수 부분(PNG 디코딩·픽셀 판정·임계값)만
+ *    `pixel-oracle.mjs`로 떼어내 `src/design/pixelOracle.test.ts`가 검사한다. 브라우저를 모는
+ *    나머지 절반(측정 시점·클릭 순서·판정 조립)은 사람이 돌려 확인하는 수밖에 없다.
+ *  - `--pixels off`는 픽셀 검사만이 아니라 **`reducedMotion`도 함께 끈다**(아래 컨텍스트
+ *    생성 참고). 그 모드에서는 애니메이션 때문에 측정이 흔들릴 수 있다.
  * `design/layout.test.tsx`는 이 실측을 성립하게 만드는 **구조**를 고정하고,
  * 이 스크립트는 **실측 자체**를 담당한다 — 둘 중 하나만으로는 부족하다.
  *
@@ -63,7 +73,7 @@
  * 종료 코드: 0 완주 통과 · 1 위반 · **2 부분 표본**(--turns로 줄인 런 — 판정이 아니다).
  */
 
-import { inflateSync } from 'node:zlib'
+import { decodePng, analyzePixels, isBlank } from './pixel-oracle.mjs'
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -81,98 +91,10 @@ const seed = arg('seed', '20260826')
 const pixels = arg('pixels', 'on') !== 'off'
 const pageUrl = `${url}${url.includes('?') ? '&' : '?'}seed=${encodeURIComponent(seed)}`
 
-// ─────────────────────── PNG 디코더 (의존성 없이) ───────────────────────
-// Playwright의 스크린샷은 PNG다. 픽셀을 보려면 디코딩이 필요한데 이 저장소에 이미지
-// 라이브러리를 들이지 않기 위해(Playwright조차 선택적 외부 의존이다) 여기서 직접 푼다.
-// 8비트 truecolor(RGB/RGBA)만 다룬다 — Chromium 스크린샷이 그 형식이다.
-function decodePng(buf) {
-  let pos = 8, width = 0, height = 0, bitDepth = 0, colorType = 0
-  const idat = []
-  while (pos + 8 <= buf.length) {
-    const len = buf.readUInt32BE(pos)
-    const type = buf.toString('ascii', pos + 4, pos + 8)
-    const data = buf.subarray(pos + 8, pos + 8 + len)
-    if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); bitDepth = data[8]; colorType = data[9] }
-    else if (type === 'IDAT') idat.push(data)
-    else if (type === 'IEND') break
-    pos += 12 + len
-  }
-  const channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0
-  if (bitDepth !== 8 || channels === 0) throw new Error(`지원하지 않는 PNG 형식(bitDepth ${bitDepth}, colorType ${colorType})`)
-  const raw = inflateSync(Buffer.concat(idat))
-  const stride = width * channels
-  const out = Buffer.alloc(height * stride)
-  let p = 0
-  for (let y = 0; y < height; y++) {
-    const filter = raw[p++]
-    const rowStart = y * stride
-    for (let x = 0; x < stride; x++) {
-      const cur = raw[p + x]
-      const a = x >= channels ? out[rowStart + x - channels] : 0
-      const b = y > 0 ? out[rowStart - stride + x] : 0
-      const c = (x >= channels && y > 0) ? out[rowStart - stride + x - channels] : 0
-      let v
-      if (filter === 0) v = cur
-      else if (filter === 1) v = cur + a
-      else if (filter === 2) v = cur + b
-      else if (filter === 3) v = cur + ((a + b) >> 1)
-      else if (filter === 4) {
-        const pr = a + b - c
-        const pa = Math.abs(pr - a), pb = Math.abs(pr - b), pc = Math.abs(pr - c)
-        v = cur + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)
-      } else throw new Error(`알 수 없는 PNG 필터 ${filter}`)
-      out[rowStart + x] = v & 0xff
-    }
-    p += stride
-  }
-  return { width, height, channels, data: out }
-}
-
-/**
- * 버튼 자리의 **픽셀**을 본다 (Fix Round 4, Ruling 38).
- *
- * 기하학·히트테스트·`checkVisibility`가 전부 통과하는데 버튼이 안 보이는 경우가 있다 —
- * `filter: opacity(0)`(checkVisibility가 filter를 안 본다), `opacity: .01`(정확히 0만
- * false), 다른 요소가 `pointer-events: none`으로 덮는 커튼(elementFromPoint가 정의상
- * 못 본다). 셋의 공통점은 **버튼 상자가 통째로 안 보이는데 기하는 정상**이라는 것이다.
- * 메커니즘을 하나씩 막는 대신 결과를 묻는다: *그 자리에 무언가 보이는가?*
- *
- * **요소 스크린샷이 아니라 페이지 스크린샷을 rect로 크롭한다** — 요소 스크린샷은 그 위를
- * 덮은 것을 담지 않아 커튼을 놓친다.
- *
- * 세 값을 함께 본다(임계값 근거는 보고서 참고):
- *  - distinct   서로 다른 RGB 색의 수
- *  - modalShare 가장 흔한 색이 차지하는 비율 (1에 가까우면 균일 = 아무것도 안 보인다)
- *  - inkShare   각 행의 대표 밝기에서 크게 벗어난 픽셀 비율 (= 글자/테두리 같은 '잉크')
- */
-function analyzePixels(png) {
-  const { width, height, channels, data } = png
-  const counts = new Map()
-  const lum = new Float64Array(width * height)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * channels
-      const r = data[i], g = data[i + 1], b = data[i + 2]
-      const key = (r << 16) | (g << 8) | b
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-      lum[y * width + x] = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    }
-  }
-  const total = width * height
-  let modal = 0
-  for (const n of counts.values()) if (n > modal) modal = n
-  // 행마다 중앙 밝기를 구하고, 거기서 크게 벗어난 픽셀을 '잉크'로 센다.
-  // 세로 그라디언트(버튼 배경)는 행 안에서 거의 균일하므로 잉크로 잡히지 않는다.
-  let ink = 0
-  const row = new Float64Array(width)
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) row[x] = lum[y * width + x]
-    const sorted = Float64Array.from(row).sort()
-    const median = sorted[Math.floor(width / 2)]
-    for (let x = 0; x < width; x++) if (Math.abs(row[x] - median) > 24) ink++
-  }
-  return { distinct: counts.size, modalShare: modal / total, inkShare: ink / total }
-}
+// PNG 디코딩·픽셀 분석·임계값은 `pixel-oracle.mjs`로 옮겼다(Fix Round 5, Ruling 44).
+// 게이트의 기둥이 아무 테스트에도 안 걸려 있었기 때문이다 — 지금은 순수 함수라
+// `src/design/pixelOracle.test.ts`가 직접 검사한다(임계 상수를 0으로 낮추거나 PNG
+// 언필터링을 한 줄 망가뜨리면 red).
 
 async function loadPlaywright() {
   const explicit = process.env.PLAYWRIGHT_MODULE
@@ -271,7 +193,11 @@ const probe = () => page.evaluate(() => {
       .map(e => e.getAttribute('data-testid')).filter(t => /^choice-\d+$/.test(t ?? '')),
     turn: (() => { const m = q('.topbar-dday')?.textContent?.match(/D-(\d+)/); return m ? 156 - Number(m[1]) : null })(),
     cards: [...document.querySelectorAll('[data-testid^="slot-card-"]')]
-      .map(c => ({ id: c.getAttribute('data-testid'), disabled: c.hasAttribute('disabled') })),
+      .map(c => ({
+        id: c.getAttribute('data-testid'), disabled: c.hasAttribute('disabled'),
+        // 이미 고른 카드를 다시 누르면 선택이 **해제**된다(togglePick) — 무한 토글을 막는다.
+        picked: c.className.includes('picked'),
+      })),
     nextEnabled: !!next && !next.hasAttribute('disabled'),
     rerollEnabled: (() => { const r = q('[data-testid=reroll]'); return !!r && !r.hasAttribute('disabled') })(),
     // ── 실측 ──
@@ -285,6 +211,15 @@ const probe = () => page.evaluate(() => {
 })
 
 const samples = []
+/** 런 지문 — 턴마다의 상태·측정을 접어 넣는다. 같은 시드 두 런은 같은 지문이어야 한다.
+ *  (Ruling 43: "출력이 같더라"는 눈으로 비교할 일이 아니라 한 줄로 드러나야 한다.) */
+let fingerprint = 0x811c9dc5
+const fold = (text) => {
+  for (let i = 0; i < text.length; i++) {
+    fingerprint ^= text.charCodeAt(i)
+    fingerprint = Math.imul(fingerprint, 0x01000193) >>> 0
+  }
+}
 /** 버튼 자리의 픽셀을 재서 샘플에 붙인다. 실패해도 감사를 죽이지 않고 사유를 남긴다. */
 async function measurePixels(p) {
   if (!pixels || !p.buttonExists || p.buttonW === 0 || p.buttonH === 0) return null
@@ -306,7 +241,14 @@ async function measurePixels(p) {
 }
 const pixelErrors = []
 const record = async (turn, when, p) => {
-  samples.push({ turn, when, ...p, pixels: await measurePixels(p) })
+  // 같은 값을 한 번 더 읽어 흔들림을 잡는다(두 프레임을 넘긴 뒤에 읽는다).
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+  const again = await probe()
+  const geom = (x) => `${x.buttonExists ? 1 : 0}:${x.buttonW}x${x.buttonH}:${x.clearance}:${x.hitOk ? 1 : 0}:${x.inViewport ? 1 : 0}`
+  const unstable = geom(p) !== geom(again)
+  const px = await measurePixels(p)
+  samples.push({ turn, when, ...p, pixels: px, unstable, geomA: geom(p), geomB: geom(again) })
+  fold(`${turn}|${when}|${geom(p)}|${p.cards.map(c => `${c.id}${c.disabled ? 'x' : ''}${c.picked ? '*' : ''}`).join(',')}|${px === null ? 'nopx' : `${px.distinct}/${px.inkShare.toFixed(4)}`}`)
 }
 
 await page.goto(pageUrl, { waitUntil: 'networkidle' })
@@ -320,7 +262,10 @@ for (let i = 0; i < maxTurns * 40; i++) {
   if (p.prologue) { await click('prologue-next'); continue }
   if (p.cutscene) { await click('cutscene-close'); continue }
   if (p.event) {
-    if (p.sheet && p.choices.length > 0) await click(p.choices[i % p.choices.length])
+    // 선택지는 **턴 번호**로 고른다 — 루프 카운터 `i`로 고르면 대사 타이핑이 몇 번
+    // 만에 끝났는지(타이밍)에 따라 선택이 달라져 판이 갈라진다(Ruling 43 두 번째 원인).
+    // 턴은 시드의 함수이므로 이 선택도 시드의 함수가 된다.
+    if (p.sheet && p.choices.length > 0) await click(p.choices[(p.turn ?? 0) % p.choices.length])
     else await click('dialogue-box')
     continue
   }
@@ -340,7 +285,22 @@ for (let i = 0; i < maxTurns * 40; i++) {
     if (sameScreen > 6) { stuck = { turn: p.turn, why: '같은 화면에서 진전 없음(클릭이 먹지 않는다)' }; break }
 
     if (p.turn !== null && p.turn % 4 === 0 && p.rerollEnabled) { await click('reroll'); continue }
-    for (const c of p.cards) if (!c.disabled) await click(c.id)
+    // **카드는 한 장씩, 매번 다시 확인하고 누른다** (Fix Round 5, Ruling 43).
+    //
+    // 예전에는 '클릭 전 스냅샷'의 카드 목록을 그대로 훑으며 연달아 눌렀다. 첫 클릭으로
+    // 행동력이 줄면 나머지가 disabled가 되는데도 클릭을 시도하므로, Playwright가
+    // actionability를 기다리다 타임아웃하고 그 카드는 안 눌린다 — **눌리느냐 마느냐가
+    // React 리렌더 타이밍에 달린 경합**이었다. 고른 카드가 달라지면 playCard가 소비하는
+    // RNG가 달라져 그 뒤 판 전체가 갈라진다. 실측: 같은 시드 두 런이 t1~t24는 같고
+    // t25부터 슬롯 카드가 달라졌다(forum,news,study,rest vs report,overtime,forum,rest).
+    // 이제 매 클릭 직전에 상태를 다시 읽어 **그 시점에 실제로 활성인 카드만** 누른다.
+    // 그러면 입력 순서가 DOM 상태의 순수 함수가 되고, DOM 상태는 시드의 함수다.
+    for (let guard = 0; guard < 8; guard++) {
+      const now = await probe()
+      const next = now.cards.find(c => !c.disabled && !c.picked)
+      if (next === undefined) break
+      if (!(await click(next.id))) break
+    }
     const after = await probe()
     await record(p.turn, '고른 뒤', after)
     if (!after.nextEnabled) { stuck = { turn: p.turn, why: 'next-turn 비활성' }; break }
@@ -377,8 +337,6 @@ const invisible = samples.filter(s => s.visible === false)
 //     font-size:0        distinct 69~234 ink 1.62~1.81%
 // 두 무리 사이의 간격은 1.81% ↔ 3.52%다. 그 안에 2.0%를 놓는다 —
 // 정상 최저값 대비 1.76배 여유, 최악 공격값 대비 1.10배.
-const PIXEL_MIN_DISTINCT = 30     // 정상 379~780 / 안 보이면 1~10
-const PIXEL_MIN_INK = 0.020
 // `modalShare`는 **판정에서 뺐다.** 비활성 버튼은 단색 배경이라 정상 상태에서도
 // 한 색이 95.6%를 차지한다 — 균일함 자체는 결함의 신호가 아니다(실측으로 배웠다).
 //
@@ -386,14 +344,25 @@ const PIXEL_MIN_INK = 0.020
 // 잰 것이다(이 샌드박스는 CDN이 막혀 폴백 폰트를 쓴다). 폰트가 바뀌면 글자가 차지하는
 // 픽셀 비율도 움직인다. 그래서 감사는 매 실행 **관측된 최소 잉크**를 출력한다 —
 // 그 값이 2%에 가까워지면 임계값을 다시 재라(`--pixel-debug 1`로 분포를 볼 수 있다).
+// ── 표본 수 지표 (Ruling 45) ──
+// 재리뷰 X6: `TopBar`의 `D-` 하이픈을 U+2011(눈으로는 같은 글자)로 바꾸면 턴 파싱이
+// 실패해 **`측정 156회 / 1턴`인데 "통과 (156턴 완주)" · exit 0**이었다. `docScrollHeight`·
+// `|| '0'`·`clearance`·`grep -c Done`에 이은 "부재를 만족으로 읽는" 다섯 번째 얼굴이고,
+// 이번엔 **우리가 방금 만든 코드**에서 나왔다. 표본 수 자체를 지표로 올린다.
+const expectedTurns = Math.min(maxTurns, 156)
+const turnsMeasured = new Set(samples.map(s => s.turn)).size
+const nullTurnSamples = samples.filter(s => s.turn === null || s.turn === undefined)
+const tooFewTurns = turnsMeasured < expectedTurns
+// 턴마다 '고르기 전'·'고른 뒤' 두 번 재는 것이 이 감사의 계약이다.
+const tooFewSamples = samples.length < expectedTurns * 2
+const unstableSamples = samples.filter(s => s.unstable)
 const measured = samples.filter(s => s.pixels !== null)
 if (arg('pixel-debug', '') !== '') {
   for (const s of measured) {
     console.log(`  [픽셀] 턴 ${s.turn} ${s.when}: distinct=${s.pixels.distinct} modal=${s.pixels.modalShare.toFixed(3)} ink=${(s.pixels.inkShare * 100).toFixed(2)}% (버튼 ${s.nextEnabled ? '활성' : '비활성'})`)
   }
 }
-const blank = measured.filter(s =>
-  s.pixels.distinct < PIXEL_MIN_DISTINCT || s.pixels.inkShare < PIXEL_MIN_INK)
+const blank = measured.filter(s => isBlank(s.pixels))
 const worstPixels = measured.reduce((m, s) => (s.pixels.inkShare < m.inkShare ? s.pixels : m), { inkShare: Infinity })
 const offscreen = samples.filter(s => s.clearance !== null && s.clearance < 0)
 const covered = samples.filter(s => s.tabbarOverlap !== null && s.tabbarOverlap > 0)
@@ -405,7 +374,10 @@ const maxOverflow = samples.reduce((m, s) => Math.max(m, s.scrollOverflow ?? 0),
 console.log(`
 [layout-audit] ${width}×${height} · seed ${seed} · ${pageUrl}
   완주            ${ended ? 'O' : (maxTurns < 156 ? `부분 감사(${maxTurns}턴까지)` : 'X')}${stuck ? ` (막힘: 턴 ${stuck.turn} — ${stuck.why})` : ''}
-  측정            ${samples.length}회 / ${new Set(samples.map(s => s.turn)).size}턴
+  측정            ${samples.length}회 / ${turnsMeasured}턴 (요구 ${expectedTurns}턴 · ${expectedTurns * 2}회)${tooFewTurns || tooFewSamples ? '  ← 부족!' : ''}
+  턴을 못 읽은 표본 ${nullTurnSamples.length}건${nullTurnSamples.length > 0 ? '  ← 턴 표시를 파싱하지 못했다' : ''}
+  측정이 흔들림   ${unstableSamples.length}건${unstableSamples.length > 0 ? ` — 예: ${unstableSamples[0].geomA} vs ${unstableSamples[0].geomB}` : ''}
+  런 지문         ${(fingerprint >>> 0).toString(16)} (같은 시드면 같아야 한다)
   버튼 없음       ${missing.length}건${missing.length > 0 ? ` — 턴 ${[...new Set(missing.map(s => s.turn))].slice(0, 8).join(', ')}` : ''}
   버튼 크기 0     ${zeroSize.length}건
   터치 타깃 미달  ${tooSmall.length}건 (44px 기준)
@@ -433,6 +405,7 @@ const noSamples = samples.length === 0
 // 잡혔다. 출력과 종료 코드로 구분한다: 0=완주 통과, 1=위반, 2=부분 표본(위반 없음).
 const fullRun = maxTurns >= 156
 const failed = noSamples || (fullRun && !ended) || stuck !== null
+  || tooFewTurns || tooFewSamples || nullTurnSamples.length > 0 || unstableSamples.length > 0
   || missing.length > 0 || zeroSize.length > 0 || tooSmall.length > 0
   || outside.length > 0 || unhittable.length > 0 || invisible.length > 0 || blank.length > 0
   || pixelErrors.length > 0
