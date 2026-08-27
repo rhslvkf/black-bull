@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { screen } from '@testing-library/react'
 import { ENDING_IDS, type EndingId } from '@bb/core'
@@ -6,6 +9,28 @@ import { renderEnding } from '../testUtils'
 // Ruling 18 — packages/app에는 @testing-library/jest-dom이 없다. `toHaveTextContent`
 // 대신 순수 DOM(`el.textContent`)으로, `toHaveLength`는 배열 `.length`로 본다.
 // 검사 내용은 브리프와 동일하다.
+
+// 리뷰 Fix Round 1(Critical) — 엔딩은 모달이 아니라 게임의 마지막 장면이다(Ruling 28,
+// Task 20이 프롤로그·컷신에 세운 원칙과 같다). `.overlay`의 기본 반투명 배경
+// (rgba(...,.96))을 그대로 물려받으면 뒤(홈 HUD·탭바)가 비친다 — 실제로 Fix Round 1
+// 리뷰가 스크린샷 14장 전부에서 재현했다. jsdom은 실제 합성 결과를 계산하지 않으므로
+// (Ruling 20과 같은 이유) index.css 소스에서 `.overlay.ending` 규칙 블록을 직접 파싱해,
+// 알파 채널(rgba(...)의 네 번째 인자, 또는 별도 opacity 속성)을 전혀 쓰지 않는지 고정한다.
+// overlays.test.tsx의 '프롤로그·컷신은 완전 불투명 장면이다' 블록과 같은 기법이다.
+describe('EndingView는 완전 불투명 장면이다 (Critical Fix Round 1)', () => {
+  const cssPath = join(dirname(fileURLToPath(import.meta.url)), '../index.css')
+  const css = readFileSync(cssPath, 'utf-8')
+  const endingBgRule = css.match(/\.overlay\.ending\s*\{[^}]*\}/)?.[0] ?? ''
+
+  it('.overlay.ending 규칙이 index.css에 존재한다', () => {
+    expect(endingBgRule, '.overlay.ending 규칙을 못 찾았다').not.toBe('')
+  })
+
+  it('알파 채널(rgba/opacity)을 전혀 쓰지 않는다', () => {
+    expect(endingBgRule, `알파가 섞인 rgba(...)를 쓰고 있다: "${endingBgRule}"`).not.toMatch(/rgba\(/)
+    expect(endingBgRule, `opacity 속성으로 반투명을 흉내내고 있다: "${endingBgRule}"`).not.toMatch(/opacity\s*:/)
+  })
+})
 
 describe('EndingView 잔고증명서', () => {
   it('예수금·주식평가금액·합계를 보여준다', () => {
@@ -27,15 +52,32 @@ describe('EndingView 잔고증명서', () => {
     expect(screen.getByTestId('doc-trades').textContent).toContain('47')
   })
 
+  // 리뷰 Fix Round 1(Major) — 브리프의 toContain('18.4') 검사는 부분 문자열이라
+  // '−18.4'와 '18.4' 둘 다 통과시킨다(Task 17의 '최존버2' 함정과 같은 부류). 부호
+  // 자체는 §4.4 와이어프레임(`−18.4 %`)이 요구하는 의도된 표시라 지우지 않고,
+  // 대신 부호까지 포함한 정확 일치로 낙폭 표시를 고정한다.
+  it('최대 낙폭에 하락 부호(−)가 붙는다 (부호까지 정확히 일치)', () => {
+    renderEnding({ trackers: { maxDrawdownPct: 18.4 } })
+    expect(screen.getByTestId('doc-drawdown').textContent).toBe('\u221218.4%')
+  })
+
+  it('최대 낙폭 0%일 때는 부호가 붙지 않는다', () => {
+    renderEnding({ trackers: { maxDrawdownPct: 0 } })
+    expect(screen.getByTestId('doc-drawdown').textContent).toBe('0.0%')
+  })
+
   it('엔딩 이름이 한국어로 나오고 내부 id가 새지 않는다', () => {
     renderEnding({ endingId: 'bank' })
     expect(screen.getByTestId('ending-name').textContent).toContain('은행 이자보단 낫지')
     expect(screen.getByTestId('ending-doc').textContent).not.toContain('bank')
   })
 
-  it('칭호가 전부 표시된다', () => {
+  it('칭호가 전부, 넘긴 순서 그대로 표시된다', () => {
+    // 리뷰 Fix Round 1(Minor 1) — 개수만 보면 순서가 뒤바뀌어도 통과한다.
+    // 리터럴 기대 배열과 순서까지 toEqual로 대조한다.
     renderEnding({ titles: ['강철멘탈의', '빚 없이'] })
-    expect(screen.getAllByTestId(/^title-/).length).toBe(2)
+    const shown = screen.getAllByTestId(/^title-/).map(el => el.textContent)
+    expect(shown).toEqual(['강철멘탈의', '빚 없이'])
   })
 
   it('칭호가 없으면 칭호 영역이 비어 있다', () => {

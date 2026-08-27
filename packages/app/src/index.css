@@ -434,7 +434,10 @@ ul { list-style: none; padding: 0; margin: 0; }
    행 사이는 실제 증명서의 항목-금액 대응이 한눈에 읽히도록 점선 리더(leader)로
    잇는다. 도장은 오른쪽 아래에 살짝 기울여 앉혀 "찍힌" 느낌을 낸다 — §5.1의
    `ending.*` 슬롯이 엔딩마다 다른 도장 그래픽을 낸다. */
-.overlay.ending { overflow-y: auto; }
+/* Ruling 28(Task 20) — 엔딩은 모달이 아니라 게임의 마지막 장면이다. 프롤로그·컷신과
+   같은 원칙: 알파를 쓰지 않는 완전 불투명 배경으로 뒤(홈 HUD·탭바)가 전혀 비치지 않게
+   한다(.overlay 기본값의 rgba(...,.96)는 진짜 모달인 EventModal 전용). */
+.overlay.ending { overflow-y: auto; background: var(--bg); }
 .doc {
   width: 100%; max-width: 340px; box-sizing: border-box; text-align: left;
   background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
