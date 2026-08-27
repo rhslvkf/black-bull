@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { initGame, judgeEnding, totalAssets, type GameState } from '@bb/core'
 import { isBankrupt } from './bankruptcy'
-import { playOne } from './runner'
+import { playOne, runBatch } from './runner'
 
 /**
  * **자기충족 수정의 지킴이** (리뷰 Major 2).
@@ -50,7 +50,7 @@ describe('isBankrupt — 파산은 엔딩 이름이 아니라 자산 상태다',
     expect(real({ ...rich, ending: judgeEnding(broke, true) })).toBe(false)
   })
 
-  it('빚이 없으면 파산이 아니다 — 총자산이 0 미만으로 못 내려간다', () => {
+  it('빚이 없으면 총자산이 0 미만으로 못 내려간다 — 정확히 0은 파산으로 친다', () => {
     // 대조군 일곱 전략의 파산율 0이 '성질'이 아니라 '정의'인 이유(README 게이트표).
     expect(real(withMoney(0, 0))).toBe(true)      // 정확히 0은 파산 쪽이다(경계)
     expect(real(withMoney(1, 0))).toBe(false)
@@ -73,5 +73,29 @@ describe('playOne의 bankrupt가 그 측정을 통과해서 나온다', () => {
     const r = playOne(7, 'leverage')
     expect(r.ending, '전제: 이 시드는 실제로 파산으로 끝나는 판이다').toBe('legend')
     expect(r.bankrupt, 'bankrupt가 엔딩 이름에서 유도되고 있다').toBe(false)
+  })
+})
+
+/**
+ * 위 두 묶음은 `playOne`의 `bankrupt` **필드**까지만 덮는다. 그런데 교차검증 게이트가
+ * 실제로 읽는 값은 `runBatch`의 **집계**(`bankruptRate`)다 — 재리뷰 공격 A2:
+ * `runBatch`의 집계 한 줄을 `r.ending === 'legend'`로 바꾸면 필드는 그대로인 채
+ * 자기충족이 부활하는데 48건이 전부 green이었다. 집계도 같은 이유로 경로를 잡는다.
+ */
+describe('runBatch의 집계도 그 측정을 통과해서 나온다', () => {
+  beforeEach(() => { measure.mockReset() })
+
+  it('측정이 전부 true면 파산율이 1이다 — legend가 한 판도 없어도', () => {
+    measure.mockReturnValue(true)
+    const rep = runBatch(6, 'cash', 1)
+    expect(rep.endingCounts['legend'] ?? 0, '전제: legend가 없는 배치여야 한다').toBe(0)
+    expect(rep.bankruptRate, '집계가 엔딩 이름에서 유도되고 있다').toBe(1)
+  })
+
+  it('측정이 전부 false면 파산율이 0이다 — legend가 있어도', () => {
+    measure.mockReturnValue(false)
+    const rep = runBatch(6, 'leverage', 7)
+    expect(rep.endingCounts['legend'] ?? 0, '전제: legend가 있는 배치여야 한다').toBeGreaterThan(0)
+    expect(rep.bankruptRate, '집계가 엔딩 이름에서 유도되고 있다').toBe(0)
   })
 })

@@ -118,7 +118,8 @@ export function CreditSection() {
         </div>
       </dl>
       <p className="credit-hint">
-        유지 {(BALANCE.loan.callRatio * 100).toFixed(0)}% 미만이면 다음 주에 청산된다 ·
+        유지 {(BALANCE.loan.callRatio * 100).toFixed(0)}% 미만이면 다음 주에{' '}
+        {hasHoldings ? '청산된다' : '현금이 상환에 들어간다'} ·
         주 이자율 {(BALANCE.loan.rate * 100).toFixed(2)}%
       </p>
 

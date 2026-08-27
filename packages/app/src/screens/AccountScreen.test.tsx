@@ -262,6 +262,29 @@ describe('AccountScreen — 신용 창구', () => {
       expect(text('margin-shortfall')).toBe(' 부족액 12,000,000원')
     })
 
+    /**
+     * 위 검사는 `margin-banner` **하나만** 본다. 그래서 두 줄 아래 `credit-hint`가
+     * 같은 계좌에 대고 "다음 주에 청산된다"고 말하는 것을 놓쳤다(재리뷰 잔여 2).
+     * **한 화면에 모순된 두 문장이 동시에 있었다.** 섹션 전체를 본다.
+     */
+    it('보유가 없으면 신용 섹션 어디에도 청산 예고가 없다', () => {
+      const { container } = renderCredit({
+        cash: 1_000_000, loan: 10_000_000, holdings: [], marginCallDueTurn: 7,
+      })
+      const section = container.querySelector('[data-testid="credit-section"]') ?? container
+      expect(section.textContent, '섹션 어딘가가 아직 매도를 예고한다').not.toContain('청산')
+    })
+
+    it('보유가 있으면 힌트도 청산이라고 말한다 — 위 검사가 문구를 지우기만 해도 통과하지 않게', () => {
+      const { container } = renderCredit({
+        cash: 1_000_000, loan: 10_000_000,
+        holdings: [{ stockId: 'sjc', qty: 10, avgCost: 71_000, heldTurns: 1 }],
+        marginCallDueTurn: 7,
+      })
+      const section = container.querySelector('[data-testid="credit-section"]') ?? container
+      expect(section.textContent).toContain('청산')
+    })
+
     it('부족액은 담보(현금 + 평가액)를 따라 바뀐다', () => {
       renderCredit({
         cash: 5_000_000, loan: 10_000_000, marginCallDueTurn: 7,
