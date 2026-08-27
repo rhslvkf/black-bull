@@ -23,7 +23,12 @@ describe('CharacterStage', () => {
     expect(screen.getByTestId('char-slot').getAttribute('data-art-id')).toBe('char.tier1.shaken')
   })
 
-  it('높이가 260px로 고정된다', () => {
+  it('높이 기준값이 260px다 (§3.1 예산 = 실제로는 상한이다)', () => {
+    // Task 24 Fix Round 1 — 케이스 이름이 '고정된다'였는데 현실과 어긋났다.
+    // 이 인라인 height는 플렉스 **기준 크기(flex-basis)**이자 상한이고, 홈 화면에서
+    // 세로가 모자라면 스테이지만 하한(index.css의 `.home-scroll > .char-stage`
+    // min-height)까지 줄어든다 — 실제로 브라우저 실측에서 185~205px로 줄어든 턴이 있다.
+    // 여기서 못박는 것은 "이 값이 260px로 내려온다"이지 "화면에서 항상 260px이다"가 아니다.
     renderWithState({})
     expect(getComputedStyle(screen.getByTestId('char-stage')).height).toBe('260px')
     // 값 자체가 §3 레이아웃 예산이므로, 소스의 상수와도 어긋나지 않는지 함께 못박는다.

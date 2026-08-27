@@ -99,12 +99,18 @@ ul { list-style: none; padding: 0; margin: 0; }
 
 /* `min-height: 0`이 핵심이다(위 .app 주석). 하단 패딩 92px은 고정 탭바를 피하려던
  * 임시방편이었는데, 탭바가 흐름 안으로 들어오면서 필요 없어졌다 — 그만큼이 그대로
- * 세로 예산으로 돌아온다. 홈은 이 안에서 스크롤 없이 한 장에 들어간다. */
+ * 세로 예산으로 돌아온다.
+ *
+ * 홈은 이 안을 정확히 채우고 **자기 안에서** 스크롤한다(.home-scroll) — 여유가 있는
+ * 턴에는 스크롤이 아예 생기지 않지만, 안내 문구가 붙는 턴에는 생긴다. 시세·계좌·도감은
+ * 예전처럼 이 컨테이너가 스크롤한다. */
 .body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; }
 
 /* ---------- HUD ---------- */
+/* `position: sticky; top: 0`이 있었지만 죽은 선언이었다(Fix Round 1) — `.hud`는
+ * `.app`(height: 100dvh, 스크롤하지 않는다)의 첫 플렉스 아이템이라 애초에 스크롤
+ * 밖으로 나갈 일이 없다. 스크롤하는 건 그 아래 `.body`(와 홈의 `.home-scroll`)다. */
 .hud {
-  position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, var(--panel), var(--bg));
   /* §3.1 게이지 행 예산 28px에 맞춘 패딩(Task 24) — 예전 10/12는 실측 38px이었다. */
   padding: 8px 14px 9px;
@@ -155,17 +161,40 @@ ul { list-style: none; padding: 0; margin: 0; }
 .tabbar button.active .tabbar-glyph { filter: none; }
 
 /* ---------- Home / TopBar / CharacterStage ---------- */
-/* 홈은 `.body` 한 장을 정확히 채운다. 남거나 모자란 세로는 **캐릭터 스테이지**가
- * 흡수한다(아래 .char-stage의 flex) — 조작부(스탯·행동력·카드·한 주 넘기기)는 어떤
- * 뷰포트에서도 잘리지 않고, 줄어드는 쪽은 장식인 스테이지다(Task 24 세로 예산 재배분). */
+/* 홈은 `.body` 한 장을 정확히 채우고, 그 안이 **두 층**이다(Fix Round 1):
+ *   .home-scroll  — 캐릭터·티커·스탯·행동력·카드. 넘치면 여기서 스크롤한다.
+ *   .home-actions — 주 조작부('한 주 넘기기'와 그 사유 문구). **항상 보인다.**
+ *
+ * Round 1 이전에는 홈이 한 덩어리였고 "남는 세로는 캐릭터 스테이지가 흡수한다"에만
+ * 기댔다. 리뷰어 실측으로 그 가정이 깨졌다 — 스테이지를 하한(170px)까지 줄여도
+ * 156턴 중 13턴에서 '한 주 넘기기'가 화면 밖으로 밀려났다(최악 −56px, 턴 128).
+ * 흡수는 여유가 있을 때만 통하는 완화책이지 보장이 아니다. 그래서 보장은 구조로
+ * 만든다: 조작부를 스크롤 컨테이너 바깥의 형제로 두면 밀려날 자리 자체가 없다. */
 .screen.home { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 /* 홈 외 화면(시세·계좌·도감)은 예전처럼 내용만큼 자라고 `.body`가 스크롤한다. */
 .screen:not(.home) { flex: 0 0 auto; }
-/* 홈의 자식은 기본적으로 **줄어들지 않는다**. 이 한 줄이 없으면 세로가 모자랄 때
- * 브라우저가 모든 자식을 기준 크기 비율대로 함께 찌그러뜨려, 카드·버튼 글자가 잘리는
- * 방식으로 '들어맞는' 화면이 된다. 줄어드는 창구는 아래 스테이지 하나뿐이다. */
-.screen.home > * { flex: 0 0 auto; }
-.screen.home > .char-stage { flex: 0 1 auto; min-height: 170px; }
+
+.home-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+/* 스크롤 영역의 자식은 기본적으로 **자라지도 줄지도 않는다**. 이 한 줄이 없으면
+ * 세로가 모자랄 때 브라우저가 모든 자식을 기준 크기 비율대로 함께 찌그러뜨려,
+ * 카드·행동력 글자가 잘리는 방식으로 '들어맞는' 화면이 된다.
+ * 줄어드는 창구는 아래 스테이지 하나뿐이다 — 그리고 **자라는 창구는 없다**:
+ * 하나라도 자라면 스테이지의 260px 상한(§3.1 예산)이 그만큼 깨진다.
+ * 이 두 성질은 design/layout.test.ts가 **런타임 computed style로** 확인한다
+ * (CSS 소스 문자열 검사는 더 구체적인 선택자로 덮어쓰는 우회를 못 잡는다 — 리뷰 MU6). */
+.home-scroll > * { flex: 0 0 auto; }
+.home-scroll > .char-stage { flex: 0 1 auto; min-height: 170px; }
+
+/* 주 조작부. `.home-scroll`의 형제이므로 스크롤과 무관하게 항상 제자리에 있고,
+ * 탭바 바로 위 — 엄지 도달 범위 — 에 앉는다. */
+.home-actions {
+  flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding-top: 8px;
+}
+/* 조작부 안의 요소도 찌그러지지 않는다 — 여기가 마지막 보루다. */
+.home-actions > * { flex: 0 0 auto; }
 
 /* §3.1 상단바: 메뉴 / 연차·주차·D-day / 총자산 / 정보. 진행바(Hud가 이미 그린다)와
    나머지 HUD 요소는 Task 12가 Hud를 정리하면서 이 자리로 옮겨온다. */
@@ -379,13 +408,15 @@ ul { list-style: none; padding: 0; margin: 0; }
 }
 
 .turn-blocked {
-  margin: 12px 0 0; font-size: 12px; color: var(--gold); text-align: center;
+  margin: 0; font-size: 12px; color: var(--gold); text-align: center;
   background: rgba(230, 180, 90, .1); border: 1px solid rgba(230, 180, 90, .3);
   border-radius: 8px; padding: 8px;
 }
 
 .next-turn {
-  width: 100%; margin-top: 10px; padding: 14px; border: 0; border-radius: 14px; flex: 0 0 auto;
+  /* 위쪽 간격은 .home-actions의 gap/padding이 준다(Fix Round 1) — 여기서 margin을
+     또 주면 두 곳이 같은 간격을 다투게 된다. */
+  width: 100%; padding: 14px; border: 0; border-radius: 14px;
   background: linear-gradient(180deg, #2ea043, #238636); color: #fff; font-size: 16px; font-weight: 800;
   box-shadow: 0 6px 18px -6px rgba(35, 134, 54, .7);
   transition: opacity .15s, box-shadow .15s;
